@@ -1,0 +1,100 @@
+:root {
+  /* Brand colors - Imagen theme (violet/purple/fuchsia) */
+  --ui-color-primary-50: #faf5ff;
+  --ui-color-primary-100: #f3e8ff;
+  --ui-color-primary-200: #e9d5ff;
+  --ui-color-primary-300: #d8b4fe;
+  --ui-color-primary-400: #c084fc;
+  --ui-color-primary-500: #a855f7; /* core violet */
+  --ui-color-primary-600: #9333ea;
+  --ui-color-primary-700: #7e22ce;
+  --ui-color-primary-800: #6b21a8;
+  --ui-color-primary-900: #581c87;
+
+  --ui-color-accent-100: #fae8ff;
+  --ui-color-accent-200: #f5d0fe;
+  --ui-color-accent-300: #f0abfc;
+  --ui-color-accent-400: #e879f9;
+  --ui-color-accent-500: #d946ef; /* core fuchsia */
+  --ui-color-accent-600: #c026d3;
+
+  --ui-color-success-500: #00d27a;
+  --ui-color-warning-500: #f5a524;
+  --ui-color-error-500: #f04438;
+
+  /* Neutral palette */
+  --ui-color-neutral-50: #f8fafc;
+  --ui-color-neutral-100: #f1f5f9;
+  --ui-color-neutral-200: #e2e8f0;
+  --ui-color-neutral-300: #cbd5e1;
+  --ui-color-neutral-400: #94a3b8;
+  --ui-color-neutral-500: #64748b;
+  --ui-color-neutral-600: #475569;
+  --ui-color-neutral-700: #334155;
+  --ui-color-neutral-800: #1e293b;
+  --ui-color-neutral-900: #0f172a;
+
+  /* Typography */
+  --ui-font-family-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --ui-font-weight-regular: 400;
+  --ui-font-weight-medium: 500;
+  --ui-font-weight-semibold: 600;
+  --ui-font-weight-bold: 700;
+
+  --ui-font-size-display: 48px;
+  --ui-line-height-display: 56px;
+  --ui-font-size-h1: 36px;
+  --ui-line-height-h1: 44px;
+  --ui-font-size-h2: 28px;
+  --ui-line-height-h2: 36px;
+  --ui-font-size-h3: 22px;
+  --ui-line-height-h3: 30px;
+  --ui-font-size-body: 16px;
+  --ui-line-height-body: 24px;
+  --ui-font-size-small: 13px;
+  --ui-line-height-small: 20px;
+
+  /* Radii */
+  --ui-radius-sm: 10px;
+  --ui-radius-md: 16px;
+  --ui-radius-lg: 20px;
+
+  /* Shadows */
+  --ui-shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.08);
+  --ui-shadow-md: 0 12px 32px rgba(15, 23, 42, 0.14);
+  --ui-shadow-lg: 0 24px 48px rgba(15, 23, 42, 0.18);
+
+  /* Spacing (4pt scale) */
+  --ui-space-1: 4px;
+  --ui-space-2: 8px;
+  --ui-space-3: 12px;
+  --ui-space-4: 16px;
+  --ui-space-5: 20px;
+  --ui-space-6: 24px;
+  --ui-space-8: 32px;
+  --ui-space-10: 40px;
+  --ui-space-12: 48px;
+  --ui-page-gutter-min: 24px;
+  --ui-page-gutter-max: 32px;
+}
+
+.dark {
+  --ui-color-primary-200: #c084fc;
+  --ui-color-primary-400: #a855f7;
+  --ui-color-primary-500: #9333ea;
+  --ui-color-accent-500: #d946ef;
+  --ui-color-neutral-50: #0f172a;
+  --ui-color-neutral-100: #1e293b;
+  --ui-color-neutral-200: #273248;
+  --ui-color-neutral-300: #2f3b54;
+  --ui-color-neutral-400: #4d6486;
+  --ui-color-neutral-500: #83a0c5;
+  --ui-color-neutral-600: #b6c3dc;
+  --ui-color-neutral-700: #d0d9eb;
+  --ui-color-neutral-800: #e5eaf5;
+  --ui-color-neutral-900: #f5f7fb;
+
+  --ui-shadow-sm: 0 1px 2px rgba(8, 145, 178, 0.25);
+  --ui-shadow-md: 0 12px 32px rgba(15, 23, 42, 0.4);
+  --ui-shadow-lg: 0 24px 56px rgba(15, 23, 42, 0.55);
+}

@@ -1,0 +1,64 @@
+@import "./tokens.css";
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: 270 30% 99%;
+  --foreground: 270 12% 9%;
+  --card: 0 0% 100%;
+  --card-foreground: 270 12% 9%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 270 12% 9%;
+  --primary: 271 91% 65%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 270 20% 96%;
+  --secondary-foreground: 270 12% 9%;
+  --muted: 270 20% 92%;
+  --muted-foreground: 270 8% 45%;
+  --accent: 292 84% 61%;
+  --accent-foreground: 0 0% 100%;
+  --destructive: 0 85% 60%;
+  --destructive-foreground: 0 0% 98%;
+  --border: 270 20% 90%;
+  --input: 270 20% 90%;
+  --ring: 271 91% 65%;
+  --radius: 16px;
+}
+
+.dark {
+  --background: 270 12% 8%;
+  --foreground: 0 0% 98%;
+  --card: 270 12% 11%;
+  --card-foreground: 0 0% 98%;
+  --popover: 270 12% 12%;
+  --popover-foreground: 0 0% 98%;
+  --primary: 271 91% 65%;
+  --primary-foreground: 0 0% 0%;
+  --secondary: 270 12% 15%;
+  --secondary-foreground: 0 0% 98%;
+  --muted: 270 12% 17%;
+  --muted-foreground: 270 12% 65%;
+  --accent: 292 84% 61%;
+  --accent-foreground: 0 0% 100%;
+  --destructive: 0 72% 51%;
+  --destructive-foreground: 0 0% 98%;
+  --border: 270 12% 21%;
+  --input: 270 12% 21%;
+  --ring: 271 91% 65%;
+}
+
+* {
+  @apply border-border;
+}
+
+body {
+  @apply bg-background text-foreground antialiased;
+}
+
+.glass {
+  background: rgba(255, 255, 255, 0.75);
+  backdrop-filter: blur(18px);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+}

@@ -1,0 +1,35 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Builds
+.next/
+out/
+dist/
+coverage/
+
+# Environment
+.env*
+!.env.example
+
+# Prisma
+*.db
+
+# Uploads & media
+uploads/
+apps/web/uploads/
+apps/web/public/uploads/
+apps/web/public/voice-translations/
+
+# Misc
+.DS_Store
+.DS_Store?
+pnpm-lock.yaml
+*.backup
+*.old
+*.tmp
+tmp/
+
+# IDE
+.vscode/
+.idea/

@@ -1,0 +1,384 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String       @id @default(cuid())
+  email        String       @unique
+  emailVerified DateTime?
+  name         String?
+  image        String?
+  plan         String      @default("free")
+  projects     Project[]
+  brandKit     BrandKit?
+  accounts     Account[]
+  sessions     Session[]
+  transcriptJobs TranscriptJob[]
+  voiceProfiles VoiceProfile[]
+  voiceRenders VoiceRender[]
+  agentEditorJobs AgentEditorJob[]
+  agentStyleProfiles AgentStyleProfile[]
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+}
+
+model Project {
+  id           String    @id @default(cuid())
+  userId       String
+  user         User      @relation(fields: [userId], references: [id])
+  title        String
+  topic        String?
+  sourceUrl    String?
+  script       Script?   @relation("ProjectScript")
+  assets       Asset[]
+  clips        Clip[]
+  exports      Export[]
+  agentEditorJobs AgentEditorJob[]
+  youtubeIngestJobs YouTubeIngestJob[]
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([userId])
+  @@index([userId, updatedAt])
+}
+
+model Script {
+  id        String   @id @default(cuid())
+  hooks     Json
+  body      String   @db.Text
+  tone      String?
+  project   Project? @relation("ProjectScript", fields: [projectId], references: [id])
+  projectId String?  @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Asset {
+  id                String                  @id @default(cuid())
+  projectId         String
+  project           Project                 @relation(fields: [projectId], references: [id])
+  type              String
+  path              String
+  storagePath       String
+  durationSec       Int?
+  transcript        String?                 @db.Text
+  sourceLanguage    String                  @default("en")
+  clips             Clip[]                  @relation("AssetClips")
+  translations      TranscriptTranslation[]
+  voiceTranslations VoiceTranslation[]
+  youtubeIngestJobs YouTubeIngestJob[]
+  createdAt         DateTime                @default(now())
+
+  @@index([projectId])
+  @@index([projectId, createdAt])
+}
+
+model Clip {
+  id                  String               @id @default(cuid())
+  projectId           String
+  project             Project              @relation(fields: [projectId], references: [id])
+  assetId             String?
+  asset               Asset?               @relation("AssetClips", fields: [assetId], references: [id])
+  startMs             Int
+  endMs               Int
+  title               String?
+  summary             String?              @db.Text
+  callToAction        String?
+  captionSrt          String?              @db.Text
+  captionStyle        Json?
+  previewPath         String?
+  thumbnail           String?
+  viralityScore       Int?
+  viralityFactors     Json?
+  order               Int                  @default(0)
+  captionTranslations CaptionTranslation[]
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+
+  @@index([projectId])
+  @@index([assetId])
+  @@index([projectId, assetId])
+  @@index([projectId, viralityScore(sort: Desc)])
+  @@index([projectId, order])
+}
+
+model Export {
+  id         String   @id @default(cuid())
+  projectId  String
+  project    Project  @relation(fields: [projectId], references: [id])
+  clipIds    Json
+  preset     String
+  outputPath String
+  storagePath String
+  status     String   @default("queued")
+  error      String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([projectId])
+  @@index([status])
+  @@index([projectId, status])
+}
+
+model BrandKit {
+  id           String  @id @default(cuid())
+  userId       String  @unique
+  user         User    @relation(fields: [userId], references: [id])
+  primaryHex   String  @default("#00A3FF")
+  fontFamily   String  @default("Inter")
+  logoPath     String?
+  logoStoragePath String?
+  captionStyle Json
+  watermark    Boolean @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model TranscriptJob {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  status      String   @default("processing")
+  sourceType  String
+  sourceUrl   String?
+  filePath    String?
+  fileUrl     String?
+  title       String?
+  durationSec Int?
+  transcript  String?  @db.Text
+  segments    Json?
+  error       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([userId])
+  @@index([status])
+  @@index([userId, status])
+}
+
+model VoiceProfile {
+  id                String         @id @default(cuid())
+  userId            String
+  user              User           @relation(fields: [userId], references: [id])
+  name              String
+  description       String?
+  providerVoiceId   String         @unique
+  samplePath        String?
+  sampleStoragePath String?
+  metadata          Json?
+  renders           VoiceRender[]
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  @@index([userId])
+}
+
+model VoiceRender {
+  id               String       @id @default(cuid())
+  userId           String
+  user             User         @relation(fields: [userId], references: [id])
+  voiceId          String
+  voice            VoiceProfile @relation(fields: [voiceId], references: [id])
+  text             String       @db.Text
+  audioPath        String
+  audioStoragePath String
+  durationSec      Int?
+  createdAt        DateTime     @default(now())
+
+  @@index([userId])
+  @@index([voiceId])
+  @@index([userId, voiceId])
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?  @db.Text
+  access_token      String?  @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?  @db.Text
+  session_state     String?
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+model AgentEditorJob {
+  id              String   @id @default(cuid())
+  clipId          String?
+  projectId       String
+  userId          String
+  status          String   @default("queued")
+  currentAgent    String?
+  progress        Json     @default("{}")
+  config          Json?
+  resultPath      String?
+  errorMessage    String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  completedAt     DateTime?
+
+  project         Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  assets          AgentAsset[]
+  logs            AgentExecutionLog[]
+
+  @@index([projectId])
+  @@index([userId])
+  @@index([status])
+  @@index([projectId, status])
+  @@index([userId, status])
+}
+
+model AgentAsset {
+  id        String   @id @default(cuid())
+  jobId     String
+  type      String
+  source    String
+  path      String
+  metadata  Json?
+  startMs   Int?
+  endMs     Int?
+  createdAt DateTime @default(now())
+
+  job       AgentEditorJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@index([jobId])
+  @@index([jobId, type])
+}
+
+model AgentStyleProfile {
+  id              String   @id @default(cuid())
+  userId          String
+  name            String
+  referenceVideos Json
+  styleConfig     Json?
+  isDefault       Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([userId, isDefault])
+}
+
+model AgentExecutionLog {
+  id         String   @id @default(cuid())
+  jobId      String
+  agentName  String
+  status     String
+  input      Json?
+  output     Json?
+  durationMs Int?
+  error      String?  @db.Text
+  createdAt  DateTime @default(now())
+
+  job        AgentEditorJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@index([jobId])
+  @@index([jobId, agentName])
+  @@index([jobId, status])
+}
+
+// Multi-Language Support Models
+
+model TranscriptTranslation {
+  id             String   @id @default(cuid())
+  assetId        String
+  asset          Asset    @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  language       String
+  transcript     String   @db.Text
+  segments       Json?
+  translatedFrom String
+  translatedAt   DateTime @default(now())
+
+  @@unique([assetId, language])
+  @@index([assetId])
+  @@index([language])
+  @@map("transcript_translations")
+}
+
+model CaptionTranslation {
+  id         String   @id @default(cuid())
+  clipId     String
+  clip       Clip     @relation(fields: [clipId], references: [id], onDelete: Cascade)
+  language   String
+  captionSrt String   @db.Text
+  createdAt  DateTime @default(now())
+
+  @@unique([clipId, language])
+  @@index([clipId])
+  @@index([language])
+  @@map("caption_translations")
+}
+
+model VoiceTranslation {
+  id             String   @id @default(cuid())
+  assetId        String
+  asset          Asset    @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  language       String
+  audioUrl       String
+  voiceId        String?
+  status         String   @default("queued")
+  translatedFrom String
+  processingTime Int?
+  error          String?  @db.Text
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([assetId, language])
+  @@index([assetId])
+  @@index([status])
+  @@index([language])
+  @@map("voice_translations")
+}
+
+model YouTubeIngestJob {
+  id             String   @id @default(cuid())
+  projectId      String
+  project        Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  sourceUrl      String
+  assetId        String?
+  asset          Asset?   @relation(fields: [assetId], references: [id], onDelete: SetNull)
+  status         String   @default("queued")
+  processingTime Int?
+  metadata       Json?
+  error          String?  @db.Text
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([projectId])
+  @@index([status])
+  @@index([assetId])
+  @@map("youtube_ingest_jobs")
+}

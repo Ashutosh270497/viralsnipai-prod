@@ -1,0 +1,19 @@
+{
+  "name": "clippers",
+  "private": true,
+  "packageManager": "pnpm@8.15.4",
+  "scripts": {
+    "dev": "pnpm --filter web dev",
+    "build": "pnpm --filter web build",
+    "start": "pnpm --filter web start",
+    "lint": "pnpm --filter web lint",
+    "format": "pnpm --filter web format",
+    "test": "pnpm --filter web test",
+    "seed": "pnpm --filter web seed",
+    "postinstall": "pnpm --filter web postinstall"
+  },
+  "dependencies": {
+    "inversify": "^7.10.4",
+    "reflect-metadata": "^0.2.2"
+  }
+}
