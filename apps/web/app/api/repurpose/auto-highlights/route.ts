@@ -9,8 +9,9 @@ import { GenerateAutoHighlightsUseCase } from "@/lib/application/use-cases/Gener
 import { ApiResponseBuilder, ErrorCodes } from "@/lib/api/response";
 import { AppError, withErrorHandling } from "@/lib/utils/error-handler";
 import { logger } from "@/lib/logger";
+import { HIGHLIGHT_MODEL_VALUES } from "@/lib/constants/repurpose";
 
-const HIGHLIGHT_MODELS = ["gemini-2.5-pro", "gemini-2.0-flash-exp", "gpt-5-mini", "gpt-4.1-mini"] as const;
+const HIGHLIGHT_MODELS = HIGHLIGHT_MODEL_VALUES;
 
 const schema = z.object({
   assetId: z.string(),

@@ -113,6 +113,10 @@ export interface DownloadResult {
   thumbnail?: string;
 }
 
+export interface DownloadProgressOptions {
+  onProgress?: (fraction: number) => Promise<void> | void;
+}
+
 const execFileAsync = promisify(execFile);
 
 interface YtDlpCandidate {
@@ -172,7 +176,12 @@ async function runYtDlp(args: string[]) {
   throw new Error("yt-dlp not found on PATH");
 }
 
-export async function downloadYouTubeVideo(url: string, projectId: string): Promise<DownloadResult> {
+export async function downloadYouTubeVideo(
+  url: string,
+  projectId: string,
+  options?: DownloadProgressOptions
+): Promise<DownloadResult> {
+  const onProgress = options?.onProgress;
   if (!ytdl.validateURL(url)) {
     throw new Error("Invalid YouTube URL");
   }
@@ -248,27 +257,52 @@ export async function downloadYouTubeVideo(url: string, projectId: string): Prom
   const relativePath = path.relative(uploadsDir, absolutePath);
   const publicPath = `/api/uploads/${relativePath}`;
 
+  // Primary: use yt-dlp for best quality (separate video+audio streams, merged)
+  // Fallback: use ytdl-core (limited to muxed streams, typically max 720p)
   let downloaded = false;
+
+  // Try yt-dlp first — downloads best video + best audio separately and merges
+  const tempOut = `${absolutePath}.download.mp4`;
   try {
-    const videoStream = ytdl(url, {
-      quality: "highest",
-      filter: "audioandvideo",
-      highWaterMark: 1 << 25,
-      requestOptions: {
-        headers: requestHeaders
-      }
-    });
-    await pipeline(videoStream, fs.createWriteStream(absolutePath));
+    if (onProgress) {
+      void onProgress(0.05);
+    }
+    await runYtDlp(buildYtDlpDownloadArgs(url, tempOut, cookiesPath, cookiesFromBrowser));
+    if (onProgress) {
+      void onProgress(0.85);
+    }
+    await fsp.rename(tempOut, absolutePath);
     downloaded = true;
-  } catch (primaryError) {
-    console.warn("ytdl download failed, attempting yt-dlp fallback", primaryError);
+  } catch (ytDlpError) {
+    console.warn("yt-dlp download failed, attempting ytdl-core fallback", ytDlpError);
+    // Clean up partial download
+    await fsp.unlink(tempOut).catch(() => null);
   }
 
+  // Fallback: ytdl-core (muxed streams only — lower quality but more portable)
   if (!downloaded) {
-    const tempOut = `${absolutePath}.download.mp4`;
     try {
-      await runYtDlp(buildYtDlpDownloadArgs(url, tempOut, cookiesPath, cookiesFromBrowser));
-      await fsp.rename(tempOut, absolutePath);
+      const videoStream = ytdl(url, {
+        quality: "highest",
+        filter: "audioandvideo",
+        highWaterMark: 1 << 25,
+        requestOptions: {
+          headers: requestHeaders
+        }
+      });
+      videoStream.on("progress", (_chunkLength, downloadedBytes, totalBytes) => {
+        if (!onProgress || !Number.isFinite(totalBytes) || totalBytes <= 0) {
+          return;
+        }
+        const fraction = Math.max(0, Math.min(1, downloadedBytes / totalBytes));
+        try {
+          void onProgress(fraction);
+        } catch {
+          // Never allow progress telemetry to break ingestion.
+        }
+      });
+      await pipeline(videoStream, fs.createWriteStream(absolutePath));
+      downloaded = true;
     } catch (fallbackError) {
       const needsCookies =
         fallbackError instanceof Error &&
@@ -279,7 +313,7 @@ export async function downloadYouTubeVideo(url: string, projectId: string): Prom
       const reason =
         fallbackError instanceof Error
           ? fallbackError.message
-          : "Unknown yt-dlp error. Ensure yt-dlp is installed and accessible via PATH or YT_DLP_PATH.";
+          : "Unknown error. Ensure yt-dlp is installed and accessible via PATH or YT_DLP_PATH.";
 
       const suggestedFix = needsCookies
         ? "This video is likely age-restricted or geo-blocked. Provide cookies by setting YT_DLP_COOKIES_PATH (Netscape cookie file) or YT_DLP_COOKIES_FROM_BROWSER (e.g. chrome, firefox)."

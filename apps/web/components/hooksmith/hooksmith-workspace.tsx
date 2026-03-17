@@ -6,7 +6,6 @@ import { Zap } from "lucide-react";
 import { HookList } from "@/components/hooksmith/hook-list";
 import { ScriptEditor } from "@/components/hooksmith/script-editor";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
@@ -250,30 +249,42 @@ export function HooksmithWorkspace({ projects, initialProjectId }: HooksmithWork
   }, []);
 
   return (
-    <div className="space-y-10 pb-16">
-      <div className="space-y-5">
-        <div className="flex items-center gap-4">
-          <div className="rounded-2xl bg-gradient-to-br from-violet-500/90 via-purple-500/90 to-fuchsia-500/90 p-4 shadow-sm">
-            <Zap className="h-7 w-7 text-white" />
-          </div>
-          <div className="space-y-1">
-            <h1 className="text-4xl font-bold tracking-tight text-foreground">Hooksmith</h1>
-            <p className="text-sm font-medium text-muted-foreground/80">AI-powered content strategy</p>
-          </div>
+    <div className="space-y-6 pb-16 animate-enter">
+      {/* ── Page header ─────────────────────────────────────────────────── */}
+      <div className="flex items-center gap-3">
+        <div
+          className="flex h-9 w-9 items-center justify-center rounded-lg shrink-0"
+          style={{
+            background: "linear-gradient(135deg, #10b981 0%, #34d399 100%)",
+            boxShadow: "0 0 14px hsl(263 72% 56% / 0.5)",
+          }}
+        >
+          <Zap className="h-4.5 w-4.5 text-white" />
+        </div>
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight text-foreground">Hooksmith</h1>
+          <p className="text-sm text-muted-foreground/70">AI-powered hook and script generation</p>
         </div>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-[400px_minmax(0,1fr)]">
-        <Card className="border-border/40 bg-card/50 backdrop-blur-sm shadow-sm rounded-3xl">
-          <CardHeader>
-            <CardTitle className="tracking-tight">Context</CardTitle>
-            <CardDescription className="text-muted-foreground/80">Set the topic, audience, tone, and target project.</CardDescription>
-          </CardHeader>
-        <CardContent className="space-y-5">
-          <div className="space-y-2.5">
-            <Label className="text-sm font-semibold tracking-tight">Project</Label>
+      {/* ── Main 2-col grid ─────────────────────────────────────────────── */}
+      <div className="grid gap-5 lg:grid-cols-[380px_minmax(0,1fr)]">
+
+        {/* ── LEFT: Context panel ─────────────────────────────────────────── */}
+        <div className="rounded-xl border border-border/50 bg-card p-6 space-y-5">
+          <div>
+            <h2 className="text-sm font-semibold text-foreground">Context</h2>
+            <p className="text-xs text-muted-foreground/60 mt-0.5">
+              Set the topic, audience, tone, and target project.
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground/60">
+              Project
+            </Label>
             <Select value={projectId} onValueChange={setProjectId}>
-              <SelectTrigger className="h-10 rounded-xl border-border/50 bg-background/50 transition-colors focus:border-violet-300 focus:ring-violet-200">
+              <SelectTrigger className="h-9 rounded-lg border-border/50 bg-background/60 text-sm">
                 <SelectValue placeholder="Select project" />
               </SelectTrigger>
               <SelectContent>
@@ -285,18 +296,22 @@ export function HooksmithWorkspace({ projects, initialProjectId }: HooksmithWork
               </SelectContent>
             </Select>
           </div>
-          <div className="space-y-2.5">
-            <Label htmlFor="topic" className="text-sm font-semibold tracking-tight">Topic</Label>
+
+          <div className="space-y-2">
+            <Label htmlFor="topic" className="text-xs font-semibold uppercase tracking-wide text-muted-foreground/60">
+              Topic
+            </Label>
             <Input
               id="topic"
               value={topic}
               placeholder="Repurposing keynote speeches"
               onChange={(event) => setTopic(event.target.value)}
-              className="h-10 rounded-xl border-border/50 bg-background/50 transition-colors focus:border-violet-300 focus:ring-violet-200"
+              className="h-9 rounded-lg border-border/50 bg-background/60 text-sm"
             />
           </div>
-          <div className="space-y-2.5">
-            <Label htmlFor="sourceUrl" optional className="text-sm font-semibold tracking-tight">
+
+          <div className="space-y-2">
+            <Label htmlFor="sourceUrl" optional className="text-xs font-semibold uppercase tracking-wide text-muted-foreground/60">
               Source URL
             </Label>
             <Textarea
@@ -305,23 +320,29 @@ export function HooksmithWorkspace({ projects, initialProjectId }: HooksmithWork
               placeholder="https://youtu.be/example"
               onChange={(event) => setSourceUrl(event.target.value)}
               rows={2}
-              className="rounded-xl border-border/50 bg-background/50 transition-colors focus:border-violet-300 focus:ring-violet-200"
+              className="rounded-lg border-border/50 bg-background/60 text-sm resize-none"
             />
           </div>
-          <div className="rounded-2xl border border-border/30 bg-gradient-to-br from-slate-50/50 to-slate-100/30 dark:from-slate-900/30 dark:to-slate-800/20 p-4 shadow-sm space-y-4">
-            <div className="space-y-2">
-              <Label className="text-xs font-semibold uppercase tracking-wide">Audience</Label>
+
+          {/* Audience + Tone block */}
+          <div className="rounded-lg border border-border/30 bg-white/[0.02] p-4 space-y-3">
+            <div className="space-y-1.5">
+              <Label className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/50">
+                Audience
+              </Label>
               <Input
                 value={audience}
                 onChange={(event) => setAudience(event.target.value)}
                 placeholder="Marketing leads"
-                className="h-9 rounded-lg border-border/50 bg-background/80 text-sm"
+                className="h-8 rounded-md border-border/40 bg-background/60 text-sm"
               />
             </div>
-            <div className="space-y-2">
-              <Label className="text-xs font-semibold uppercase tracking-wide">Tone</Label>
+            <div className="space-y-1.5">
+              <Label className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/50">
+                Tone
+              </Label>
               <Select value={tone} onValueChange={setTone}>
-                <SelectTrigger className="h-9 rounded-lg border-border/50 bg-background/80 text-sm">
+                <SelectTrigger className="h-8 rounded-md border-border/40 bg-background/60 text-sm">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -334,56 +355,62 @@ export function HooksmithWorkspace({ projects, initialProjectId }: HooksmithWork
               </Select>
             </div>
           </div>
-          <div className="flex flex-col gap-3">
+
+          {/* CTA buttons */}
+          <div className="space-y-3">
             <div className="space-y-2">
               <Button
+                variant="glow"
                 onClick={generateHooks}
                 disabled={isGeneratingHooks}
-                className="w-full h-10 text-sm font-semibold rounded-xl bg-gradient-to-r from-violet-600 via-purple-600 to-fuchsia-600 hover:from-violet-700 hover:via-purple-700 hover:to-fuchsia-700 shadow-md hover:shadow-lg transition-all"
+                className="w-full"
               >
+                <Zap className="h-3.5 w-3.5 mr-1.5" />
                 {isGeneratingHooks || hookProgress > 0
-                  ? `Generating... ${Math.round(Math.min(hookProgress, 100))}%`
-                  : "Generate hooks"}
+                  ? `Generating… ${Math.round(Math.min(hookProgress, 100))}%`
+                  : "Generate Hooks"}
               </Button>
               {(isGeneratingHooks || hookProgress > 0) && (
-                <div className="space-y-1 rounded-xl border border-violet-200/40 bg-violet-50/60 dark:border-violet-800/40 dark:bg-violet-950/30 p-3 shadow-sm">
-                  <Progress value={hookProgress} className="h-1.5" />
-                  <div className="text-right text-xs font-medium text-violet-700 dark:text-violet-300">
+                <div className="rounded-lg border border-primary/20 bg-primary/[0.05] p-3 space-y-1.5">
+                  <Progress value={hookProgress} className="h-1" />
+                  <p className="text-right text-[10px] font-semibold text-primary/80">
                     {Math.round(Math.min(hookProgress, 100))}%
-                  </div>
+                  </p>
                 </div>
               )}
             </div>
+
             <div className="space-y-2">
               <Button
                 variant="outline"
                 onClick={() => generateScript()}
                 disabled={isGeneratingScript}
-                className="w-full h-10 text-sm font-semibold rounded-xl border-violet-300 text-violet-700 hover:bg-violet-50 dark:border-violet-700 dark:text-violet-300 dark:hover:bg-violet-950/50"
+                className="w-full"
               >
                 {isGeneratingScript || scriptProgress > 0
-                  ? `Drafting script... ${Math.round(Math.min(scriptProgress, 100))}%`
-                  : "Generate script"}
+                  ? `Drafting script… ${Math.round(Math.min(scriptProgress, 100))}%`
+                  : "Generate Script"}
               </Button>
               {(isGeneratingScript || scriptProgress > 0) && (
-                <div className="space-y-1 rounded-xl border border-violet-200/40 bg-violet-50/60 dark:border-violet-800/40 dark:bg-violet-950/30 p-3 shadow-sm">
-                  <Progress value={scriptProgress} className="h-1.5" />
-                  <div className="text-right text-xs font-medium text-violet-700 dark:text-violet-300">
+                <div className="rounded-lg border border-primary/20 bg-primary/[0.05] p-3 space-y-1.5">
+                  <Progress value={scriptProgress} className="h-1" />
+                  <p className="text-right text-[10px] font-semibold text-primary/80">
                     {Math.round(Math.min(scriptProgress, 100))}%
-                  </div>
+                  </p>
                 </div>
               )}
             </div>
           </div>
-        </CardContent>
-      </Card>
-      <div className="space-y-6">
-        <Card className="border-border/40 bg-card/50 backdrop-blur-sm shadow-sm rounded-3xl">
-          <CardHeader>
-            <CardTitle className="tracking-tight">Hooks</CardTitle>
-            <CardDescription className="text-muted-foreground/80">Pick a hook to expand into a 3-beat script.</CardDescription>
-          </CardHeader>
-          <CardContent>
+        </div>
+
+        {/* ── RIGHT: Output panels ─────────────────────────────────────────── */}
+        <div className="space-y-5">
+          {/* Hooks */}
+          <div className="rounded-xl border border-border/50 bg-card p-6">
+            <h2 className="text-sm font-semibold text-foreground">Hooks</h2>
+            <p className="text-xs text-muted-foreground/60 mt-0.5 mb-4">
+              Pick a hook to expand into a 3-beat script.
+            </p>
             <HookList
               hooks={hooks}
               selectedHook={selectedHook}
@@ -392,26 +419,28 @@ export function HooksmithWorkspace({ projects, initialProjectId }: HooksmithWork
                 void generateScript(hook);
               }}
             />
-          </CardContent>
-        </Card>
-        <Card className="border-border/40 bg-card/50 backdrop-blur-sm shadow-sm rounded-3xl">
-          <CardHeader>
-            <CardTitle className="tracking-tight">Script</CardTitle>
-            <CardDescription className="text-muted-foreground/80">Edit before saving to your project.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
+          </div>
+
+          {/* Script */}
+          <div className="rounded-xl border border-border/50 bg-card p-6 space-y-4">
+            <div>
+              <h2 className="text-sm font-semibold text-foreground">Script</h2>
+              <p className="text-xs text-muted-foreground/60 mt-0.5">
+                Edit before saving to your project.
+              </p>
+            </div>
             <ScriptEditor value={scriptBody} onChange={setScriptBody} />
             <Button
+              variant="glow"
               onClick={saveScript}
               disabled={isSaving}
-              className="h-10 text-sm font-semibold rounded-xl bg-gradient-to-r from-violet-600 via-purple-600 to-fuchsia-600 hover:from-violet-700 hover:via-purple-700 hover:to-fuchsia-700 shadow-md hover:shadow-lg transition-all"
+              size="sm"
             >
-              {isSaving ? "Saving..." : "Save script"}
+              {isSaving ? "Saving…" : "Save Script"}
             </Button>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       </div>
-    </div>
     </div>
   );
 }

@@ -25,6 +25,13 @@ export interface IngestYouTubeVideoInput {
   projectId: string;
   sourceUrl: string;
   userId: string;
+  onProgress?: (update: IngestProgressUpdate) => Promise<void> | void;
+}
+
+export interface IngestProgressUpdate {
+  phase: "validating" | "downloading" | "transcribing" | "saving" | "completed";
+  progress: number;
+  message?: string;
 }
 
 export interface IngestYouTubeVideoOutput {
@@ -46,7 +53,15 @@ export class IngestYouTubeVideoUseCase {
   ) {}
 
   async execute(input: IngestYouTubeVideoInput): Promise<IngestYouTubeVideoOutput> {
-    const { projectId, sourceUrl, userId } = input;
+    const { projectId, sourceUrl, userId, onProgress } = input;
+
+    const reportProgress = async (update: IngestProgressUpdate) => {
+      try {
+        await onProgress?.(update);
+      } catch (error) {
+        logger.warn("YouTube ingest progress callback failed", { error, projectId, userId });
+      }
+    };
 
     logger.info('Starting YouTube video ingestion', {
       projectId,
@@ -55,6 +70,8 @@ export class IngestYouTubeVideoUseCase {
     });
 
     // Step 1: Validate project and user permissions
+    await reportProgress({ phase: "validating", progress: 8, message: "Validating project access" });
+
     const project = await this.projectRepo.findById(projectId);
     if (!project) {
       throw AppError.notFound('Project not found');
@@ -65,9 +82,21 @@ export class IngestYouTubeVideoUseCase {
     }
 
     // Step 2: Download YouTube video
+    await reportProgress({ phase: "downloading", progress: 20, message: "Downloading source video" });
+
     logger.info('Downloading YouTube video', { sourceUrl });
 
-    const downloadResult = await this.youtubeDownloader.downloadVideo(sourceUrl, projectId);
+    const downloadResult = await this.youtubeDownloader.downloadVideo(sourceUrl, projectId, {
+      onProgress: async (fraction) => {
+        const normalized = Math.max(0, Math.min(1, fraction));
+        const progress = Math.round(20 + normalized * 45); // 20 → 65
+        await reportProgress({
+          phase: "downloading",
+          progress,
+          message: `Downloading source video (${Math.round(normalized * 100)}%)`,
+        });
+      },
+    });
 
     logger.info('YouTube video downloaded', {
       filePath: downloadResult.filePath,
@@ -76,6 +105,8 @@ export class IngestYouTubeVideoUseCase {
     });
 
     // Step 3: Transcribe video
+    await reportProgress({ phase: "transcribing", progress: 72, message: "Transcribing audio" });
+
     logger.info('Transcribing video', { filePath: downloadResult.filePath });
 
     const transcriptionResult = await this.transcriptionService.getOrCreateTranscription(
@@ -91,6 +122,8 @@ export class IngestYouTubeVideoUseCase {
     });
 
     // Step 4: Create asset with transcript
+    await reportProgress({ phase: "saving", progress: 90, message: "Saving transcript & asset" });
+
     const asset = await this.assetRepo.create({
       projectId: project.id,
       type: 'video',
@@ -107,13 +140,15 @@ export class IngestYouTubeVideoUseCase {
       updatedAt: new Date(),
       topic: project.topic || downloadResult.title || project.title,
       sourceUrl: sourceUrl,
-    } as any);
+    });
 
     logger.info('YouTube video ingestion completed', {
       projectId,
       assetId: asset.id,
       durationSec: downloadResult.durationSec,
     });
+
+    await reportProgress({ phase: "completed", progress: 98, message: "Finalizing ingest" });
 
     return {
       asset,

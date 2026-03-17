@@ -8,6 +8,8 @@
 
 import type { Clip } from './clip.types';
 
+export type ExportStatus = 'queued' | 'processing' | 'done' | 'failed';
+
 /**
  * Project interface
  */
@@ -46,14 +48,15 @@ export interface Asset {
 export interface ExportRecord {
   id: string;
   projectId: string;
-  clipId?: string | null;
+  clipIds: string[];
   preset: string;
-  status: 'pending' | 'processing' | 'completed' | 'failed';
-  progress?: number;
-  downloadUrl?: string | null;
+  includeCaptions?: boolean;
+  status: ExportStatus | string;
+  outputPath?: string;
+  storagePath?: string;
   error?: string | null;
   createdAt: string;
-  completedAt?: string | null;
+  updatedAt?: string;
 }
 
 /**

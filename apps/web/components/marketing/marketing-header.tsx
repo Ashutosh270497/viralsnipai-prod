@@ -51,7 +51,7 @@ export function MarketingHeader() {
       <div className="mx-auto flex w-full max-w-6xl items-center justify-between gap-4 py-4">
         <Link href="/" className="flex items-center gap-2 text-base font-semibold">
           <Logo className="h-6 w-6" />
-          Clippers
+          ViralSnipAI
         </Link>
         <nav className="hidden items-center gap-6 text-sm font-medium text-muted-foreground md:flex" aria-label="Primary">
           {NAV_LINKS.map((link) => (
@@ -67,7 +67,7 @@ export function MarketingHeader() {
             asChild
             onClick={() => trackEvent({ name: "cta_try_free", payload: { source: "header" } })}
           >
-            <Link href="/signin">Try Free</Link>
+            <Link href="/signup">Try Free</Link>
           </Button>
         </div>
         <div className="flex items-center gap-2 md:hidden">
@@ -106,7 +106,7 @@ export function MarketingHeader() {
               asChild
               onClick={() => trackEvent({ name: "cta_try_free", payload: { source: "header_mobile" } })}
             >
-              <Link href="/signin" onClick={() => setIsMenuOpen(false)}>
+              <Link href="/signup" onClick={() => setIsMenuOpen(false)}>
                 Try Free
               </Link>
             </Button>

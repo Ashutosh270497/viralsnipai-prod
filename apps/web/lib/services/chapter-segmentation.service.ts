@@ -87,7 +87,7 @@ class ChapterSegmentationService {
       return response;
 
     } catch (error) {
-      logger.error('Failed to segment chapters', error);
+      logger.error('Failed to segment chapters', error as Error);
       return this.getFallbackSegmentation(durationMs);
     }
   }
@@ -235,7 +235,7 @@ Analyze this transcript and break it into 3-8 logical chapters. Each chapter sho
       return result;
 
     } catch (error) {
-      logger.error('Gemini API call failed', error);
+      logger.error('Gemini API call failed', error as Error);
       return null;
     }
   }

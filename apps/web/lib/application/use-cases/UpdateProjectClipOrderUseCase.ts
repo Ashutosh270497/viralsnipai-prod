@@ -83,7 +83,7 @@ export class UpdateProjectClipOrderUseCase {
       clipIds.map((clipId, index) =>
         this.clipRepo.update(clipId, {
           order: index,
-        } as any)
+        })
       )
     );
 
@@ -95,7 +95,7 @@ export class UpdateProjectClipOrderUseCase {
     // Step 4: Update project timestamp
     await this.projectRepo.update(projectId, {
       updatedAt: new Date(),
-    } as any);
+    });
 
     return {
       success: true,

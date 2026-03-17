@@ -14,6 +14,35 @@ model User {
   name         String?
   image        String?
   plan         String      @default("free")
+  referralCode String?     @unique
+  referredBy   String?
+  referralCreditGrantedAt DateTime?
+
+  // YouTube Creator Fields
+  youtubeChannelUrl String?
+  subscriberCount   Int?      @default(0)
+  selectedNiche     String?
+  nicheData         Json?
+  onboardingCompleted Boolean @default(false)
+  subscriptionTier  String    @default("free") // 'free', 'starter', 'creator', 'studio'
+  subscriptionStatus String   @default("active")
+  stripeCustomerId  String?   // Legacy placeholder from pre-Razorpay billing model
+  billingProvider   String    @default("razorpay")
+  razorpayCustomerId String?
+  razorpaySubscriptionId String?
+  billingCycle      String    @default("monthly")
+  subscriptionCurrentStart DateTime?
+  subscriptionCurrentEnd DateTime?
+  subscriptionCancelAtPeriodEnd Boolean @default(false)
+  creditsRemaining  Int       @default(5)
+
+  // Authentication & Onboarding Fields
+  password          String?    // Optional for OAuth users
+  goalSelection     String?    // 'start_channel', 'grow_channel', 'monetization', 'professional'
+  nicheInterests    String[]   @default([]) // Array of selected niches
+  resetToken        String?
+  resetTokenExpiry  DateTime?
+
   projects     Project[]
   brandKit     BrandKit?
   accounts     Account[]
@@ -21,8 +50,50 @@ model User {
   transcriptJobs TranscriptJob[]
   voiceProfiles VoiceProfile[]
   voiceRenders VoiceRender[]
-  agentEditorJobs AgentEditorJob[]
-  agentStyleProfiles AgentStyleProfile[]
+
+  // YouTube Creator Relations
+  contentIdeas    ContentIdea[]
+  contentCalendars ContentCalendar[]
+  generatedScripts GeneratedScript[]
+  generatedTitles GeneratedTitle[]
+  thumbnails      Thumbnail[]
+  usageLogs       UsageLog[]
+  scriptVersions  ScriptVersion[]
+  scriptShares    ScriptShare[]    @relation(name: "ScriptSharedBy")
+  scriptComments  ScriptComment[]
+  scriptAudios    ScriptAudio[]
+  subscription    Subscription?
+  usageTracking   UsageTracking[]
+
+  // Keyword Research Relations
+  keywordResearches KeywordResearch[]
+  savedKeywords     SavedKeyword[]
+
+  // Competitor Tracking Relations
+  competitors       Competitor[]
+  competitorAlerts  CompetitorAlert[]
+
+  // SnipRadar Relations
+  xAccounts         XAccount[]
+  xTrackedAccounts  XTrackedAccount[]
+  tweetDrafts       TweetDraft[]
+  xSchedulerRuns    XSchedulerRun[]
+  xEngagementOpportunities XEngagementOpportunity[]
+  xAutoDmAutomations XAutoDmAutomation[]
+  xAutoDmDeliveries XAutoDmDelivery[]
+  xStyleProfile     XStyleProfile?
+  xProfileAuditSnapshots XProfileAuditSnapshot[]
+  xResearchDocuments XResearchDocument[]
+  xResearchIndexRuns XResearchIndexRun[]
+  xResearchInboxItems XResearchInboxItem[]
+  xRelationshipLeads XRelationshipLead[]
+  xRelationshipInteractions XRelationshipInteraction[]
+  snipRadarApiKeys SnipRadarApiKey[]
+  snipRadarWebhookSubscriptions SnipRadarWebhookSubscription[]
+  snipRadarWebhookEvents SnipRadarWebhookEvent[]
+  snipRadarChatSessions SnipRadarChatSession[]
+  razorpayWebhookEvents RazorpayWebhookEvent[]
+
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt
 }
@@ -38,7 +109,6 @@ model Project {
   assets       Asset[]
   clips        Clip[]
   exports      Export[]
-  agentEditorJobs AgentEditorJob[]
   youtubeIngestJobs YouTubeIngestJob[]
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
@@ -113,6 +183,7 @@ model Export {
   project    Project  @relation(fields: [projectId], references: [id])
   clipIds    Json
   preset     String
+  includeCaptions Boolean @default(false)
   outputPath String
   storagePath String
   status     String   @default("queued")
@@ -195,6 +266,63 @@ model VoiceRender {
   @@index([userId, voiceId])
 }
 
+model RazorpayWebhookEvent {
+  id                     String   @id @default(cuid())
+  providerEventId        String   @unique
+  eventType              String
+  userId                 String?
+  user                   User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  razorpaySubscriptionId String?
+  payload                Json
+  processedAt            DateTime?
+  createdAt              DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@index([razorpaySubscriptionId, createdAt])
+  @@map("razorpay_webhook_events")
+}
+
+model Subscription {
+  id                     String   @id @default(cuid())
+  userId                 String   @unique
+  user                   User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  planId                 String   @default("free")
+  status                 String   @default("active")
+  billingRegion          String   @default("IN")
+  razorpaySubscriptionId String?  @unique
+  razorpayCustomerId     String?
+  stripeSubscriptionId   String?  @unique
+  stripeCustomerId       String?
+  currentPeriodStart     DateTime?
+  currentPeriodEnd       DateTime?
+  cancelAtPeriodEnd      Boolean  @default(false)
+  promoCode              String?
+  freeMonthsCredit       Int      @default(0)
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  @@index([planId, status])
+  @@index([billingRegion, status])
+  @@map("subscriptions")
+}
+
+model UsageTracking {
+  id              String   @id @default(cuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  month           String
+  viralFetches    Int      @default(0)
+  hookGenerations Int      @default(0)
+  scheduledPosts  Int      @default(0)
+  engagementOpps  Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([userId, month])
+  @@index([month])
+  @@map("usage_tracking")
+}
+
 model Account {
   id                String  @id @default(cuid())
   userId            String
@@ -230,84 +358,6 @@ model VerificationToken {
   expires    DateTime
 
   @@unique([identifier, token])
-}
-
-model AgentEditorJob {
-  id              String   @id @default(cuid())
-  clipId          String?
-  projectId       String
-  userId          String
-  status          String   @default("queued")
-  currentAgent    String?
-  progress        Json     @default("{}")
-  config          Json?
-  resultPath      String?
-  errorMessage    String?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  completedAt     DateTime?
-
-  project         Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  assets          AgentAsset[]
-  logs            AgentExecutionLog[]
-
-  @@index([projectId])
-  @@index([userId])
-  @@index([status])
-  @@index([projectId, status])
-  @@index([userId, status])
-}
-
-model AgentAsset {
-  id        String   @id @default(cuid())
-  jobId     String
-  type      String
-  source    String
-  path      String
-  metadata  Json?
-  startMs   Int?
-  endMs     Int?
-  createdAt DateTime @default(now())
-
-  job       AgentEditorJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
-
-  @@index([jobId])
-  @@index([jobId, type])
-}
-
-model AgentStyleProfile {
-  id              String   @id @default(cuid())
-  userId          String
-  name            String
-  referenceVideos Json
-  styleConfig     Json?
-  isDefault       Boolean  @default(false)
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-
-  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([userId])
-  @@index([userId, isDefault])
-}
-
-model AgentExecutionLog {
-  id         String   @id @default(cuid())
-  jobId      String
-  agentName  String
-  status     String
-  input      Json?
-  output     Json?
-  durationMs Int?
-  error      String?  @db.Text
-  createdAt  DateTime @default(now())
-
-  job        AgentEditorJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
-
-  @@index([jobId])
-  @@index([jobId, agentName])
-  @@index([jobId, status])
 }
 
 // Multi-Language Support Models
@@ -381,4 +431,1150 @@ model YouTubeIngestJob {
   @@index([status])
   @@index([assetId])
   @@map("youtube_ingest_jobs")
+}
+
+// ============================================
+// YouTube Creator Platform Models
+// ============================================
+
+model Niche {
+  id                    String   @id @default(cuid())
+  name                  String
+  category              String   // 'technology', 'lifestyle', 'education', etc.
+  description           String?  @db.Text
+  competitionLevel      String   // 'low', 'medium', 'high'
+  monetizationPotential Int      // 1-10 scale
+  averageCpm            Decimal? @db.Decimal(10, 2)
+  averageViewsPerVideo  Int?
+  growthTrend           String   // 'rising', 'stable', 'declining'
+  exampleChannels       Json?    // [{name, url, subscribers}]
+  keywords              Json?    // [keyword1, keyword2, ...]
+  targetAudience        String?  @db.Text
+  contentTypes          Json?    // ['tutorial', 'review', 'vlog']
+  createdAt             DateTime @default(now())
+
+  @@map("niches")
+}
+
+model ContentIdea {
+  id              String   @id @default(cuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  calendarId      String?
+  calendar        ContentCalendar? @relation(fields: [calendarId], references: [id], onDelete: SetNull)
+  title           String
+  description     String?  @db.Text
+  niche           String?
+  videoType       String?  // 'short', 'long-form', 'live'
+  viralityScore   Int?     // 1-100
+  keywords        Json?    // ['keyword1', 'keyword2']
+  searchVolume    Int?
+  competitionScore Int?
+  estimatedViews  Int?
+  scheduledDate   DateTime?
+  status          String   @default("idea") // 'idea', 'scripted', 'published'
+  aiReasoning     String?  @db.Text // Why this idea is good
+  contentCategory String?  // 'trending', 'evergreen', 'experimental'
+  hookSuggestions Json?    // Array of hook ideas
+  thumbnailIdeas  Json?    // Array of thumbnail concepts
+
+  generatedScripts GeneratedScript[]
+  generatedTitles GeneratedTitle[]
+  thumbnails      Thumbnail[]
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([userId])
+  @@index([calendarId])
+  @@index([scheduledDate])
+  @@index([userId, scheduledDate])
+  @@map("content_ideas")
+}
+
+model ContentCalendar {
+  id              String   @id @default(cuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  niche           String
+  startDate       DateTime
+  endDate         DateTime
+  durationDays    Int      // 7, 14, or 30
+  generationStatus String  @default("pending") // 'pending', 'generating', 'completed', 'failed'
+  metadata        Json?    // Additional generation params
+
+  ideas           ContentIdea[]
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([userId])
+  @@index([userId, createdAt])
+  @@map("content_calendars")
+}
+
+model GeneratedScript {
+  id               String                @id @default(cuid())
+  userId           String
+  user             User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  contentIdeaId    String?
+  contentIdea      ContentIdea?          @relation(fields: [contentIdeaId], references: [id], onDelete: Cascade)
+  title            String
+  hook             String?               @db.Text
+  intro            String?               @db.Text
+  mainContent      String?               @db.Text
+  conclusion       String?               @db.Text
+  cta              String?               @db.Text
+  fullScript       String?               @db.Text
+  durationEstimate Int?                  // in seconds
+  retentionTips    Json?
+  keywords         Json?                 // SEO keywords
+  scriptStyle      String?
+  tone             String?
+  createdAt        DateTime              @default(now())
+  updatedAt        DateTime              @updatedAt
+  versions         ScriptVersion[]
+  shares           ScriptShare[]
+  comments         ScriptComment[]
+  audioFiles       ScriptAudio[]
+
+  @@index([userId])
+  @@index([contentIdeaId])
+  @@index([userId, contentIdeaId])
+  @@map("generated_scripts")
+}
+
+model ScriptVersion {
+  id               String          @id @default(cuid())
+  scriptId         String
+  script           GeneratedScript @relation(fields: [scriptId], references: [id], onDelete: Cascade)
+  userId           String
+  user             User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  versionNumber    Int
+  title            String
+  hook             String?         @db.Text
+  intro            String?         @db.Text
+  mainContent      String?         @db.Text
+  conclusion       String?         @db.Text
+  cta              String?         @db.Text
+  fullScript       String?         @db.Text
+  durationEstimate Int?
+  changeDescription String?        @db.Text
+  createdAt        DateTime        @default(now())
+
+  @@index([scriptId])
+  @@index([userId])
+  @@map("script_versions")
+}
+
+model ScriptShare {
+  id               String          @id @default(cuid())
+  scriptId         String
+  script           GeneratedScript @relation(fields: [scriptId], references: [id], onDelete: Cascade)
+  sharedBy         String
+  sharedByUser     User            @relation(name: "ScriptSharedBy", fields: [sharedBy], references: [id], onDelete: Cascade)
+  sharedWith       String?         // Email or user ID
+  shareToken       String          @unique
+  accessLevel      String          @default("view") // 'view' or 'edit'
+  expiresAt        DateTime?
+  createdAt        DateTime        @default(now())
+
+  @@index([scriptId])
+  @@index([sharedBy])
+  @@index([shareToken])
+  @@map("script_shares")
+}
+
+model ScriptComment {
+  id               String          @id @default(cuid())
+  scriptId         String
+  script           GeneratedScript @relation(fields: [scriptId], references: [id], onDelete: Cascade)
+  userId           String
+  user             User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  section          String?         // 'hook', 'intro', 'main', 'conclusion', 'cta'
+  content          String          @db.Text
+  resolved         Boolean         @default(false)
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  @@index([scriptId])
+  @@index([userId])
+  @@map("script_comments")
+}
+
+model GeneratedTitle {
+  id                      String       @id @default(cuid())
+  userId                  String
+  user                    User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  contentIdeaId           String?
+  contentIdea             ContentIdea? @relation(fields: [contentIdeaId], references: [id], onDelete: Cascade)
+  generationBatchId       String       // Groups titles from same generation
+
+  // Title content
+  title                   String       @db.Text
+  videoTopic              String
+  keywords                Json         // Array of target keywords
+  targetAudience          String
+  titleStyle              String       // 'how-to', 'listicle', 'curiosity', 'question', 'authority', 'mixed'
+  maxLength               Int          @default(70)
+  characterLength         Int
+
+  // Scoring (all 1-100 scale for consistency)
+  ctrScore                Int?         // Overall predicted CTR
+  keywordOptimizationScore Int?        // How well keywords are placed
+  curiosityScore          Int?         // Curiosity factor
+  clarityScore            Int?         // Clarity and understandability
+  powerWordCount          Int?         // Number of power words used
+  overallRank             Int?         // 1-10 ranking within batch
+
+  // Analysis
+  reasoning               String?      @db.Text  // Why this title will work
+  keywordOptimized        Boolean      @default(false)
+  lengthOptimal           Boolean      @default(false)
+  titleType               String?      // More specific: 'curiosity', 'how-to', 'listicle', etc.
+
+  // Selection
+  isFavorite              Boolean      @default(false)
+  isPrimary               Boolean      @default(false)  // Selected as main title
+
+  createdAt               DateTime     @default(now())
+
+  @@index([userId])
+  @@index([contentIdeaId])
+  @@index([generationBatchId])
+  @@index([userId, contentIdeaId])
+  @@index([userId, createdAt])
+  @@map("generated_titles")
+}
+
+model Thumbnail {
+  id               String       @id @default(cuid())
+  userId           String
+  user             User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  contentIdeaId    String?
+  contentIdea      ContentIdea? @relation(fields: [contentIdeaId], references: [id], onDelete: Cascade)
+  generationBatchId String      // Groups thumbnails from same generation
+
+  // Source info
+  videoTitle       String
+  niche            String?
+
+  // Generation settings
+  thumbnailStyle   String       // 'bold', 'minimal', 'dramatic', 'informative', 'meme'
+  mainSubject      String       // 'person', 'product', 'text', 'abstract'
+  colorScheme      String       // 'vibrant', 'dark', 'bright', 'professional', 'auto'
+  includeText      Boolean      @default(false)
+  textOverlay      String?      // Max 3-5 words
+  faceExpression   String?      // 'excited', 'shocked', 'serious', 'happy'
+  additionalElements Json?      // Array of elements: ["arrows", "circles", "emojis"]
+
+  // Generated assets
+  imageUrl         String       // Public URL from Supabase Storage
+  storagePath      String       // Internal storage path
+  thumbnailPrompt  String       @db.Text // DALL-E prompt used
+  aiModel          String       @default("dall-e-3") // 'dall-e-3', 'sdxl'
+
+  // AI Analysis scores (1-100 scale)
+  ctrScore         Int?         // Predicted CTR
+  contrastScore    Int?         // How well it stands out
+  mobileReadability Int?        // Can you see it on phone
+  emotionalImpact  Int?         // Does it evoke emotion
+  nicheAlignment   Int?         // Fits niche expectations
+  overallRank      Int?         // 1-5 ranking within batch
+
+  // Analysis feedback
+  improvements     Json?        // Array of improvement suggestions
+  reasoning        String?      @db.Text // Why this thumbnail will work
+
+  // User actions
+  isPrimary        Boolean      @default(false) // Selected as main thumbnail
+  isFavorite       Boolean      @default(false)
+
+  createdAt        DateTime     @default(now())
+
+  @@index([userId])
+  @@index([contentIdeaId])
+  @@index([generationBatchId])
+  @@index([userId, contentIdeaId])
+  @@index([userId, createdAt])
+  @@map("thumbnails")
+}
+
+model ScriptAudio {
+  id               String          @id @default(cuid())
+  scriptId         String
+  script           GeneratedScript @relation(fields: [scriptId], references: [id], onDelete: Cascade)
+  userId           String
+  user             User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  voiceId          String
+  voiceModel       String
+  audioUrl         String
+  audioStoragePath String
+  durationSec      Int
+  format           String          @default("mp3")
+  fileSize         Int
+  section          String?
+  language         String?
+  sourceLanguage   String?
+  isTranslated     Boolean         @default(false)
+  createdAt        DateTime        @default(now())
+
+  @@index([scriptId])
+  @@index([userId])
+  @@index([scriptId, createdAt])
+  @@index([userId, createdAt])
+  @@index([language])
+  @@map("script_audios")
+}
+
+model UsageLog {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  feature      String   // 'niche_discovery', 'content_idea', 'script', 'title', 'thumbnail'
+  creditsUsed  Int      @default(1)
+  metadata     Json?
+  createdAt    DateTime @default(now())
+
+  @@index([userId])
+  @@index([feature])
+  @@index([userId, createdAt])
+  @@map("usage_logs")
+}
+
+// ============================================
+// KEYWORD RESEARCH MODELS (Phase 1)
+// ============================================
+
+model KeywordResearch {
+  id                String   @id @default(cuid())
+  userId            String
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  keyword           String
+  searchVolume      Int      // Monthly searches (estimated)
+  competition       Int      // 1-100 score
+  difficulty        String   // 'easy' | 'medium' | 'hard'
+  trendDirection    String   // 'rising' | 'stable' | 'falling'
+
+  // Analytics
+  avgViews          Int?     // Average views for top videos
+  avgLikes          Int?
+  avgComments       Int?
+  estimatedCPM      Float?   // Estimated revenue per 1000 views
+
+  // Metadata
+  relatedKeywords   Json?    // Array of related keywords
+  topVideos         Json?    // Top 10 video data
+  searchIntent      String?  // 'informational' | 'transactional' | 'navigational'
+  lastUpdated       DateTime @default(now())
+
+  // User actions
+  isSaved           Boolean  @default(false)
+  tags              String[] @default([])
+  notes             String?
+
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([userId])
+  @@index([keyword])
+  @@index([searchVolume])
+  @@index([difficulty])
+  @@map("keyword_research")
+}
+
+model SavedKeyword {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  keyword     String
+  listName    String?  // Organize into lists (e.g., "Gaming Keywords", "Tech Reviews")
+  tags        String[] @default([])
+  notes       String?
+  
+  // Cached metrics for quick display
+  searchVolume Int?
+  competition  Int?
+  difficulty   String?
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([userId, keyword])
+  @@index([userId])
+  @@index([listName])
+  @@map("saved_keywords")
+}
+
+// ============================================
+// COMPETITOR TRACKING MODELS (Phase 2)
+// ============================================
+
+model Competitor {
+  id              String   @id @default(cuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Channel Info
+  channelId       String
+  channelTitle    String
+  channelUrl      String
+  thumbnailUrl    String?
+  description     String?  @db.Text
+  category        String?  // User-defined category
+
+  // Current Stats (snapshot)
+  subscriberCount Int      @default(0)
+  videoCount      Int      @default(0)
+  viewCount       BigInt   @default(0)
+
+  // Tracking
+  isActive        Boolean  @default(true)
+  lastChecked     DateTime @default(now())
+  syncStatus      String   @default("idle") // idle | queued | syncing | success | failed
+  lastSyncAt      DateTime?
+  lastSyncQueuedAt DateTime?
+  lastSyncReason  String?
+  lastSyncError   String?  @db.Text
+  syncFailureCount Int     @default(0)
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  // Relations
+  snapshots       CompetitorSnapshot[]
+  videos          CompetitorVideo[]
+
+  @@unique([userId, channelId])
+  @@index([userId])
+  @@index([channelId])
+  @@map("competitors")
+}
+
+model CompetitorSnapshot {
+  id              String      @id @default(cuid())
+  competitorId    String
+  competitor      Competitor  @relation(fields: [competitorId], references: [id], onDelete: Cascade)
+
+  subscriberCount Int
+  videoCount      Int
+  viewCount       BigInt
+
+  // Growth calculations
+  subsGrowth      Int         @default(0)
+  viewsGrowth     BigInt      @default(0)
+
+  createdAt       DateTime    @default(now())
+
+  @@index([competitorId])
+  @@index([createdAt])
+  @@index([competitorId, createdAt])
+  @@map("competitor_snapshots")
+}
+
+model CompetitorVideo {
+  id              String      @id @default(cuid())
+  competitorId    String
+  competitor      Competitor  @relation(fields: [competitorId], references: [id], onDelete: Cascade)
+
+  videoId         String
+  title           String
+  description     String?     @db.Text
+  thumbnailUrl    String?
+
+  publishedAt     DateTime
+  duration        Int?        // Seconds
+
+  // Stats
+  views           Int         @default(0)
+  likes           Int?        @default(0)
+  comments        Int?        @default(0)
+
+  // Analysis
+  keywords        String[]    @default([])
+  isViral         Boolean     @default(false) // >2x avg views
+
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  @@unique([competitorId, videoId])
+  @@index([competitorId])
+  @@index([publishedAt])
+  @@index([competitorId, publishedAt])
+  @@map("competitor_videos")
+}
+
+model CompetitorAlert {
+  id              String      @id @default(cuid())
+  userId          String
+  user            User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  type            String      // 'new_video' | 'viral' | 'keyword_overlap' | 'milestone'
+  competitorId    String
+  videoId         String?
+
+  message         String
+  isRead          Boolean     @default(false)
+
+  createdAt       DateTime    @default(now())
+
+  @@index([userId, isRead])
+  @@index([userId, createdAt])
+  @@map("competitor_alerts")
+}
+
+// ============================================
+// SNIPRADAR MODELS
+// ============================================
+
+model XAccount {
+  id                String        @id @default(cuid())
+  userId            String
+  user              User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  xUserId           String        // X.com user ID
+  xUsername          String        // @handle
+  xDisplayName      String
+  profileImageUrl   String?
+  followerCount     Int           @default(0)
+  followingCount    Int           @default(0)
+
+  accessToken       String        // OAuth token
+  refreshToken      String?       // OAuth refresh token
+  tokenExpiresAt    DateTime?
+
+  isActive          Boolean       @default(true)
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  snapshots         XAccountSnapshot[]
+  profileAuditSnapshots XProfileAuditSnapshot[]
+  drafts            TweetDraft[]
+  trackedAccounts   XTrackedAccount[]
+  autoDmAutomations XAutoDmAutomation[]
+  autoDmDeliveries  XAutoDmDelivery[]
+
+  @@unique([userId, xUserId])
+  @@index([userId])
+  @@index([userId, isActive])
+  @@map("x_accounts")
+}
+
+model XAccountSnapshot {
+  id                String        @id @default(cuid())
+  xAccountId        String
+  xAccount          XAccount      @relation(fields: [xAccountId], references: [id], onDelete: Cascade)
+
+  followerCount     Int
+  followingCount    Int
+  tweetCount        Int
+  followerGrowth    Int           @default(0)
+
+  createdAt         DateTime      @default(now())
+
+  @@index([xAccountId, createdAt])
+  @@map("x_account_snapshots")
+}
+
+model XProfileAuditSnapshot {
+  id                String        @id @default(cuid())
+  userId            String
+  user              User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  xAccountId        String
+  xAccount          XAccount      @relation(fields: [xAccountId], references: [id], onDelete: Cascade)
+
+  xUserId           String
+  xUsername         String
+  score             Int
+  grade             String
+  confidence        String
+  headline          String
+  summary           String        @db.Text
+  quickWins         String[]      @default([])
+  stats             Json
+  pillars           Json
+  ai                Json?
+  fingerprint       String
+
+  createdAt         DateTime      @default(now())
+
+  @@index([userId, createdAt])
+  @@index([xAccountId, createdAt])
+  @@index([userId, fingerprint, createdAt])
+  @@map("x_profile_audit_snapshots")
+}
+
+model XTrackedAccount {
+  id                 String        @id @default(cuid())
+  userId             String
+  user               User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  xAccountId         String
+  xAccount           XAccount      @relation(fields: [xAccountId], references: [id], onDelete: Cascade)
+
+  trackedXUserId     String        // The X.com account being tracked
+  trackedUsername     String
+  trackedDisplayName String
+  profileImageUrl    String?
+  followerCount      Int           @default(0)
+  niche              String?
+
+  isActive           Boolean       @default(true)
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+
+  viralTweets        ViralTweet[]
+  inboxItems         XResearchInboxItem[]
+  relationshipLead   XRelationshipLead?
+  relationshipInteractions XRelationshipInteraction[]
+
+  @@unique([userId, trackedXUserId])
+  @@index([userId])
+  @@index([userId, xAccountId, isActive, createdAt])
+  @@map("x_tracked_accounts")
+}
+
+model XResearchInboxItem {
+  id                String          @id @default(cuid())
+  userId            String
+  user              User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  trackedAccountId  String?
+  trackedAccount    XTrackedAccount? @relation(fields: [trackedAccountId], references: [id], onDelete: SetNull)
+
+  source            String          @default("browser_extension")
+  itemType          String
+  sourceUrl         String
+  xEntityId         String?
+  title             String?
+  text              String?         @db.Text
+  authorUsername    String?
+  authorDisplayName String?
+  authorAvatarUrl   String?
+  status            String          @default("new")
+  labels            String[]        @default([])
+  note              String?         @db.Text
+  generatedReply    String?         @db.Text
+  generatedRemix    String?         @db.Text
+  metadata          Json?
+  lastActionAt      DateTime?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  relationshipInteractions XRelationshipInteraction[]
+
+  @@unique([userId, sourceUrl])
+  @@index([userId, status, updatedAt])
+  @@index([userId, itemType, updatedAt])
+  @@index([trackedAccountId])
+  @@map("x_research_inbox_items")
+}
+
+model ViralTweet {
+  id                String        @id @default(cuid())
+  trackedAccountId  String
+  trackedAccount    XTrackedAccount @relation(fields: [trackedAccountId], references: [id], onDelete: Cascade)
+
+  tweetId           String        @unique
+  text              String        @db.Text
+  authorUsername     String
+  authorDisplayName String
+  likes             Int           @default(0)
+  retweets          Int           @default(0)
+  replies           Int           @default(0)
+  impressions       Int           @default(0)
+  bookmarks         Int           @default(0)
+  quoteTweets       Int           @default(0)
+  mediaType         String?       // 'image' | 'video' | 'poll' | 'thread' | null
+  publishedAt       DateTime
+  fetchedAt         DateTime      @default(now())
+
+  // AI Analysis fields
+  isAnalyzed        Boolean       @default(false)
+  hookType          String?       // 'question' | 'stat' | 'contrarian' | 'story' | 'list' | 'challenge'
+  format            String?       // 'one-liner' | 'thread' | 'listicle' | 'story' | 'hot-take' | 'how-to'
+  emotionalTrigger  String?       // 'curiosity' | 'anger' | 'awe' | 'humor' | 'fomo' | 'controversy'
+  viralScore        Int?          // 1-100
+  whyItWorked       String?       @db.Text
+  lessonsLearned    String[]      @default([])
+  analyzedAt        DateTime?
+
+  // Generation tracking
+  isUsedForGeneration   Boolean   @default(false)
+  usedForGenerationAt   DateTime?
+
+  @@index([trackedAccountId, publishedAt])
+  @@index([trackedAccountId, isAnalyzed, publishedAt])
+  @@index([trackedAccountId, viralScore, likes])
+  @@index([viralScore])
+  @@map("viral_tweets")
+}
+
+model TweetDraft {
+  id                String        @id @default(cuid())
+  userId            String
+  user              User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  xAccountId        String
+  xAccount          XAccount      @relation(fields: [xAccountId], references: [id], onDelete: Cascade)
+
+  text              String        @db.Text
+  inspiredByTweetId String?
+  hookType          String?
+  format            String?
+  emotionalTrigger  String?
+  aiReasoning       String?       @db.Text
+  viralPrediction   Int?          // 1-100
+  threadGroupId     String?       // Groups drafts that belong to one thread
+  threadOrder       Int?          // 1-based order inside a thread group
+
+  status            String        @default("draft") // 'draft' | 'scheduled' | 'posted' | 'rejected'
+  scheduledFor      DateTime?
+  postedAt          DateTime?
+  postedTweetId     String?       // X.com tweet ID after posting
+
+  // Post-publish metrics
+  actualLikes       Int?
+  actualRetweets    Int?
+  actualReplies     Int?
+  actualImpressions Int?
+
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  @@index([userId, status])
+  @@index([userId, createdAt])
+  @@index([userId, xAccountId, status])
+  @@index([userId, xAccountId, status, createdAt])
+  @@index([userId, xAccountId, status, postedAt])
+  @@index([userId, xAccountId, status, scheduledFor])
+  @@index([status, scheduledFor])
+  @@index([status, postedAt])
+  @@index([userId, xAccountId, postedTweetId])
+  @@index([userId, threadGroupId])
+  @@map("tweet_drafts")
+}
+
+model XStyleProfile {
+  id              String   @id @default(cuid())
+  userId          String   @unique
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  tone            String?  // e.g., "casual, witty, slightly provocative"
+  vocabulary      Json?    // frequent words/phrases
+  avgLength       Int?     // average tweet length
+  emojiUsage      String?  // "heavy", "light", "none"
+  hashtagStyle    String?  // "none", "1-2 relevant", "heavy"
+  sentencePattern String?  // "short punchy", "long flowing", "mixed"
+  trainingPosts   Json?    // source posts used for training
+
+  trainedAt       DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@map("x_style_profiles")
+}
+
+model XSchedulerRun {
+  id            String   @id @default(cuid())
+  userId        String?
+  user          User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  source        String   // api_user | api_cron | inngest
+  status        String   // success | partial | failed | locked | empty
+  attempted     Int      @default(0)
+  posted        Int      @default(0)
+  failed        Int      @default(0)
+  skipped       Int      @default(0)
+  lockAcquired  Boolean  @default(true)
+  durationMs    Int?
+  errorSummary  String?  @db.Text
+  failureReasons Json?
+  createdAt     DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([userId, createdAt])
+  @@index([source, createdAt])
+  @@map("x_scheduler_runs")
+}
+
+model XEngagementOpportunity {
+  id             String   @id @default(cuid())
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tweetId        String
+  text           String   @db.Text
+  authorXUserId  String?
+  authorUsername String
+  authorName     String
+  authorAvatar   String?
+  likes          Int      @default(0)
+  retweets       Int      @default(0)
+  replies        Int      @default(0)
+  impressions    Int      @default(0)
+  niche          String
+  score          Int      @default(0)
+  status         String   @default("new") // new | saved | replied | ignored
+  replyCount     Int      @default(0)
+  xCreatedAt     DateTime
+  lastSeenAt     DateTime @default(now())
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  relationshipInteractions XRelationshipInteraction[]
+
+  @@unique([userId, tweetId])
+  @@index([userId, status])
+  @@index([userId, niche, score, lastSeenAt])
+  @@index([userId, lastSeenAt])
+  @@index([userId, createdAt])
+  @@map("x_engagement_opportunities")
+}
+
+model XAutoDmAutomation {
+  id                 String           @id @default(cuid())
+  userId             String
+  user               User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  xAccountId         String
+  xAccount           XAccount         @relation(fields: [xAccountId], references: [id], onDelete: Cascade)
+
+  name               String?
+  triggerTweetId     String
+  triggerTweetUrl    String?
+  triggerTweetText   String?          @db.Text
+  keyword            String?
+  dmTemplate         String           @db.Text
+  dailyCap           Int              @default(50)
+  isActive           Boolean          @default(true)
+  lastCheckedAt      DateTime?
+  lastTriggeredAt    DateTime?
+  lastMatchedReplyAt DateTime?
+  lastError          String?          @db.Text
+  sentCount          Int              @default(0)
+  failedCount        Int              @default(0)
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+
+  deliveries         XAutoDmDelivery[]
+
+  @@index([userId, isActive, updatedAt])
+  @@index([xAccountId, isActive, updatedAt])
+  @@index([userId, triggerTweetId])
+  @@map("x_auto_dm_automations")
+}
+
+model XAutoDmDelivery {
+  id               String            @id @default(cuid())
+  automationId     String
+  automation       XAutoDmAutomation @relation(fields: [automationId], references: [id], onDelete: Cascade)
+  userId           String
+  user             User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  xAccountId       String
+  xAccount         XAccount          @relation(fields: [xAccountId], references: [id], onDelete: Cascade)
+
+  sourceReplyTweetId String
+  recipientXUserId String
+  recipientUsername String?
+  recipientName    String?
+  replyText        String?           @db.Text
+  matchedKeyword   String?
+  status           String
+  dmEventId        String?
+  errorMessage     String?           @db.Text
+  sentAt           DateTime?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  @@unique([automationId, recipientXUserId])
+  @@index([automationId, createdAt])
+  @@index([userId, createdAt])
+  @@index([xAccountId, createdAt])
+  @@index([status, createdAt])
+  @@map("x_auto_dm_deliveries")
+}
+
+model XRelationshipLead {
+  id                    String        @id @default(cuid())
+  userId                String
+  user                  User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  trackedAccountId      String?       @unique
+  trackedAccount        XTrackedAccount? @relation(fields: [trackedAccountId], references: [id], onDelete: SetNull)
+
+  xUserId               String?
+  username              String
+  normalizedHandle      String
+  displayName           String?
+  avatarUrl             String?
+  followerCount         Int?
+  stage                 String        @default("new")
+  source                String        @default("engagement")
+  personaTags           String[]      @default([])
+  notes                 String?       @db.Text
+  nextAction            String?
+  followUpAt            DateTime?
+  priorityScore         Int           @default(0)
+  savedOpportunityCount Int           @default(0)
+  replyCount            Int           @default(0)
+  inboxCaptureCount     Int           @default(0)
+  trackedAt             DateTime?
+  lastInteractionAt     DateTime?
+  lastReplyAt           DateTime?
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
+
+  interactions          XRelationshipInteraction[]
+
+  @@unique([userId, normalizedHandle])
+  @@index([userId, stage, priorityScore])
+  @@index([userId, followUpAt])
+  @@index([userId, lastInteractionAt])
+  @@map("x_relationship_leads")
+}
+
+model XRelationshipInteraction {
+  id               String                  @id @default(cuid())
+  userId           String
+  user             User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  leadId           String
+  lead             XRelationshipLead       @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  trackedAccountId String?
+  trackedAccount   XTrackedAccount?        @relation(fields: [trackedAccountId], references: [id], onDelete: SetNull)
+  opportunityId    String?
+  opportunity      XEngagementOpportunity? @relation(fields: [opportunityId], references: [id], onDelete: SetNull)
+  inboxItemId      String?
+  inboxItem        XResearchInboxItem?     @relation(fields: [inboxItemId], references: [id], onDelete: SetNull)
+
+  type             String
+  channel          String                  @default("x")
+  summary          String
+  content          String?                 @db.Text
+  metadata         Json?
+  createdAt        DateTime                @default(now())
+
+  @@index([userId, leadId, createdAt])
+  @@index([leadId, createdAt])
+  @@index([trackedAccountId])
+  @@index([opportunityId])
+  @@index([inboxItemId])
+  @@map("x_relationship_interactions")
+}
+
+model ViralTemplate {
+  id               String   @id @default(cuid())
+  category         String   // "hook", "story", "listicle", "hot-take", "thread-starter", "cta"
+  niche            String?  // "tech", "finance", "fitness", "marketing", etc.
+  template         String   @db.Text
+  placeholders     Json?    // e.g. { "[TOPIC]": "Your main topic" }
+  exampleFilled    String?  @db.Text
+  hookType         String?
+  format           String?
+  emotionalTrigger String?
+  createdAt        DateTime @default(now())
+
+  @@index([category, niche])
+  @@map("viral_templates")
+}
+
+model XResearchDocument {
+  id             String   @id @default(cuid())
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  source         String   // viral_tweet | opportunity | draft | template
+  sourceRecordId String
+  title          String
+  body           String   @db.Text
+  snippet        String   @db.Text
+  tags           String[] @default([])
+  metadata       Json?
+  normalizedText String   @db.Text
+  contentHash    String
+  embedding      Json?
+  embeddingModel String?
+  embeddedAt     DateTime?
+  sourceUpdatedAt DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([userId, source, sourceRecordId])
+  @@index([userId, source])
+  @@index([userId, updatedAt])
+  @@index([userId, embeddedAt])
+  @@map("x_research_documents")
+}
+
+model XResearchIndexRun {
+  id               String   @id @default(cuid())
+  userId           String
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  status           String   // success | partial | failed
+  documentsScanned Int      @default(0)
+  documentsUpserted Int     @default(0)
+  documentsDeleted Int      @default(0)
+  documentsEmbedded Int     @default(0)
+  failedEmbeddings Int      @default(0)
+  durationMs       Int?
+  errorSummary     String?  @db.Text
+  createdAt        DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@index([createdAt])
+  @@map("x_research_index_runs")
+}
+
+model SnipRadarApiKey {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name       String
+  prefix     String
+  lastFour   String
+  keyHash    String   @unique
+  scopes     String[] @default([])
+  isActive   Boolean  @default(true)
+  lastUsedAt DateTime?
+  expiresAt  DateTime?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([userId, isActive, createdAt])
+  @@map("snipradar_api_keys")
+}
+
+model SnipRadarWebhookSubscription {
+  id                      String                   @id @default(cuid())
+  userId                  String
+  user                    User                     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name                    String
+  url                     String                   @db.Text
+  signingSecretCiphertext String                   @db.Text
+  signingSecretPreview    String
+  events                  String[]                 @default([])
+  isActive                Boolean                  @default(true)
+  lastDeliveredAt         DateTime?
+  lastFailureAt           DateTime?
+  lastFailureReason       String?                  @db.Text
+  createdAt               DateTime                 @default(now())
+  updatedAt               DateTime                 @updatedAt
+
+  deliveries              SnipRadarWebhookDelivery[]
+
+  @@index([userId, isActive, createdAt])
+  @@map("snipradar_webhook_subscriptions")
+}
+
+model SnipRadarWebhookEvent {
+  id           String                   @id @default(cuid())
+  userId       String
+  user         User                     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  eventType    String
+  resourceType String
+  resourceId   String?
+  payload      Json
+  createdAt    DateTime                 @default(now())
+
+  deliveries   SnipRadarWebhookDelivery[]
+
+  @@index([userId, eventType, createdAt])
+  @@index([userId, createdAt])
+  @@index([resourceType, resourceId, createdAt])
+  @@map("snipradar_webhook_events")
+}
+
+model SnipRadarWebhookDelivery {
+  id                  String                      @id @default(cuid())
+  eventId             String
+  event               SnipRadarWebhookEvent      @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  subscriptionId      String
+  subscription        SnipRadarWebhookSubscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  status              String                      @default("pending")
+  attemptNumber       Int                         @default(1)
+  responseStatus      Int?
+  durationMs          Int?
+  responseBodyPreview String?                     @db.Text
+  errorMessage        String?                     @db.Text
+  deliveredAt         DateTime?
+  createdAt           DateTime                    @default(now())
+  updatedAt           DateTime                    @updatedAt
+
+  @@index([subscriptionId, createdAt])
+  @@index([eventId, createdAt])
+  @@index([status, createdAt])
+  @@map("snipradar_webhook_deliveries")
+}
+
+// ============================================================
+// SNIPRADAR ASSISTANT — RAG Chatbot
+// ============================================================
+
+model SnipRadarKbChunk {
+  id         String   @id @default(cuid())
+  docId      String   // logical doc key, e.g. "snipradar-create"
+  chunkIndex Int      // 0-based order within the doc
+  content    String   @db.Text
+  embedding  String?  @db.Text // JSON-serialised float array (text-embedding-3-small, 1536 dims)
+  metadata   Json     @default("{}")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([docId])
+  @@map("snipradar_kb_chunks")
+}
+
+model SnipRadarChatSession {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  messages  SnipRadarChatMessage[]
+
+  @@index([userId, createdAt])
+  @@map("snipradar_chat_sessions")
+}
+
+model SnipRadarChatMessage {
+  id        String              @id @default(cuid())
+  sessionId String
+  session   SnipRadarChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  role      String              // "user" | "assistant"
+  content   String              @db.Text
+  sources   Json                @default("[]") // array of { docId, chunkIndex, excerpt }
+  createdAt DateTime            @default(now())
+
+  @@index([sessionId, createdAt])
+  @@map("snipradar_chat_messages")
+}
+
+// ---------------------------------------------------------------------------
+// Waitlist (kept to prevent accidental drop of existing 9 rows)
+// ---------------------------------------------------------------------------
+
+model WaitlistLead {
+  id                 String    @id
+  email              String
+  name               String
+  primaryPlatform    String
+  monthlyContentGoal String?
+  teamSize           String?
+  biggestBottleneck  String?
+  consentMarketing   Boolean   @default(false)
+  campaignId         String
+  source             String
+  utmSource          String?
+  utmMedium          String?
+  utmCampaign        String?
+  utmContent         String?
+  utmTerm            String?
+  offerCode          String?
+  offerPercent       Int?
+  offerMonths        Int?
+  offerEligibleUntil DateTime?
+  status             String    @default("new")
+  notes              String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  @@unique([email, campaignId])
+  @@index([campaignId, createdAt])
+  @@index([status])
 }

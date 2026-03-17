@@ -181,7 +181,8 @@ export const updateClipSchema = z.object({
 export const createExportSchema = z.object({
   projectId: cuidSchema,
   clipIds: z.array(cuidSchema).min(1, 'At least one clip is required'),
-  preset: z.enum(['9:16', '1:1', '16:9']),
+  preset: z.enum(['shorts_9x16_1080', 'square_1x1_1080', 'portrait_4x5_1080', 'landscape_16x9_1080']),
+  includeCaptions: z.boolean().default(false),
   applyBranding: z.boolean().default(true)
 });
 
@@ -356,6 +357,193 @@ export const fileUploadSchema = z.object({
 );
 
 // =============================================================================
+// AUTHENTICATION SCHEMAS
+// =============================================================================
+
+export const signupSchema = z.object({
+  email: emailSchema,
+  password: z
+    .string()
+    .min(8, 'Password must be at least 8 characters')
+    .regex(/[A-Z]/, 'Password must contain at least one uppercase letter')
+    .regex(/[0-9]/, 'Password must contain at least one number'),
+  name: z.string().min(2, 'Name must be at least 2 characters').max(100).optional()
+});
+
+export const signinSchema = z.object({
+  email: emailSchema,
+  password: z.string().min(1, 'Password is required')
+});
+
+export const resetPasswordSchema = z.object({
+  email: emailSchema
+});
+
+export const newPasswordSchema = z.object({
+  password: z
+    .string()
+    .min(8, 'Password must be at least 8 characters')
+    .regex(/[A-Z]/, 'Password must contain at least one uppercase letter')
+    .regex(/[0-9]/, 'Password must contain at least one number'),
+  confirmPassword: z.string()
+}).refine(
+  (data) => data.password === data.confirmPassword,
+  {
+    message: 'Passwords do not match',
+    path: ['confirmPassword']
+  }
+);
+
+// =============================================================================
+// ONBOARDING SCHEMAS
+// =============================================================================
+
+export const onboardingStep1Schema = z.object({
+  name: z.string().min(2, 'Name must be at least 2 characters').max(100),
+  youtubeChannelUrl: z
+    .string()
+    .url('Invalid URL format')
+    .regex(
+      /^https?:\/\/(www\.)?(youtube\.com\/@[\w-]+|youtube\.com\/channel\/[\w-]+|youtube\.com\/c\/[\w-]+|youtube\.com\/user\/[\w-]+)$/,
+      'Invalid YouTube channel URL'
+    )
+    .optional()
+    .or(z.literal('')),
+  subscriberCount: z.enum([
+    '0-1k',
+    '1k-10k',
+    '10k-100k',
+    '100k-1m',
+    '1m+'
+  ])
+});
+
+export const onboardingStep2Schema = z.object({
+  goalSelection: z.enum([
+    'start_channel',
+    'grow_channel',
+    'monetization',
+    'professional'
+  ])
+});
+
+export const onboardingStep3Schema = z.object({
+  nicheInterests: z
+    .array(z.string())
+    .min(1, 'Please select at least one niche interest')
+    .max(10, 'Please select no more than 10 niche interests')
+});
+
+export const completeOnboardingSchema = z.object({
+  name: z.string().min(2).max(100),
+  youtubeChannelUrl: z.string().optional().or(z.literal('')),
+  subscriberCount: z.string(),
+  goalSelection: z.enum([
+    'start_channel',
+    'grow_channel',
+    'monetization',
+    'professional'
+  ]),
+  nicheInterests: z.array(z.string()).min(1)
+});
+
+// =============================================================================
+// NICHE DISCOVERY SCHEMAS
+// =============================================================================
+
+export const nicheQuizSchema = z.object({
+  interests: z
+    .array(z.string())
+    .min(2, 'Please select at least 2 interests')
+    .max(5, 'Please select no more than 5 interests'),
+  availableHoursPerWeek: z
+    .number()
+    .int()
+    .min(2, 'Minimum 2 hours per week')
+    .max(40, 'Maximum 40 hours per week'),
+  skillLevel: z.enum(['beginner', 'intermediate', 'advanced']),
+  primaryGoal: z.enum(['education', 'entertainment', 'reviews', 'tutorials', 'vlogs', 'news']),
+  showFace: z.enum(['yes', 'no', 'maybe'])
+});
+
+export const nicheAnalysisRequestSchema = z.object({
+  interests: z
+    .array(z.string())
+    .min(2)
+    .max(5),
+  availableTime: z
+    .number()
+    .int()
+    .min(2)
+    .max(40),
+  skillLevel: z.enum(['beginner', 'intermediate', 'advanced']),
+  goal: z.enum(['education', 'entertainment', 'reviews', 'tutorials', 'vlogs', 'news']),
+  showFace: z.enum(['yes', 'no', 'maybe'])
+});
+
+export const nicheSelectSchema = z.object({
+  nicheId: z.string().min(1, 'Niche ID is required'),
+  nicheName: z.string().min(1, 'Niche name is required')
+});
+
+export const nicheFilterSchema = z.object({
+  category: z
+    .enum([
+      'technology',
+      'gaming',
+      'education',
+      'lifestyle',
+      'finance',
+      'health',
+      'entertainment',
+      'business',
+      'creative',
+      'science',
+      'sports',
+      'food',
+      'travel',
+      'parenting',
+      'pets',
+      'automotive',
+      'music',
+      'fashion',
+      'diy',
+      'news'
+    ])
+    .optional(),
+  competitionLevel: z.enum(['low', 'medium', 'high']).optional(),
+  monetizationMin: z.number().int().min(1).max(10).optional(),
+  growthTrend: z.enum(['rising', 'stable', 'declining']).optional(),
+  faceless: z.boolean().optional(),
+  search: z.string().max(100).optional()
+});
+
+// =============================================================================
+// SNIPRADAR SCHEMAS
+// =============================================================================
+
+export const addTrackedAccountSchema = z.object({
+  username: z.string().min(1, 'Username is required').max(50),
+  niche: z.string().max(100).optional()
+});
+
+export const snipRadarUpdateDraftSchema = z.object({
+  text: z.string().min(1).max(280).optional(),
+  status: z.enum(['draft', 'rejected']).optional()
+});
+
+export const viralFeedFilterSchema = z.object({
+  filter: z.enum(['all', 'analyzed', 'unanalyzed']).default('all'),
+  sort: z.enum(['score', 'likes', 'recent']).default('score'),
+  limit: z.coerce.number().int().min(1).max(50).default(20)
+});
+
+export const draftListFilterSchema = z.object({
+  status: z.enum(['draft', 'scheduled', 'posted', 'rejected']).optional(),
+  limit: z.coerce.number().int().min(1).max(50).default(20)
+});
+
+// =============================================================================
 // TYPE EXPORTS
 // =============================================================================
 
@@ -379,3 +567,19 @@ export type CreateVoiceProfileInput = z.infer<typeof createVoiceProfileSchema>;
 export type GenerateSpeechInput = z.infer<typeof generateSpeechSchema>;
 export type FileUploadInput = z.infer<typeof fileUploadSchema>;
 export type PaginationInput = z.infer<typeof paginationSchema>;
+export type SignupInput = z.infer<typeof signupSchema>;
+export type SigninInput = z.infer<typeof signinSchema>;
+export type ResetPasswordInput = z.infer<typeof resetPasswordSchema>;
+export type NewPasswordInput = z.infer<typeof newPasswordSchema>;
+export type OnboardingStep1Input = z.infer<typeof onboardingStep1Schema>;
+export type OnboardingStep2Input = z.infer<typeof onboardingStep2Schema>;
+export type OnboardingStep3Input = z.infer<typeof onboardingStep3Schema>;
+export type CompleteOnboardingInput = z.infer<typeof completeOnboardingSchema>;
+export type NicheQuizInput = z.infer<typeof nicheQuizSchema>;
+export type NicheAnalysisRequestInput = z.infer<typeof nicheAnalysisRequestSchema>;
+export type NicheSelectInput = z.infer<typeof nicheSelectSchema>;
+export type NicheFilterInput = z.infer<typeof nicheFilterSchema>;
+export type AddTrackedAccountInput = z.infer<typeof addTrackedAccountSchema>;
+export type SnipRadarUpdateDraftInput = z.infer<typeof snipRadarUpdateDraftSchema>;
+export type ViralFeedFilterInput = z.infer<typeof viralFeedFilterSchema>;
+export type DraftListFilterInput = z.infer<typeof draftListFilterSchema>;

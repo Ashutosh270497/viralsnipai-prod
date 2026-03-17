@@ -1,8 +1,15 @@
-# Clippers Monorepo
+# ViralSnipAI Monorepo
 
-Clippers is an AI-assisted SaaS workspace that combines **Hooksmith** (hook + script ideation) with **RepurposeOS** (clip generation, captions, and branded exports). The monorepo is built with Next.js 14 App Router, Prisma, MySQL, Tailwind, shadcn/ui, and an FFmpeg-based rendering pipeline.
+ViralSnipAI is an AI-assisted SaaS workspace that combines **Hooksmith** (hook + script ideation) with **RepurposeOS** (clip generation, captions, and branded exports). The monorepo is built with Next.js 14 App Router, Prisma, MySQL, Tailwind, shadcn/ui, and an FFmpeg-based rendering pipeline.
 
 ![Dashboard placeholder](docs/assets/dashboard-placeholder.png)
+
+## 📚 Documentation
+
+All project documentation is organized in the [`docs/`](./docs/) folder. Start with:
+- **[Documentation Index](./docs/INDEX.md)** - Complete documentation navigation
+- **[Supabase Setup Guide](./docs/SUPABASE_SETUP_GUIDE.md)** - Database setup instructions
+- **[Architecture](./docs/architecture/)** - Technical architecture documentation
 
 ## Features
 
@@ -42,7 +49,7 @@ Clippers is an AI-assisted SaaS workspace that combines **Hooksmith** (hook + sc
 │   └── types/          # Shared TypeScript types + export presets
 ├── docs/                               # 📚 All project documentation
 │   ├── README.md                      # Documentation index
-│   ├── PRD_Clippers.md                # Product requirements
+│   ├── PRD_ViralSnipAI.md                # Product requirements
 │   ├── clippers-journal.md            # Development journal
 │   ├── CODE_REVIEW_IMPROVEMENTS.md    # Code quality improvements
 │   ├── PHASE_0_IMPLEMENTATION_COMPLETE.md  # Phase 0 status
@@ -65,12 +72,14 @@ Clippers is an AI-assisted SaaS workspace that combines **Hooksmith** (hook + sc
    ```
 2. Bootstrap environment variables:
    ```bash
-   cp .env.example .env.local
+   cp .env.example apps/web/.env.local
    ```
-   Fill in secrets as needed (OpenAI, Google OAuth, SMTP for magic links).
+   Fill in runtime secrets in `apps/web/.env.local` as needed (OpenAI/OpenRouter, Google OAuth, SMTP for magic links).
+   Keep `apps/web/.env` minimal with `DATABASE_URL` only so Prisma CLI commands continue to work locally.
    - Imagen requires `GOOGLE_NANO_BANANA_API_KEY`. Leave `GOOGLE_NANO_BANANA_ENDPOINT` unset unless you have a custom endpoint; change `GOOGLE_IMAGEN_MODEL` (defaults to `imagen-4.0-generate-1`) if you want to target another Gemini image model such as `gemini-2.5-flash-image`.
      - Gemini image models currently return only one candidate per request; the app automatically clamps `Images per batch` to 1 when a Gemini model is active.
    - Voice prompts & transcriptions use OpenAI Whisper. Provide `OPENAI_API_KEY` and set `USE_MOCK_TRANSCRIBE="false"` (optionally override `WHISPER_MODEL`) to generate real transcripts; the flag can remain `true` for synthetic text while developing offline.
+   - OpenRouter is the primary routed text-model provider for migrated flows. Set `OPENROUTER_API_KEY` and `OPENROUTER_ENABLED="true"` in `apps/web/.env.local`.
    - Text-to-speech in the Transcribe workspace relies on OpenAI audio models. Optionally configure `TTS_MODEL` (defaults to `gpt-4o-mini-tts`), `TTS_VOICE`, or `TTS_FORMAT` to customise the generated clips.
   - Veo video generation needs `GOOGLE_VEO_API_KEY` (defaults to the image key if omitted) and optionally `GOOGLE_VEO_MODEL`. Toggle with `VEO_ENABLED` / `NEXT_PUBLIC_VEO_ENABLED`.
   - When targeting the Vertex AI long-running endpoint, set `GOOGLE_VEO_SERVICE_ACCOUNT_KEY_PATH`, `GOOGLE_VEO_PROJECT_ID`, and `GOOGLE_VEO_LOCATION`. `GOOGLE_VEO_OUTPUT_URI` is optional (provide a `gs://` bucket if you want renders delivered to Cloud Storage). You can also override `GOOGLE_VEO_API_ENDPOINT` (defaults to `${LOCATION}-aiplatform.googleapis.com`).
@@ -122,7 +131,7 @@ pnpm --filter web test:headed
   ```bash
   UI_V2_ENABLED=true pnpm dev
   ```
-  or set `UI_V2_ENABLED="true"` / `NEXT_PUBLIC_UI_V2_ENABLED="true"` in your `.env.local`.
+  or set `UI_V2_ENABLED="true"` / `NEXT_PUBLIC_UI_V2_ENABLED="true"` in `apps/web/.env.local`.
 - When enabled today, you’ll see:
   - Feature flags exposed via `useFeatureFlags`
   - Design tokens (`styles/tokens.css`) available for the next-gen theme
@@ -140,7 +149,7 @@ pnpm --filter web test:headed
 The project ships with `ffmpeg-static`/`ffprobe-static` binaries. If you hit codec errors:
 
 1. Install native FFmpeg (`brew install ffmpeg` or system package).
-2. Set `FFMPEG_PATH` in `.env.local` to point at the native binary.
+2. Set `FFMPEG_PATH` in `apps/web/.env.local` to point at the native binary.
 3. Restart `pnpm dev` to pick up the new path.
 
 ## Troubleshooting
@@ -166,11 +175,11 @@ All project documentation is located in the [`docs/`](./docs/) folder:
 - **[CODE_REVIEW_IMPROVEMENTS.md](./docs/CODE_REVIEW_IMPROVEMENTS.md)** - Infrastructure improvements and code quality enhancements
 - **[PHASE_0_IMPLEMENTATION_COMPLETE.md](./docs/PHASE_0_IMPLEMENTATION_COMPLETE.md)** - Phase 0 backend implementation status
 - **[REPURPOSEOS_ENHANCEMENT_PLAN.md](./docs/REPURPOSEOS_ENHANCEMENT_PLAN.md)** - Comprehensive enhancement roadmap
-- **[PRD_Clippers.md](./docs/PRD_Clippers.md)** - Product requirements document
+- **[PRD_ViralSnipAI.md](./docs/PRD_ViralSnipAI.md)** - Product requirements document
 - **[clippers-journal.md](./docs/clippers-journal.md)** - Development journal and build log
 
 For detailed implementation guides, API references, and technical specifications, see the [docs README](./docs/README.md).
 
 ## License
 
-This repository is private/internal for the Clippers SaaS prototype.
+This repository is private/internal for the ViralSnipAI SaaS prototype.

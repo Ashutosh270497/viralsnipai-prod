@@ -50,6 +50,13 @@ export const EXPORT_PRESETS: ExportPresetConfig[] = [
     height: 1080
   },
   {
+    id: "portrait_4x5_1080",
+    label: "Portrait Feed (1080x1350)",
+    description: "Great for Instagram/Facebook feed posts",
+    width: 1080,
+    height: 1350
+  },
+  {
     id: "landscape_16x9_1080",
     label: "Landscape (1920x1080)",
     description: "Full HD landscape export",

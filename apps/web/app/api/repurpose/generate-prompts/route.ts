@@ -8,12 +8,10 @@ import { promptGeneratorService } from "@/lib/services/prompt-generator.service"
 import { logger } from "@/lib/logger";
 
 const schema = z.object({
-  context: z.string().min(10).max(2000),
-  contentType: z.string().optional(),
+  transcript: z.string().min(20).max(15000),
+  videoTitle: z.string().max(300).optional(),
   platform: z.enum(["YouTube Shorts", "TikTok", "Instagram Reels", "All Platforms"]).optional(),
-  targetLength: z.number().min(15).max(90).optional(),
   customInstructions: z.string().max(500).optional(),
-  useTemplate: z.boolean().optional()
 });
 
 export async function POST(request: Request) {
@@ -30,47 +28,28 @@ export async function POST(request: Request) {
   const { data } = parsed;
 
   try {
-    logger.info('Generating AI prompts', {
+    logger.info('Generating transcript-based prompts', {
       userId: user.id,
-      contextLength: data.context.length,
-      contentType: data.contentType,
+      transcriptLength: data.transcript.length,
+      videoTitle: data.videoTitle,
       platform: data.platform,
-      useTemplate: data.useTemplate
     });
 
-    let prompts;
+    const prompts = await promptGeneratorService.generateFromTranscript({
+      transcript: data.transcript,
+      videoTitle: data.videoTitle,
+      platform: data.platform,
+      customInstructions: data.customInstructions,
+    });
 
-    // If user wants template-based generation (faster)
-    if (data.useTemplate && data.contentType) {
-      prompts = promptGeneratorService.getTemplatePrompts(
-        data.contentType,
-        data.platform || 'YouTube Shorts'
-      );
-
-      logger.info('Template prompts generated', {
-        contentType: data.contentType,
-        platform: data.platform
-      });
-    } else {
-      // AI-powered generation (more customized)
-      prompts = await promptGeneratorService.generatePrompts({
-        context: data.context,
-        contentType: data.contentType,
-        platform: data.platform,
-        targetLength: data.targetLength,
-        customInstructions: data.customInstructions
-      });
-
-      logger.info('AI prompts generated successfully', {
-        briefLength: prompts.brief.length,
-        audienceLength: prompts.audience.length
-      });
-    }
+    logger.info('Transcript-based prompts generated', {
+      briefLength: prompts.brief.length,
+      audienceLength: prompts.audience.length,
+    });
 
     return ok({ prompts });
-
   } catch (error) {
-    logger.error('Failed to generate prompts', error);
+    logger.error('Failed to generate prompts', error instanceof Error ? error : { error });
     return fail(500, error instanceof Error ? error.message : 'Failed to generate prompts');
   }
 }

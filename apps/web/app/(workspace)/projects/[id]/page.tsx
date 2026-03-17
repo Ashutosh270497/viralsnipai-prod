@@ -59,7 +59,7 @@ export default async function ProjectDetailPage({ params }: { params: { id: stri
                 ))}
               </div>
               <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
-                {(project.script.hooks ?? []).map((hook) => (
+                {(Array.isArray(project.script.hooks) ? project.script.hooks as string[] : []).map((hook) => (
                   <Badge key={hook} variant="secondary">
                     {hook}
                   </Badge>

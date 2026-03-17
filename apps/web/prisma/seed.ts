@@ -46,7 +46,7 @@ async function main() {
   const captionPaths = await Promise.all(
     ["clip-1", "clip-2", "clip-3"].map(async (clip, index) => {
       const srtPath = path.join(captionsDir, `${clip}.srt`);
-      const content = `1\n00:00:00,000 --> 00:00:01,800\nWelcome to Clippers clip ${index + 1}.\n\n2\n00:00:01,800 --> 00:00:03,500\nEdit once, ship everywhere.`;
+      const content = `1\n00:00:00,000 --> 00:00:01,800\nWelcome to ViralSnipAI clip ${index + 1}.\n\n2\n00:00:01,800 --> 00:00:03,500\nEdit once, ship everywhere.`;
       await fs.writeFile(srtPath, content, "utf-8");
       return srtPath;
     })
@@ -71,7 +71,7 @@ async function main() {
         "Promise a surprising insight",
         "Deliver a cliff-hanger CTA"
       ],
-      body: `HOOK\nThe clipper revolution is here.\n\nVALUE\n1. Feed your long-form content.\n2. Auto-detect the highlights.\n3. Burn captions that convert.\n\nCTA\nRepurpose everything with Clippers.`,
+      body: `HOOK\nThe creator revolution is here.\n\nVALUE\n1. Feed your long-form content.\n2. Auto-detect the highlights.\n3. Burn captions that convert.\n\nCTA\nRepurpose everything with ViralSnipAI.`,
       tone: "energetic"
     }
   });

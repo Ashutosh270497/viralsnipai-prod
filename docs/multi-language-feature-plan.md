@@ -88,7 +88,7 @@ This feature enables users to:
 
 ### Architecture Philosophy
 
-This implementation strictly adheres to **SOLID principles** as followed throughout the Clippers codebase. All code examples in this document have been designed to maintain full SOLID compliance.
+This implementation strictly adheres to **SOLID principles** as followed throughout the ViralSnipAI codebase. All code examples in this document have been designed to maintain full SOLID compliance.
 
 ### SOLID Principles Applied
 
@@ -3087,7 +3087,7 @@ redis-cli FLUSHALL
 
 ## Conclusion
 
-This feature enables comprehensive multi-language support for the Clippers platform, allowing users to translate transcripts, generate captions, create TTS audio, and export videos in Hindi, Tamil, Telugu, Marathi, and Gujarati.
+This feature enables comprehensive multi-language support for the ViralSnipAI platform, allowing users to translate transcripts, generate captions, create TTS audio, and export videos in Hindi, Tamil, Telugu, Marathi, and Gujarati.
 
 **Key Benefits:**
 - **Zero new API keys** required (uses existing OpenAI + ElevenLabs)

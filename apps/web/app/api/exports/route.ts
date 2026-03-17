@@ -1,7 +1,6 @@
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
-import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getCurrentUser } from '@/lib/auth';
 import { container } from '@/lib/infrastructure/di/container';
@@ -14,7 +13,8 @@ import { logger } from '@/lib/logger';
 const schema = z.object({
   projectId: z.string(),
   clipIds: z.array(z.string()).min(1),
-  preset: z.enum(['shorts_9x16_1080', 'square_1x1_1080', 'landscape_16x9_1080']),
+  preset: z.enum(['shorts_9x16_1080', 'square_1x1_1080', 'portrait_4x5_1080', 'landscape_16x9_1080']),
+  includeCaptions: z.boolean().optional().default(false),
 });
 
 /**
@@ -46,12 +46,13 @@ export const POST = withErrorHandling(async (request: Request) => {
     });
   }
 
-  const { projectId, clipIds, preset } = result.data;
+  const { projectId, clipIds, preset, includeCaptions } = result.data;
 
   logger.info('Export queue API called', {
     projectId,
     clipIds,
     preset,
+    includeCaptions,
     userId: user.id,
   });
 
@@ -62,6 +63,7 @@ export const POST = withErrorHandling(async (request: Request) => {
     projectId,
     clipIds,
     preset,
+    includeCaptions,
     userId: user.id,
   });
 

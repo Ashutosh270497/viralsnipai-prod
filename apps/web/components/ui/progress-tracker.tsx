@@ -64,14 +64,14 @@ export function ProgressTracker({ operations, className, compact = false, maxVis
     }
   }
 
-  function getStatusBadgeVariant(status: OperationStatus): "default" | "secondary" | "destructive" | "outline" {
+  function getStatusBadgeVariant(status: OperationStatus): "default" | "secondary" | "warning" | "outline" {
     switch (status) {
       case "processing":
         return "default";
       case "completed":
         return "secondary";
       case "failed":
-        return "destructive";
+        return "warning";
       case "pending":
         return "outline";
     }
@@ -110,7 +110,7 @@ export function ProgressTracker({ operations, className, compact = false, maxVis
             </Badge>
           )}
           {failedOperations.length > 0 && (
-            <Badge variant="destructive" className="text-xs">
+            <Badge variant="warning" className="text-xs">
               {failedOperations.length} failed
             </Badge>
           )}
@@ -131,7 +131,7 @@ export function ProgressTracker({ operations, className, compact = false, maxVis
               </Badge>
             )}
             {failedOperations.length > 0 && (
-              <Badge variant="destructive" className="text-xs">
+              <Badge variant="warning" className="text-xs">
                 {failedOperations.length} failed
               </Badge>
             )}

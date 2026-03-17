@@ -9,7 +9,7 @@ export default function SubmitTemplatePage() {
     <div className="mx-auto flex w-full max-w-4xl flex-col gap-10 px-6 py-12">
       <div className="space-y-4 text-center">
         <Badge className="bg-[#F3F6FF] text-[#4C8EFF]">Submit template</Badge>
-        <h1 className="text-4xl font-semibold text-foreground">Share your Clippers template</h1>
+        <h1 className="text-4xl font-semibold text-foreground">Share your ViralSnipAI template</h1>
         <p className="text-sm text-muted-foreground">
           Add a new template to the marketplace. Provide safe zones, captions, overlays, and preview media so editors can install with one click.
         </p>

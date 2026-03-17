@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SnipRadar</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <main class="popup">
+      <header class="popup__header">
+        <div>
+          <p class="eyebrow">SnipRadar</p>
+          <h1>Browser Extension</h1>
+        </div>
+        <button id="refresh-session" class="ghost-button" type="button">Refresh</button>
+      </header>
+
+      <section class="panel">
+        <p class="eyebrow">Session</p>
+        <p id="session-status" class="status">Checking session...</p>
+        <div class="button-row">
+          <button id="open-inbox" type="button">Open Inbox</button>
+          <button id="open-login" type="button" class="secondary">Open login</button>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel__title-row">
+          <p class="eyebrow">Recent Captures</p>
+          <span id="preview-count" class="count">0</span>
+        </div>
+        <div id="preview-list" class="preview-list"></div>
+      </section>
+
+      <section class="panel">
+        <div class="panel__title-row">
+          <p class="eyebrow">Quick Draft</p>
+          <span id="compose-counter" class="count">0/280</span>
+        </div>
+        <textarea
+          id="compose-text"
+          class="compose-textarea"
+          placeholder="What's on your mind? Save as draft…"
+          rows="4"
+          maxlength="560"
+        ></textarea>
+        <div class="button-row" style="margin-top: 8px;">
+          <button id="save-draft" type="button" disabled>Save Draft</button>
+        </div>
+      </section>
+
+      <section id="developer-panel" class="panel panel--developer is-hidden">
+        <div class="panel__title-row">
+          <p class="eyebrow">Developer</p>
+          <span class="panel__hint">Shift+D</span>
+        </div>
+        <label class="field">
+          <span>Override app URL</span>
+          <input id="base-url" type="url" placeholder="https://viralsnipai.com" />
+        </label>
+        <div class="button-row">
+          <button id="save-base-url" type="button">Save URL</button>
+          <button id="reset-base-url" type="button" class="secondary">Reset</button>
+        </div>
+      </section>
+    </main>
+
+    <script src="popup.js"></script>
+  </body>
+</html>

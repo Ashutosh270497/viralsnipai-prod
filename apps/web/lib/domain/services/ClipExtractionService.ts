@@ -11,6 +11,8 @@ import { injectable } from 'inversify';
 import type { HighlightSuggestion } from '@clippers/types';
 import type { TranscriptionSegment } from '@/lib/transcript';
 import { logger } from '@/lib/logger';
+import { analyzeClipQuality } from '@/lib/repurpose/clip-optimization';
+import type { ClipQualitySignals } from '@/lib/types';
 
 export interface ExtractedClip {
   title: string;
@@ -18,6 +20,8 @@ export interface ExtractedClip {
   startMs: number;
   endMs: number;
   callToAction?: string;
+  qualitySignals?: ClipQualitySignals;
+  selectionScore?: number;
 }
 
 export interface TranscriptionData {
@@ -31,10 +35,11 @@ export interface ClipExtractionOptions {
   minClipCount?: number;
   targetClipCount?: number;
   deduplicationThresholdMs?: number;
+  sceneCutsMs?: number[];
 }
 
-const DEFAULT_MIN_DURATION_MS = 30_000; // 30 seconds
-const DEFAULT_MAX_DURATION_MS = 45_000; // 45 seconds
+const DEFAULT_MIN_DURATION_MS = 60_000; // 60 seconds
+const DEFAULT_MAX_DURATION_MS = 95_000; // 95 seconds
 const DEFAULT_DEDUP_THRESHOLD_MS = 5_000; // 5 seconds
 
 @injectable()
@@ -59,12 +64,16 @@ export class ClipExtractionService {
       minClipCount = 3,
       targetClipCount = 6,
       deduplicationThresholdMs = DEFAULT_DEDUP_THRESHOLD_MS,
+      sceneCutsMs = [],
     } = options;
 
     logger.info('Extracting clips from suggestions', {
       suggestionCount: suggestions.length,
       durationMs,
       targetClipCount,
+      minDurationMs,
+      maxDurationMs,
+      sceneCutsCount: sceneCutsMs.length,
     });
 
     // Step 1: Convert suggestions to time ranges
@@ -81,7 +90,8 @@ export class ClipExtractionService {
           durationMs,
           transcription,
           minDurationMs,
-          maxDurationMs
+          maxDurationMs,
+          sceneCutsMs
         );
 
         return {
@@ -90,9 +100,21 @@ export class ClipExtractionService {
           startMs: window.start,
           endMs: window.end,
           callToAction: suggestion.callToAction,
+          qualitySignals: analyzeClipQuality({
+            startMs: window.start,
+            endMs: window.end,
+            transcriptionSegments: transcription.segments,
+            sceneCutsMs,
+            minDurationMs,
+            maxDurationMs,
+          }),
         };
       })
-      .filter((segment) => segment.startMs < segment.endMs);
+      .filter((segment) => segment.startMs < segment.endMs)
+      .map((segment) => ({
+        ...segment,
+        selectionScore: segment.qualitySignals?.overallScore ?? 0,
+      }));
 
     // Step 2: Deduplicate overlapping clips
     const deduped = this.deduplicateClips(segments, deduplicationThresholdMs, targetClipCount);
@@ -109,7 +131,8 @@ export class ClipExtractionService {
             targetClipCount,
             minClipCount,
             minDurationMs,
-            maxDurationMs
+            maxDurationMs,
+            sceneCutsMs
           );
 
     logger.info('Clips extracted', {
@@ -132,13 +155,14 @@ export class ClipExtractionService {
     durationMs: number,
     transcription: TranscriptionData,
     minDurationMs: number,
-    maxDurationMs: number
+    maxDurationMs: number,
+    sceneCutsMs: number[]
   ): { start: number; end: number } {
     let start = Math.max(0, Math.min(startMs, durationMs));
     let end = Math.max(start + 1, Math.min(endMs, durationMs));
 
     // Snap to transcript boundaries (word-level if available)
-    const aligned = this.snapToTranscriptBoundaries(
+    const transcriptAligned = this.snapToTranscriptBoundaries(
       start,
       end,
       transcription,
@@ -147,8 +171,21 @@ export class ClipExtractionService {
       maxDurationMs
     );
 
-    start = aligned.start;
-    end = aligned.end;
+    start = transcriptAligned.start;
+    end = transcriptAligned.end;
+
+    // Snap to scene cuts for more natural visual transitions (motion-aware heuristic)
+    const sceneAligned = this.snapToSceneCuts(
+      start,
+      end,
+      durationMs,
+      minDurationMs,
+      maxDurationMs,
+      sceneCutsMs
+    );
+
+    start = sceneAligned.start;
+    end = sceneAligned.end;
 
     // Enforce max duration
     if (end - start > maxDurationMs) {
@@ -161,9 +198,13 @@ export class ClipExtractionService {
       start = Math.max(0, end - maxDurationMs);
     }
 
-    // Enforce min duration
+    // Enforce min duration (if source permits)
     if (end - start < minDurationMs) {
       end = Math.min(durationMs, start + minDurationMs);
+      if (end - start < minDurationMs) {
+        // If we hit source boundary, shift window backward to keep minimum duration.
+        start = Math.max(0, end - minDurationMs);
+      }
     }
 
     return { start, end };
@@ -198,42 +239,37 @@ export class ClipExtractionService {
       return { start: startMs, end: endMs };
     }
 
-    // Snap to word boundaries if available
     const firstSegment = overlappingSegments[0];
     const lastSegment = overlappingSegments[overlappingSegments.length - 1];
 
     let alignedStart = startMs;
     let alignedEnd = endMs;
 
-    // Try to snap start to word boundary
+    // Start: prefer nearest earlier word start to avoid chopping first spoken word.
     if (firstSegment.words && firstSegment.words.length > 0) {
-      const closestWord = firstSegment.words.reduce((closest, word) => {
-        const wordStartMs = word.start * 1000;
-        const closestDiff = Math.abs(closest.start * 1000 - startMs);
-        const wordDiff = Math.abs(wordStartMs - startMs);
-        return wordDiff < closestDiff ? word : closest;
-      });
-      alignedStart = closestWord.start * 1000;
+      const wordStartSec = this.findWordStartNearTarget(firstSegment.words, startSec);
+      alignedStart = Math.round(wordStartSec * 1000);
     } else {
-      alignedStart = firstSegment.start * 1000;
+      alignedStart = Math.round(firstSegment.start * 1000);
     }
 
-    // Try to snap end to word boundary
+    // End: prefer forward word end to avoid abrupt cutoff at sentence tail.
     if (lastSegment.words && lastSegment.words.length > 0) {
-      const closestWord = lastSegment.words.reduce((closest, word) => {
-        const wordEndMs = word.end * 1000;
-        const closestDiff = Math.abs(closest.end * 1000 - endMs);
-        const wordDiff = Math.abs(wordEndMs - endMs);
-        return wordDiff < closestDiff ? word : closest;
-      });
-      alignedEnd = closestWord.end * 1000;
+      const wordEndSec = this.findWordEndNearTarget(lastSegment.words, endSec);
+      alignedEnd = Math.round(wordEndSec * 1000);
     } else {
-      alignedEnd = lastSegment.end * 1000;
+      alignedEnd = Math.round(lastSegment.end * 1000);
     }
+
+    alignedStart = Math.max(0, Math.min(alignedStart, durationMs));
+    alignedEnd = Math.max(alignedStart + 1, Math.min(alignedEnd, durationMs));
 
     // Ensure aligned clip still meets duration constraints
     if (alignedEnd - alignedStart < minDurationMs) {
       alignedEnd = Math.min(durationMs, alignedStart + minDurationMs);
+      if (alignedEnd - alignedStart < minDurationMs) {
+        alignedStart = Math.max(0, alignedEnd - minDurationMs);
+      }
     }
 
     if (alignedEnd - alignedStart > maxDurationMs) {
@@ -241,6 +277,148 @@ export class ClipExtractionService {
     }
 
     return { start: alignedStart, end: alignedEnd };
+  }
+
+  private findWordStartNearTarget(
+    words: Array<{ start: number; end: number }>,
+    targetSec: number
+  ): number {
+    const maxLookBackSec = 2.0;
+    const maxLookAheadSec = 0.8;
+
+    // Prefer word start before target.
+    let bestBefore: number | null = null;
+    for (const word of words) {
+      if (word.start <= targetSec && targetSec - word.start <= maxLookBackSec) {
+        if (bestBefore === null || word.start > bestBefore) {
+          bestBefore = word.start;
+        }
+      }
+    }
+    if (bestBefore !== null) return bestBefore;
+
+    // Fallback to near-after start.
+    let bestAfter: number | null = null;
+    for (const word of words) {
+      if (word.start >= targetSec && word.start - targetSec <= maxLookAheadSec) {
+        if (bestAfter === null || word.start < bestAfter) {
+          bestAfter = word.start;
+        }
+      }
+    }
+
+    return bestAfter ?? words[0].start;
+  }
+
+  private findWordEndNearTarget(
+    words: Array<{ start: number; end: number }>,
+    targetSec: number
+  ): number {
+    const maxLookAheadSec = 2.6;
+    const maxLookBackSec = 1.2;
+
+    // Prefer word end after target to reduce abrupt cutoff.
+    let bestAfter: number | null = null;
+    for (const word of words) {
+      if (word.end >= targetSec && word.end - targetSec <= maxLookAheadSec) {
+        if (bestAfter === null || word.end < bestAfter) {
+          bestAfter = word.end;
+        }
+      }
+    }
+    if (bestAfter !== null) return bestAfter;
+
+    // Fallback to near-before end.
+    let bestBefore: number | null = null;
+    for (const word of words) {
+      if (word.end <= targetSec && targetSec - word.end <= maxLookBackSec) {
+        if (bestBefore === null || word.end > bestBefore) {
+          bestBefore = word.end;
+        }
+      }
+    }
+
+    return bestBefore ?? words[words.length - 1].end;
+  }
+
+  /**
+   * Snap boundaries to nearby scene cuts to make visual edits feel natural.
+   */
+  private snapToSceneCuts(
+    startMs: number,
+    endMs: number,
+    durationMs: number,
+    minDurationMs: number,
+    maxDurationMs: number,
+    sceneCutsMs: number[]
+  ): { start: number; end: number } {
+    if (!sceneCutsMs || sceneCutsMs.length === 0) {
+      return { start: startMs, end: endMs };
+    }
+
+    const cuts = sceneCutsMs
+      .filter((cut) => Number.isFinite(cut) && cut > 0 && cut < durationMs)
+      .sort((a, b) => a - b);
+
+    if (cuts.length === 0) {
+      return { start: startMs, end: endMs };
+    }
+
+    let start = startMs;
+    let end = endMs;
+
+    const startCut = this.findNearestCutBefore(cuts, startMs, 2200);
+    if (startCut !== null) {
+      start = startCut;
+    }
+
+    const endCutForward = this.findNearestCutAfter(cuts, endMs, 2800);
+    if (endCutForward !== null) {
+      end = endCutForward;
+    } else {
+      const endCutBack = this.findNearestCutBefore(cuts, endMs, 1400);
+      if (endCutBack !== null) {
+        end = endCutBack;
+      }
+    }
+
+    start = Math.max(0, Math.min(start, durationMs));
+    end = Math.max(start + 1, Math.min(end, durationMs));
+
+    if (end - start < minDurationMs) {
+      end = Math.min(durationMs, start + minDurationMs);
+    }
+    if (end - start > maxDurationMs) {
+      end = Math.min(durationMs, start + maxDurationMs);
+    }
+
+    return { start, end };
+  }
+
+  private findNearestCutBefore(cuts: number[], target: number, maxDistanceMs: number): number | null {
+    for (let i = cuts.length - 1; i >= 0; i -= 1) {
+      const cut = cuts[i];
+      if (cut <= target && target - cut <= maxDistanceMs) {
+        return cut;
+      }
+      if (cut < target - maxDistanceMs) {
+        return null;
+      }
+    }
+    return null;
+  }
+
+  private findNearestCutAfter(cuts: number[], target: number, maxDistanceMs: number): number | null {
+    for (let i = 0; i < cuts.length; i += 1) {
+      const cut = cuts[i];
+      if (cut >= target && cut - target <= maxDistanceMs) {
+        return cut;
+      }
+      if (cut > target + maxDistanceMs) {
+        return null;
+      }
+    }
+    return null;
   }
 
   /**
@@ -252,18 +430,46 @@ export class ClipExtractionService {
     thresholdMs: number,
     targetCount: number
   ): ExtractedClip[] {
-    return segments
-      .sort((a, b) => a.startMs - b.startMs)
+    const selected = segments
+      .slice()
+      .sort((left, right) => {
+        const scoreDelta = (right.selectionScore ?? 0) - (left.selectionScore ?? 0);
+        if (scoreDelta !== 0) return scoreDelta;
+        return left.startMs - right.startMs;
+      })
       .reduce<ExtractedClip[]>((accumulator, segment) => {
-        const isDuplicate = accumulator.some(
-          (existing) => Math.abs(existing.startMs - segment.startMs) < thresholdMs
+        const isDuplicate = accumulator.some((existing) =>
+          this.isDuplicateWindow(existing, segment, thresholdMs)
         );
+
         if (!isDuplicate) {
           accumulator.push(segment);
         }
+
         return accumulator;
-      }, [])
+      }, []);
+
+    return selected
+      .sort((left, right) => left.startMs - right.startMs)
       .slice(0, targetCount);
+  }
+
+  private isDuplicateWindow(
+    left: ExtractedClip,
+    right: ExtractedClip,
+    thresholdMs: number
+  ): boolean {
+    if (Math.abs(left.startMs - right.startMs) < thresholdMs) {
+      return true;
+    }
+
+    const overlapMs = Math.min(left.endMs, right.endMs) - Math.max(left.startMs, right.startMs);
+    if (overlapMs <= 0) {
+      return false;
+    }
+
+    const smallerDuration = Math.min(left.endMs - left.startMs, right.endMs - right.startMs);
+    return overlapMs >= smallerDuration * 0.55;
   }
 
   /**
@@ -278,7 +484,8 @@ export class ClipExtractionService {
     targetCount: number,
     minCount: number,
     minDurationMs: number,
-    maxDurationMs: number
+    maxDurationMs: number,
+    sceneCutsMs: number[]
   ): ExtractedClip[] {
     if (processedSegments.length >= minCount) {
       return processedSegments;
@@ -313,7 +520,8 @@ export class ClipExtractionService {
         durationMs,
         transcription,
         minDurationMs,
-        maxDurationMs
+        maxDurationMs,
+        sceneCutsMs
       );
 
       fallback.push({
@@ -326,10 +534,21 @@ export class ClipExtractionService {
         startMs: window.start,
         endMs: window.end,
         callToAction: originalSegments[index]?.callToAction,
+        qualitySignals: analyzeClipQuality({
+          startMs: window.start,
+          endMs: window.end,
+          transcriptionSegments: transcription.segments,
+          sceneCutsMs,
+          minDurationMs,
+          maxDurationMs,
+        }),
       });
     }
 
-    return fallback;
+    return fallback.map((segment) => ({
+      ...segment,
+      selectionScore: segment.qualitySignals?.overallScore ?? 0,
+    }));
   }
 
   /**
@@ -351,11 +570,26 @@ export class ClipExtractionService {
     const startSec = startMs / 1000;
     const endSec = endMs / 1000;
 
-    const relevantSegments = transcription.segments
-      .filter((seg) => seg.end > startSec && seg.start < endSec)
-      .map((seg) => seg.text)
+    const overlappingSegments = transcription.segments.filter(
+      (seg) => seg.end > startSec && seg.start < endSec
+    );
+
+    const timedWords = overlappingSegments
+      .flatMap((segment) => segment.words ?? [])
+      .filter((word) => word.end > startSec && word.start < endSec)
+      .sort((a, b) => a.start - b.start || a.end - b.end)
+      .map((word) => word.word.trim())
+      .filter((word) => word.length > 0);
+
+    if (timedWords.length > 0) {
+      return timedWords.join(' ');
+    }
+
+    const relevantText = overlappingSegments
+      .map((seg) => seg.text.trim())
+      .filter((text) => text.length > 0)
       .join(' ');
 
-    return relevantSegments || transcription.text;
+    return relevantText;
   }
 }

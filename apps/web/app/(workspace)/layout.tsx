@@ -1,12 +1,17 @@
 import { ReactNode } from "react";
 import Link from "next/link";
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { Logo } from "@/components/marketing/logo";
 import { WorkspaceNav } from "@/components/layout/workspace-nav";
+import { MobileSidebar } from "@/components/layout/mobile-sidebar";
 import { ThemeToggle } from "@/components/layout/theme-toggle";
 import { UserMenu } from "@/components/auth/user-menu";
 import { getCurrentUser } from "@/lib/auth";
-import { QueryProvider } from "@/lib/providers/query-client-provider";
+import { WorkflowProvider } from "@/components/providers/workflow-provider";
+import { ECOSYSTEM_COOKIE_KEY, getEcosystemHome, parseEcosystem } from "@/lib/ecosystem";
+import { EcosystemSwitcher } from "@/components/layout/ecosystem-switcher";
+import { EcosystemRouteGate } from "@/components/layout/ecosystem-route-gate";
 
 export default async function WorkspaceLayout({ children }: { children: ReactNode }) {
   const user = await getCurrentUser();
@@ -15,30 +20,79 @@ export default async function WorkspaceLayout({ children }: { children: ReactNod
     redirect("/");
   }
 
+  const ecosystem = parseEcosystem(cookies().get(ECOSYSTEM_COOKIE_KEY)?.value);
+  if (!ecosystem) {
+    redirect("/ecosystem/select");
+  }
+
+  const homeHref = getEcosystemHome(ecosystem);
+
+  const userForMenu = {
+    ...user,
+    email: user.email || "",
+    name: user.name || undefined,
+    image: user.image || undefined,
+  };
+
   return (
     <div className="flex min-h-screen bg-background">
-      <aside className="hidden w-64 border-r border-border bg-secondary/40 lg:flex lg:flex-col">
-        <div className="flex items-center gap-2 border-b border-border px-4 py-6">
-          <Link href="/dashboard" className="flex items-center gap-2 font-semibold">
-            <Logo className="h-6 w-6" />
-            Clippers
+      {/* Desktop sidebar — slightly raised surface over deep background */}
+      <aside className="hidden w-60 shrink-0 flex-col border-r border-border/40 bg-card lg:flex">
+        {/* Logo area */}
+        <div className="flex h-14 items-center gap-3 border-b border-border/40 px-4">
+          <Link href={homeHref} className="flex items-center gap-2.5 group">
+            <div
+              className="flex h-7 w-7 items-center justify-center rounded-lg"
+              style={{
+                background: "linear-gradient(135deg, #10b981 0%, #34d399 100%)",
+                boxShadow: "0 0 12px hsl(263 72% 56% / 0.5)",
+              }}
+            >
+              <Logo className="h-3.5 w-3.5 text-white" />
+            </div>
+            <span className="text-[15px] font-bold tracking-tight text-foreground">
+              ViralSnip<span className="text-primary">AI</span>
+            </span>
           </Link>
         </div>
-        <WorkspaceNav />
+        <WorkspaceNav user={userForMenu} ecosystem={ecosystem} />
       </aside>
-      <div className="flex min-h-screen flex-1 flex-col">
-        <header className="flex h-16 w-full items-center justify-between border-b border-border bg-background/70 px-4 backdrop-blur">
-          <div className="flex items-center gap-3 lg:hidden">
-            <Logo className="h-6 w-6" />
-            <span className="text-base font-semibold">Clippers</span>
+
+      {/* Main area */}
+      <div className="flex min-h-screen flex-1 flex-col overflow-hidden">
+        {/* Top header — subtle glass effect */}
+        <header className="sticky top-0 z-40 flex h-14 shrink-0 items-center gap-3 border-b border-border/40 bg-background/90 px-4 backdrop-blur-xl lg:px-6">
+          {/* Mobile trigger + logo */}
+          <div className="flex items-center gap-2 lg:hidden">
+            <MobileSidebar user={userForMenu} ecosystem={ecosystem} />
+            <Link href={homeHref} className="flex items-center gap-2">
+              <div
+                className="flex h-6 w-6 items-center justify-center rounded-md"
+                style={{ background: "linear-gradient(135deg, #10b981 0%, #34d399 100%)" }}
+              >
+                <Logo className="h-3.5 w-3.5 text-white" />
+              </div>
+              <span className="text-sm font-bold">
+                ViralSnip<span className="text-primary">AI</span>
+              </span>
+            </Link>
           </div>
-          <div className="flex flex-1 items-center justify-end gap-2">
+
+          {/* Right side */}
+          <div className="ml-auto flex items-center gap-1">
+            <EcosystemSwitcher ecosystem={ecosystem} />
             <ThemeToggle />
-            <UserMenu user={user} />
+            <UserMenu user={userForMenu} />
           </div>
         </header>
-        <main className="flex flex-1 flex-col gap-6 bg-secondary/20 p-4 lg:p-8">
-          <QueryProvider>{children}</QueryProvider>
+
+        {/* Page content */}
+        <main className="flex flex-1 flex-col bg-background">
+          <EcosystemRouteGate ecosystem={ecosystem}>
+            <WorkflowProvider>
+              <div className="flex-1 p-4 lg:p-6">{children}</div>
+            </WorkflowProvider>
+          </EcosystemRouteGate>
         </main>
       </div>
     </div>

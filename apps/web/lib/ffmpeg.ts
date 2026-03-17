@@ -1,8 +1,12 @@
 import { promises as fs } from "fs";
 import path from "path";
+import { spawn } from "child_process";
 import ffmpeg from "fluent-ffmpeg";
 import ffmpegStatic from "ffmpeg-static";
 import ffprobeStatic from "ffprobe-static";
+import { srtUtils } from "@/lib/srt-utils";
+import type { ClipReframePlan, VideoGeometry } from "@/lib/types";
+import type { ClipCaptionStyleConfig, HookOverlay } from "@/lib/repurpose/caption-style-config";
 
 const ffmpegCandidates = [
   process.env.FFMPEG_PATH,
@@ -24,15 +28,11 @@ function configureFfmpegBinary() {
   const ffmpegPath = ffmpegCandidates[0];
   if (ffmpegPath) {
     ffmpeg.setFfmpegPath(ffmpegPath);
-  } else {
-    console.warn("FFmpeg binary path not found. Set FFMPEG_PATH env variable if needed.");
   }
 
   const ffprobePath = ffprobeCandidates[0];
   if (ffprobePath) {
     ffmpeg.setFfprobePath(ffprobePath);
-  } else {
-    console.warn("FFprobe binary path not found. Set FFPROBE_PATH env variable if needed.");
   }
 }
 
@@ -41,6 +41,7 @@ configureFfmpegBinary();
 export const PRESETS = {
   shorts_9x16_1080: { width: 1080, height: 1920 },
   square_1x1_1080: { width: 1080, height: 1080 },
+  portrait_4x5_1080: { width: 1080, height: 1350 },
   landscape_16x9_1080: { width: 1920, height: 1080 }
 } as const;
 
@@ -48,9 +49,9 @@ const playbackOptions = [
   "-c:v",
   "libx264",
   "-preset",
-  "medium",
+  "slow",
   "-crf",
-  "18",
+  "16",
   "-profile:v",
   "high",
   "-level",
@@ -69,6 +70,250 @@ export function getPresetDimensions(preset: keyof typeof PRESETS) {
   return PRESETS[preset];
 }
 
+function clampNormalized(value: number, fallback = 0.5) {
+  if (!Number.isFinite(value)) return fallback;
+  return Math.min(0.95, Math.max(0.05, value));
+}
+
+function hexToRgb(hex: string) {
+  const normalized = hex.replace("#", "");
+  const value =
+    normalized.length === 3
+      ? normalized
+          .split("")
+          .map((part) => `${part}${part}`)
+          .join("")
+      : normalized;
+  const int = Number.parseInt(value, 16);
+  return {
+    r: (int >> 16) & 255,
+    g: (int >> 8) & 255,
+    b: int & 255,
+  };
+}
+
+function hexToAssColor(hex: string, alpha = 0) {
+  const { r, g, b } = hexToRgb(hex);
+  const aa = Math.max(0, Math.min(255, Math.round(alpha)));
+  const toHex = (value: number) => value.toString(16).padStart(2, "0").toUpperCase();
+  return `&H${toHex(aa)}${toHex(b)}${toHex(g)}${toHex(r)}`;
+}
+
+function hexToDrawtextColor(hex: string, opacity = 1) {
+  const safeOpacity = Math.max(0, Math.min(1, opacity));
+  return `${hex}@${safeOpacity.toFixed(2)}`;
+}
+
+function escapeFfmpegText(value: string) {
+  return value
+    .replace(/\\/g, "\\\\")
+    .replace(/:/g, "\\:")
+    .replace(/'/g, "\\'")
+    .replace(/,/g, "\\,")
+    .replace(/\[/g, "\\[")
+    .replace(/\]/g, "\\]")
+    .replace(/\n/g, "\\n");
+}
+
+function buildSubtitleAlignment(style: ClipCaptionStyleConfig) {
+  if (style.position === "top") return 8;
+  if (style.position === "middle") return 5;
+  return 2;
+}
+
+function buildSubtitleMargin(style: ClipCaptionStyleConfig) {
+  if (style.position === "top") return 96;
+  if (style.position === "middle") return 40;
+  return 120;
+}
+
+function buildSubtitleForceStyle(style: ClipCaptionStyleConfig) {
+  const safeFontName = style.fontFamily.replace(/[,'"]/g, "").trim() || "Arial";
+  const values = [
+    `FontName=${safeFontName}`,
+    `FontSize=${Math.round(style.fontSize)}`,
+    `PrimaryColour=${hexToAssColor(style.primaryColor)}`,
+    `OutlineColour=${hexToAssColor(style.outlineColor)}`,
+    `BorderStyle=${style.background ? 3 : 1}`,
+    `Outline=${style.outline ? 2 : 0}`,
+    `Shadow=0`,
+    `Alignment=${buildSubtitleAlignment(style)}`,
+    `MarginV=${buildSubtitleMargin(style)}`,
+  ];
+
+  if (style.background) {
+    values.push(`BackColour=${hexToAssColor(style.backgroundColor, (1 - style.backgroundOpacity) * 255)}`);
+  }
+
+  return values.join(",");
+}
+
+function buildSubtitleFilter(srtPath: string, style: ClipCaptionStyleConfig) {
+  const escapedSrt = escapeSubtitlesPath(srtPath);
+  return `subtitles='${escapedSrt}':force_style='${buildSubtitleForceStyle(style)}'`;
+}
+
+function buildOverlayXExpr(align: HookOverlay["align"]) {
+  if (align === "left") return "max(48, w*0.08)";
+  if (align === "right") return "min(w-text_w-48, w*0.92-text_w)";
+  return "(w-text_w)/2";
+}
+
+function buildOverlayYExpr(position: HookOverlay["position"]) {
+  if (position === "top") return "h*0.12";
+  if (position === "center") return "(h-text_h)/2";
+  return "h*0.74";
+}
+
+function buildHookOverlayFilter(overlay: HookOverlay) {
+  const startSeconds = Math.max(0, overlay.startMs / 1000);
+  const endSeconds = Math.max(startSeconds + 0.05, overlay.endMs / 1000);
+  const fontColor = hexToDrawtextColor(overlay.textColor, 1);
+  const boxColor = hexToDrawtextColor(overlay.backgroundColor, overlay.backgroundOpacity);
+  const xExpr = buildOverlayXExpr(overlay.align);
+  const yExpr = buildOverlayYExpr(overlay.position);
+  const text = escapeFfmpegText(overlay.text);
+
+  return [
+    "drawtext",
+    `text='${text}'`,
+    `fontsize=${Math.round(overlay.fontSize)}`,
+    `fontcolor=${fontColor}`,
+    `x=${xExpr}`,
+    `y=${yExpr}`,
+    `box=1`,
+    `boxcolor=${boxColor}`,
+    `boxborderw=18`,
+    `line_spacing=8`,
+    `enable='between(t,${startSeconds.toFixed(2)},${endSeconds.toFixed(2)})'`,
+  ]
+    .filter(Boolean)
+    .join(":");
+}
+
+export function buildCaptionOverlayFilterChain({
+  preset,
+  srtPath,
+  captionStyle,
+}: {
+  preset: keyof typeof PRESETS;
+  srtPath?: string;
+  captionStyle?: ClipCaptionStyleConfig | null;
+}) {
+  const { width, height } = getPresetDimensions(preset);
+  const filters: string[] = [];
+  const normalizedStyle = captionStyle ?? null;
+
+  if (srtPath && normalizedStyle) {
+    filters.push(buildSubtitleFilter(srtPath, normalizedStyle));
+  } else if (srtPath) {
+    const escapedSrt = escapeSubtitlesPath(srtPath);
+    filters.push(`subtitles='${escapedSrt}'`);
+  }
+
+  if (normalizedStyle?.hookOverlays?.length) {
+    normalizedStyle.hookOverlays.forEach((overlay) => {
+      filters.push(buildHookOverlayFilter(overlay));
+    });
+  }
+
+  filters.push(`scale=${width}:${height}`);
+  filters.push("setsar=1");
+  return filters.join(",");
+}
+
+function getPlanAnchorCenter(plan?: ClipReframePlan | null) {
+  if (!plan || plan.anchor === "center") {
+    return { centerX: 0.5, centerY: 0.5 };
+  }
+
+  const centerX = clampNormalized(plan.safeZone.x + plan.safeZone.width / 2, 0.5);
+  const centerY = clampNormalized(plan.safeZone.y + plan.safeZone.height / 2, 0.5);
+
+  return { centerX, centerY };
+}
+
+function buildTrackingProgressExpr(durationSeconds: number) {
+  const durationExpr = Math.max(durationSeconds, 0.2).toFixed(4);
+  return `(0.5-0.5*cos(PI*max(0,min(1,t/${durationExpr}))))`;
+}
+
+function buildTrackedCropCenter({
+  baseCenter,
+  travel,
+  easing,
+  durationSeconds,
+}: {
+  baseCenter: number;
+  travel: number;
+  easing: "linear" | "ease_in_out";
+  durationSeconds: number;
+}) {
+  if (!Number.isFinite(travel) || travel <= 0 || durationSeconds <= 0) {
+    return baseCenter.toFixed(4);
+  }
+
+  const progressExpr =
+    easing === "linear"
+      ? `max(0,min(1,t/${Math.max(durationSeconds, 0.2).toFixed(4)}))`
+      : buildTrackingProgressExpr(durationSeconds);
+  return `${baseCenter.toFixed(4)}+(${travel.toFixed(4)})*(${progressExpr}-0.5)`;
+}
+
+function escapeFilterExpression(value: string) {
+  return value.replace(/,/g, "\\,");
+}
+
+export function buildPresetVideoFilter({
+  preset,
+  reframePlan,
+  durationSeconds,
+}: {
+  preset: keyof typeof PRESETS;
+  reframePlan?: ClipReframePlan | null;
+  durationSeconds?: number;
+}) {
+  const { width, height } = getPresetDimensions(preset);
+  const targetRatio = width / height;
+
+  if (!reframePlan || reframePlan.mode === "letterbox") {
+    return `scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1`;
+  }
+
+  const { centerX, centerY } = getPlanAnchorCenter(reframePlan);
+  const tracking = reframePlan.tracking;
+  const ratioExpr = targetRatio.toFixed(6);
+  const centerXExpr =
+    tracking?.axis === "horizontal"
+      ? buildTrackedCropCenter({
+          baseCenter: centerX,
+          travel: tracking.travel * tracking.lockStrength,
+          easing: tracking.easing,
+          durationSeconds: durationSeconds ?? 0,
+        })
+      : centerX.toFixed(4);
+  const centerYExpr =
+    tracking?.axis === "vertical"
+      ? buildTrackedCropCenter({
+          baseCenter: centerY,
+          travel: tracking.travel * tracking.lockStrength,
+          easing: tracking.easing,
+          durationSeconds: durationSeconds ?? 0,
+        })
+      : centerY.toFixed(4);
+  const cropWidthRaw = `if(gte(iw/ih,${ratioExpr}),ih*${ratioExpr},iw)`;
+  const cropHeightRaw = `if(gte(iw/ih,${ratioExpr}),ih,iw/${ratioExpr})`;
+  const cropXRaw = `if(gte(iw/ih,${ratioExpr}),max(0,min(iw-(${cropWidthRaw}),iw*${centerXExpr}-(${cropWidthRaw})/2)),0)`;
+  const cropYRaw = `if(gte(iw/ih,${ratioExpr}),0,max(0,min(ih-(${cropHeightRaw}),ih*${centerYExpr}-(${cropHeightRaw})/2)))`;
+
+  const cropWidthExpr = escapeFilterExpression(cropWidthRaw);
+  const cropHeightExpr = escapeFilterExpression(cropHeightRaw);
+  const cropXExpr = escapeFilterExpression(cropXRaw);
+  const cropYExpr = escapeFilterExpression(cropYRaw);
+
+  return `crop=${cropWidthExpr}:${cropHeightExpr}:${cropXExpr}:${cropYExpr},scale=${width}:${height},setsar=1`;
+}
+
 export async function probeDuration(filePath: string): Promise<number> {
   return new Promise((resolve, reject) => {
     ffmpeg.ffprobe(filePath, (error, metadata) => {
@@ -81,31 +326,175 @@ export async function probeDuration(filePath: string): Promise<number> {
   });
 }
 
+export async function probeVideoGeometry(filePath: string): Promise<VideoGeometry> {
+  return new Promise((resolve, reject) => {
+    ffmpeg.ffprobe(filePath, (error, metadata) => {
+      if (error) {
+        reject(error);
+        return;
+      }
+
+      const videoStream = metadata.streams.find((stream: any) => stream.codec_type === "video");
+      if (!videoStream?.width || !videoStream?.height) {
+        reject(new Error("Video stream metadata missing width/height"));
+        return;
+      }
+
+      const rotationValue =
+        Number(videoStream.tags?.rotate) ||
+        Number(
+          videoStream.side_data_list?.find((entry: any) => typeof entry.rotation !== "undefined")?.rotation ?? 0
+        ) ||
+        0;
+
+      const isRotated = Math.abs(rotationValue) === 90 || Math.abs(rotationValue) === 270;
+      const width = isRotated ? Number(videoStream.height) : Number(videoStream.width);
+      const height = isRotated ? Number(videoStream.width) : Number(videoStream.height);
+      const aspectRatio = height > 0 ? width / height : 1;
+      const orientation =
+        Math.abs(aspectRatio - 1) < 0.05 ? "square" : aspectRatio > 1 ? "landscape" : "portrait";
+
+      const sourceRatioLabel =
+        Math.abs(aspectRatio - 9 / 16) < 0.05
+          ? "9:16"
+          : Math.abs(aspectRatio - 1) < 0.05
+          ? "1:1"
+          : Math.abs(aspectRatio - 16 / 9) < 0.08
+          ? "16:9"
+          : "custom";
+
+      resolve({
+        width,
+        height,
+        aspectRatio,
+        orientation,
+        sourceRatioLabel,
+      });
+    });
+  });
+}
+
+export async function detectSceneChanges({
+  inputPath,
+  threshold = 0.34,
+  maxCuts = 300,
+}: {
+  inputPath: string;
+  threshold?: number;
+  maxCuts?: number;
+}): Promise<number[]> {
+  const binary = ffmpegCandidates[0];
+  if (!binary) {
+    return [];
+  }
+
+  const args = [
+    "-hide_banner",
+    "-i",
+    inputPath,
+    "-filter:v",
+    `select='gt(scene,${threshold})',showinfo`,
+    "-an",
+    "-f",
+    "null",
+    "-",
+  ];
+
+  return new Promise<number[]>((resolve) => {
+    const cutSet = new Set<number>();
+    const parser = (chunk: string) => {
+      const regex = /pts_time:([0-9]+(?:\\.[0-9]+)?)/g;
+      let match: RegExpExecArray | null;
+      while ((match = regex.exec(chunk)) !== null) {
+        const sec = Number(match[1]);
+        if (!Number.isFinite(sec) || sec < 0) continue;
+        cutSet.add(Math.round(sec * 1000));
+        if (cutSet.size >= maxCuts) {
+          break;
+        }
+      }
+    };
+
+    let stderrData = "";
+    let stdoutData = "";
+    const child = spawn(binary, args, { stdio: ["ignore", "pipe", "pipe"] });
+
+    child.stdout.on("data", (chunk) => {
+      const text = String(chunk);
+      stdoutData += text;
+      parser(text);
+    });
+
+    child.stderr.on("data", (chunk) => {
+      const text = String(chunk);
+      stderrData += text;
+      parser(text);
+    });
+
+    child.on("error", () => resolve([]));
+    child.on("close", () => {
+      parser(stdoutData);
+      parser(stderrData);
+      resolve(
+        [...cutSet]
+          .filter((value) => Number.isFinite(value) && value > 0)
+          .sort((a, b) => a - b)
+          .slice(0, maxCuts)
+      );
+    });
+  });
+}
+
 export async function extractClip({
   inputPath,
   startMs,
   endMs,
-  outputPath
+  outputPath,
+  preset,
+  reframePlan,
 }: {
   inputPath: string;
   startMs: number;
   endMs: number;
   outputPath: string;
+  preset?: keyof typeof PRESETS;
+  reframePlan?: ClipReframePlan | null;
 }) {
   const startSeconds = startMs / 1000;
-  const durationSeconds = Math.max((endMs - startMs) / 1000, 1);
+  const durationSeconds = Math.max((endMs - startMs) / 1000, 0.12);
 
   await fs.mkdir(path.dirname(outputPath), { recursive: true });
 
   return new Promise<void>((resolve, reject) => {
-    ffmpeg(inputPath)
+    let commandLine: string | undefined;
+    const command = ffmpeg(inputPath)
       .setStartTime(startSeconds)
       .setDuration(durationSeconds)
-      .outputOptions([...playbackOptions])
       .output(outputPath)
+      .on("start", (cmd) => {
+        commandLine = cmd;
+      })
       .on("end", () => resolve())
-      .on("error", (error) => reject(error))
-      .run();
+      .on("error", (error, _stdout, stderr) =>
+        reject(
+          buildFfmpegError("extractClip", error, {
+            inputPath,
+            outputPath,
+            commandLine,
+            stderr: stderr ?? undefined,
+          })
+        )
+      );
+
+    const outputOptions = [...playbackOptions];
+    if (preset) {
+      outputOptions.unshift(
+        "-vf",
+        buildPresetVideoFilter({ preset, reframePlan, durationSeconds })
+      );
+    }
+
+    command.outputOptions(outputOptions).run();
   });
 }
 
@@ -113,28 +502,89 @@ export async function burnCaptions({
   inputPath,
   srtPath,
   outputPath,
-  preset
+  preset,
+  captionStyle,
 }: {
   inputPath: string;
   srtPath: string;
   outputPath: string;
   preset: keyof typeof PRESETS;
+  captionStyle?: ClipCaptionStyleConfig | null;
 }) {
-  const { width, height } = getPresetDimensions(preset);
   await fs.mkdir(path.dirname(outputPath), { recursive: true });
-  const escapedSrt = srtPath.replace(/:/g, "\\:").replace(/'/g, "\\'");
 
   return new Promise<void>((resolve, reject) => {
+    let commandLine: string | undefined;
     ffmpeg(inputPath)
       .outputOptions([
         "-vf",
-        `subtitles='${escapedSrt}',scale=${width}:${height}`,
+        buildCaptionOverlayFilterChain({ preset, srtPath, captionStyle }),
         ...playbackOptions
       ])
-      .size(`${width}x${height}`)
       .output(outputPath)
+      .on("start", (cmd) => {
+        commandLine = cmd;
+      })
       .on("end", () => resolve())
-      .on("error", (error) => reject(error))
+      .on("error", (error, _stdout, stderr) =>
+        reject(
+          buildFfmpegError("burnCaptions", error, {
+            inputPath,
+            outputPath,
+            commandLine,
+            stderr: stderr ?? undefined,
+            extras: `srtPath=${srtPath}`,
+          })
+        )
+      )
+      .run();
+  });
+}
+
+export async function applyCaptionAndOverlayStyling({
+  inputPath,
+  outputPath,
+  preset,
+  srtPath,
+  captionStyle,
+}: {
+  inputPath: string;
+  outputPath: string;
+  preset: keyof typeof PRESETS;
+  srtPath?: string;
+  captionStyle?: ClipCaptionStyleConfig | null;
+}) {
+  const hasOverlays = Boolean(captionStyle?.hookOverlays?.length);
+  if (!srtPath && !hasOverlays) {
+    await fs.copyFile(inputPath, outputPath);
+    return;
+  }
+
+  await fs.mkdir(path.dirname(outputPath), { recursive: true });
+
+  return new Promise<void>((resolve, reject) => {
+    let commandLine: string | undefined;
+    ffmpeg(inputPath)
+      .outputOptions([
+        "-vf",
+        buildCaptionOverlayFilterChain({ preset, srtPath, captionStyle }),
+        ...playbackOptions,
+      ])
+      .output(outputPath)
+      .on("start", (cmd) => {
+        commandLine = cmd;
+      })
+      .on("end", () => resolve())
+      .on("error", (error, _stdout, stderr) =>
+        reject(
+          buildFfmpegError("applyCaptionAndOverlayStyling", error, {
+            inputPath,
+            outputPath,
+            commandLine,
+            stderr: stderr ?? undefined,
+          })
+        )
+      )
       .run();
   });
 }
@@ -158,30 +608,84 @@ export async function concatClips({
   const { width, height } = getPresetDimensions(preset);
 
   return new Promise<void>((resolve, reject) => {
+    let commandLine: string | undefined;
     const command = ffmpeg()
       .input(concatListPath)
       .inputOptions(["-f", "concat", "-safe", "0"])
-      .size(`${width}x${height}`)
-      .outputOptions([...playbackOptions])
       .output(outputPath)
+      .on("start", (cmd) => {
+        commandLine = cmd;
+      })
       .on("end", async () => {
         await fs.unlink(concatListPath);
         resolve();
       })
-      .on("error", async (error) => {
+      .on("error", async (error, _stdout, stderr) => {
         await fs.unlink(concatListPath).catch(() => null);
-        reject(error);
+        reject(
+          buildFfmpegError("concatClips", error, {
+            outputPath,
+            commandLine,
+            stderr: stderr ?? undefined,
+            extras: `clipCount=${clipPaths.length}; watermarkPath=${watermarkPath ?? "none"}`,
+          })
+        );
       });
 
     if (watermarkPath) {
-      const escapedPath = escapeFfmpegPath(watermarkPath);
       const offset = 48;
-      command.videoFilters(
-        `movie=${escapedPath} [watermark]; [in][watermark] overlay=W-w-${offset}:H-h-${offset} [out]`
-      );
+      command.input(watermarkPath);
+      command.complexFilter([
+        `[0:v]scale=${width}:${height}[base]`,
+        `[base][1:v]overlay=W-w-${offset}:H-h-${offset}[v]`,
+      ]);
+      command.outputOptions([...playbackOptions, "-map", "[v]", "-map", "0:a?"]);
+    } else {
+      command.outputOptions(["-vf", `scale=${width}:${height}`, ...playbackOptions]);
     }
 
     command.run();
+  });
+}
+
+export async function concatClipsPassthrough({
+  clipPaths,
+  outputPath,
+}: {
+  clipPaths: string[];
+  outputPath: string;
+}) {
+  const concatListPath = `${outputPath}.txt`;
+  const listContent = clipPaths.map((clipPath) => `file '${clipPath.replace(/'/g, "'\\''")}'`).join("\n");
+  await fs.mkdir(path.dirname(outputPath), { recursive: true });
+  await fs.writeFile(concatListPath, listContent);
+
+  return new Promise<void>((resolve, reject) => {
+    let commandLine: string | undefined;
+    ffmpeg()
+      .input(concatListPath)
+      .inputOptions(["-f", "concat", "-safe", "0"])
+      .outputOptions([...playbackOptions])
+      .output(outputPath)
+      .on("start", (cmd) => {
+        commandLine = cmd;
+      })
+      .on("end", async () => {
+        await fs.unlink(concatListPath).catch(() => null);
+        resolve();
+      })
+      .on("error", async (error, _stdout, stderr) => {
+        await fs.unlink(concatListPath).catch(() => null);
+        reject(
+          buildFfmpegError("concatClipsPassthrough", error, {
+            outputPath,
+            commandLine,
+            stderr: stderr ?? undefined,
+            extras: `clipCount=${clipPaths.length}`,
+          })
+        );
+      })
+      .run();
   });
 }
 
@@ -190,54 +694,156 @@ export async function renderExport({
   preset,
   outputPath,
   captionPaths,
-  watermarkPath
+  watermarkPath,
+  onProgress,
 }: {
-  segments: Array<{ startMs: number; endMs: number; id: string; sourcePath: string }>;
+  segments: Array<{
+    startMs: number;
+    endMs: number;
+    id: string;
+    sourcePath: string;
+    reframePlan?: ClipReframePlan | null;
+    captionStyle?: ClipCaptionStyleConfig | null;
+  }>;
   preset: keyof typeof PRESETS;
   outputPath: string;
   captionPaths?: Record<string, string | undefined | null>;
   watermarkPath?: string | null;
+  onProgress?: (state: {
+    step: "extracting" | "styling" | "stitching" | "finalizing";
+    progressPct: number;
+    segmentIndex?: number;
+    segmentCount?: number;
+  }) => void;
 }) {
   const tempDir = `${outputPath}_segments`;
   await fs.mkdir(tempDir, { recursive: true });
 
   const clipPaths: string[] = [];
+  const tempCaptionPaths: string[] = [];
 
-  for (const segment of segments) {
-    const clipPath = path.join(tempDir, `${segment.id}.mp4`);
-    await extractClip({
-      inputPath: segment.sourcePath,
-      startMs: segment.startMs,
-      endMs: segment.endMs,
-      outputPath: clipPath
-    });
+  try {
+    for (const [index, segment] of segments.entries()) {
+      const clipPath = path.join(tempDir, `${segment.id}.mp4`);
+      const segmentIndex = index + 1;
+      const segmentCount = segments.length;
+      const extractBase = 18;
+      const extractRange = 34;
+      const stylingBase = 52;
+      const stylingRange = 24;
 
-    const captionPath = captionPaths?.[segment.id];
-    if (captionPath) {
-      const captionedPath = path.join(tempDir, `${segment.id}-captioned.mp4`);
-      await burnCaptions({
-        inputPath: clipPath,
-        srtPath: captionPath,
-        outputPath: captionedPath,
-        preset
+      onProgress?.({
+        step: "extracting",
+        progressPct: extractBase + (segmentIndex - 1) * (extractRange / Math.max(segmentCount, 1)),
+        segmentIndex,
+        segmentCount,
       });
-      clipPaths.push(captionedPath);
-    } else {
-      clipPaths.push(clipPath);
+      await extractClip({
+        inputPath: segment.sourcePath,
+        startMs: segment.startMs,
+        endMs: segment.endMs,
+        outputPath: clipPath,
+        preset,
+        reframePlan: segment.reframePlan,
+      });
+
+      const captionSource = captionPaths?.[segment.id];
+      const caption = await resolveCaptionInput(captionSource, tempDir, segment.id);
+      const hasStyledOverlays = Boolean(segment.captionStyle?.hookOverlays?.length);
+      if (caption || hasStyledOverlays) {
+        if (caption?.temporary) {
+          tempCaptionPaths.push(caption.srtPath);
+        }
+        const captionedPath = path.join(tempDir, `${segment.id}-captioned.mp4`);
+        onProgress?.({
+          step: "styling",
+          progressPct: stylingBase + (segmentIndex - 1) * (stylingRange / Math.max(segmentCount, 1)),
+          segmentIndex,
+          segmentCount,
+        });
+        await applyCaptionAndOverlayStyling({
+          inputPath: clipPath,
+          outputPath: captionedPath,
+          preset,
+          srtPath: caption?.srtPath,
+          captionStyle: segment.captionStyle,
+        });
+        clipPaths.push(captionedPath);
+      } else {
+        clipPaths.push(clipPath);
+      }
     }
+
+    onProgress?.({
+      step: "stitching",
+      progressPct: 84,
+      segmentCount: segments.length,
+    });
+    await concatClips({ clipPaths, outputPath, preset, watermarkPath });
+    onProgress?.({
+      step: "finalizing",
+      progressPct: 96,
+      segmentCount: segments.length,
+    });
+  } finally {
+    await Promise.all(
+      clipPaths.map(async (clipPath) => {
+        if (clipPath.startsWith(tempDir)) {
+          await fs.unlink(clipPath).catch(() => null);
+        }
+      })
+    );
+    await Promise.all(tempCaptionPaths.map((p) => fs.unlink(p).catch(() => null)));
+    await fs.rm(tempDir, { recursive: true, force: true }).catch(() => null);
+  }
+}
+
+async function resolveCaptionInput(
+  captionSource: string | undefined | null,
+  tempDir: string,
+  segmentId: string
+): Promise<{ srtPath: string; temporary: boolean } | null> {
+  if (!captionSource || typeof captionSource !== "string") {
+    return null;
   }
 
-  await concatClips({ clipPaths, outputPath, preset, watermarkPath });
+  const normalized = captionSource.replace(/\r\n/g, "\n").trim();
+  if (!normalized) {
+    return null;
+  }
 
-  await Promise.all(
-    clipPaths.map(async (clipPath) => {
-      if (clipPath.startsWith(tempDir)) {
-        await fs.unlink(clipPath).catch(() => null);
+  if (srtUtils.isValidSRT(normalized)) {
+    const generatedSrtPath = path.join(tempDir, `${segmentId}.srt`);
+    await fs.writeFile(generatedSrtPath, normalized, "utf-8");
+    return { srtPath: generatedSrtPath, temporary: true };
+  }
+
+  try {
+    await fs.access(normalized);
+    return { srtPath: normalized, temporary: false };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Probe whether the input is already a web-compatible H.264/AAC MP4.
+ * Returns true if we can skip re-encoding and just remux.
+ */
+async function isWebCompatible(filePath: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    ffmpeg.ffprobe(filePath, (_error, metadata) => {
+      if (_error || !metadata?.streams) {
+        resolve(false);
+        return;
       }
-    })
-  );
-
-  await fs.rm(tempDir, { recursive: true, force: true }).catch(() => null);
+      const videoStream = metadata.streams.find((s) => s.codec_type === "video");
+      const audioStream = metadata.streams.find((s) => s.codec_type === "audio");
+      const isH264 = videoStream?.codec_name === "h264";
+      const isAac = !audioStream || audioStream.codec_name === "aac";
+      resolve(isH264 && isAac);
+    });
+  });
 }
 
 export async function normalizeVideo({
@@ -248,9 +854,22 @@ export async function normalizeVideo({
   outputPath: string;
 }) {
   await fs.mkdir(path.dirname(outputPath), { recursive: true });
+
+  // If source is already H.264+AAC, remux without re-encoding to preserve quality
+  const canRemux = await isWebCompatible(inputPath);
+
   return new Promise<void>((resolve, reject) => {
-    ffmpeg(inputPath)
-      .outputOptions([...playbackOptions])
+    const cmd = ffmpeg(inputPath);
+    if (canRemux) {
+      cmd.outputOptions([
+        "-c:v", "copy",
+        "-c:a", "copy",
+        "-movflags", "+faststart"
+      ]);
+    } else {
+      cmd.outputOptions([...playbackOptions]);
+    }
+    cmd
       .output(outputPath)
       .on("end", () => resolve())
       .on("error", (error) => reject(error))
@@ -291,8 +910,47 @@ export async function transcodeToMp3({
   });
 }
 
-function escapeFfmpegPath(value: string) {
-  return `'${value.replace(/'/g, "'\\''")}'`;
+function escapeSubtitlesPath(value: string) {
+  return value
+    .replace(/\\/g, "\\\\")
+    .replace(/:/g, "\\:")
+    .replace(/,/g, "\\,")
+    .replace(/'/g, "\\'");
+}
+
+function buildFfmpegError(
+  operation: string,
+  error: unknown,
+  options?: {
+    inputPath?: string;
+    outputPath?: string;
+    commandLine?: string;
+    stderr?: string;
+    extras?: string;
+  }
+) {
+  const baseMessage =
+    error instanceof Error ? error.message : typeof error === "string" ? error : "Unknown ffmpeg error";
+  const stderrSnippet = options?.stderr
+    ? options.stderr
+        .trim()
+        .split("\n")
+        .map((line) => line.trim())
+        .filter(Boolean)
+        .slice(-4)
+        .join(" | ")
+    : null;
+  const details = [
+    options?.inputPath ? `input=${options.inputPath}` : null,
+    options?.outputPath ? `output=${options.outputPath}` : null,
+    options?.extras ? options.extras : null,
+    options?.commandLine ? `cmd=${options.commandLine}` : null,
+    stderrSnippet ? `stderr=${stderrSnippet}` : null,
+  ]
+    .filter(Boolean)
+    .join(" | ");
+
+  return new Error(details ? `${operation} failed: ${baseMessage} | ${details}` : `${operation} failed: ${baseMessage}`);
 }
 
 export async function generateThumbnail({

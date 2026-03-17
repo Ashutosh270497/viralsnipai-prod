@@ -10,6 +10,7 @@
 import { injectable } from 'inversify';
 import { logger } from '@/lib/logger';
 import { srtUtils } from '@/lib/srt-utils';
+import { normalizeCaptionTimelineSegments } from '@/lib/repurpose/transcript-sync';
 
 export interface CaptionSegment {
   index: number;
@@ -81,8 +82,18 @@ export class CaptionGenerationService {
         maxDurationMs,
       });
 
+      const sanitizedSegments = this.sanitizeCaptionSegments(
+        captionSegments,
+        Math.max(0, clipEndMs - clipStartMs)
+      );
+
+      if (sanitizedSegments.length === 0) {
+        logger.warn("Caption sanitization removed all segments, using fallback");
+        return this.generateFallbackSRT(clipStartMs, clipEndMs);
+      }
+
       // Generate SRT format
-      return this.toSRT(captionSegments);
+      return this.toSRT(sanitizedSegments);
     } catch (error) {
       logger.error('Failed to generate captions', { error });
       return this.generateFallbackSRT(clipStartMs, clipEndMs);
@@ -131,24 +142,31 @@ export class CaptionGenerationService {
       // Split plain text into sentences
       const sentences = this.splitIntoSentences(transcript.trim());
 
-      // If we have clip timing, scale segments to fit the actual clip duration
+      // If we have clip timing, generate segments on the source timeline
+      // so downstream clip-range filtering works correctly.
       if (clipStartMs !== undefined && clipEndMs !== undefined) {
+        const clipStartSec = clipStartMs / 1000;
+        const clipEndSec = clipEndMs / 1000;
         const clipDurationSec = (clipEndMs - clipStartMs) / 1000;
         const totalWords = sentences.reduce((sum, s) => sum + s.split(/\s+/).length, 0);
-        const wordsPerSecond = totalWords / clipDurationSec;
+        const wordsPerSecond = Math.max(totalWords / Math.max(clipDurationSec, 1), 0.5);
 
         const segments: TranscriptSegment[] = [];
-        let currentTime = 0;
+        let currentTime = clipStartSec;
 
         for (let i = 0; i < sentences.length; i++) {
           const sentence = sentences[i];
           const wordCount = sentence.split(/\s+/).length;
           const durationSec = wordCount / wordsPerSecond;
+          const start = currentTime;
+          const end = i === sentences.length - 1
+            ? clipEndSec
+            : Math.min(currentTime + durationSec, clipEndSec);
 
           segments.push({
             id: i,
-            start: currentTime,
-            end: currentTime + durationSec,
+            start,
+            end,
             text: sentence,
           });
 
@@ -321,6 +339,63 @@ export class CaptionGenerationService {
   }
 
   /**
+   * Sanitize generated caption segments to ensure valid, monotonic SRT output.
+   */
+  private sanitizeCaptionSegments(segments: CaptionSegment[], clipDurationMs: number): CaptionSegment[] {
+    if (segments.length === 0 || clipDurationMs <= 0) {
+      return [];
+    }
+
+    const MERGE_SHORT_THRESHOLD_MS = 350;
+    const MERGE_GAP_THRESHOLD_MS = 120;
+    const normalized = normalizeCaptionTimelineSegments(segments, {
+      clipDurationMs,
+      minDurationMs: 250,
+    }).map((segment, idx) => ({
+      index: idx + 1,
+      startMs: segment.startMs,
+      endMs: segment.endMs,
+      text: segment.text,
+    }));
+
+    if (normalized.length === 0) {
+      return [];
+    }
+
+    const merged: CaptionSegment[] = [];
+
+    for (let i = 0; i < normalized.length; i++) {
+      const current = normalized[i];
+      const duration = current.endMs - current.startMs;
+      const next = normalized[i + 1];
+
+      if (
+        duration <= MERGE_SHORT_THRESHOLD_MS &&
+        next &&
+        next.startMs - current.endMs <= MERGE_GAP_THRESHOLD_MS
+      ) {
+        merged.push({
+          index: merged.length + 1,
+          startMs: current.startMs,
+          endMs: next.endMs,
+          text: `${current.text} ${next.text}`.replace(/\s+/g, " ").trim(),
+        });
+        i += 1;
+        continue;
+      }
+
+      merged.push({
+        index: merged.length + 1,
+        startMs: current.startMs,
+        endMs: current.endMs,
+        text: current.text,
+      });
+    }
+
+    return merged;
+  }
+
+  /**
    * Convert caption segments to SRT format
    */
   private toSRT(segments: CaptionSegment[]): string {
@@ -343,11 +418,11 @@ export class CaptionGenerationService {
 
     return `1
 00:00:00,000 --> ${srtUtils.formatSRTTime(midpointMs)}
-[Generated content]
+[Transcript unavailable]
 
 2
 ${srtUtils.formatSRTTime(midpointMs)} --> ${srtUtils.formatSRTTime(durationMs)}
-Captions unavailable
+[Regenerate captions for editable transcript]
 `;
   }
 }

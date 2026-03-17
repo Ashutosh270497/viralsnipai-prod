@@ -3,27 +3,103 @@
 import { FormEvent, useState } from "react";
 import { signIn } from "next-auth/react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
+import { Eye, EyeOff } from "lucide-react";
 
 import { Logo } from "@/components/marketing/logo";
+import { useToast } from "@/components/ui/use-toast";
+import { signupSchema } from "@/lib/validations";
 
 export default function SignUpPage() {
+  const searchParams = useSearchParams();
+  const [name, setName] = useState("");
   const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const { toast } = useToast();
+  const callbackUrl = sanitizeCallbackUrl(searchParams.get("callbackUrl"));
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setIsSubmitting(true);
-    await signIn("email", {
-      email,
-      callbackUrl: "/dashboard"
-    });
+    setErrors({});
+
+    try {
+      // Validate input
+      const validatedData = signupSchema.parse({ email, password, name });
+
+      // Call signup API
+      const response = await fetch("/api/auth/signup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(validatedData)
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        if (data.details) {
+          // Zod validation errors
+          const fieldErrors: Record<string, string> = {};
+          data.details.forEach((error: any) => {
+            fieldErrors[error.path[0]] = error.message;
+          });
+          setErrors(fieldErrors);
+        } else {
+          toast({
+            title: "Signup failed",
+            description: data.error || "An error occurred during signup",
+            variant: "destructive"
+          });
+        }
+        setIsSubmitting(false);
+        return;
+      }
+
+      // Success - sign in with credentials
+      toast({
+        title: "Account created!",
+        description: "Signing you in..."
+      });
+
+      const signInResult = await signIn("credentials", {
+        email: validatedData.email,
+        password: validatedData.password,
+        callbackUrl
+      });
+
+      if (signInResult?.error) {
+        toast({
+          title: "Sign in failed",
+          description: "Account created but sign in failed. Please sign in manually.",
+          variant: "destructive"
+        });
+      }
+    } catch (error: any) {
+      if (error.name === "ZodError") {
+        const fieldErrors: Record<string, string> = {};
+        error.errors.forEach((err: any) => {
+          fieldErrors[err.path[0]] = err.message;
+        });
+        setErrors(fieldErrors);
+      } else {
+        toast({
+          title: "Error",
+          description: "An unexpected error occurred",
+          variant: "destructive"
+        });
+      }
+    }
+
     setIsSubmitting(false);
   }
 
   async function handleGoogle() {
     setIsSubmitting(true);
     await signIn("google", {
-      callbackUrl: "/dashboard"
+      callbackUrl
     });
     setIsSubmitting(false);
   }
@@ -35,7 +111,7 @@ export default function SignUpPage() {
         <div className="flex justify-center">
           <Link href="/" className="flex items-center gap-3">
             <Logo className="h-10 w-10" />
-            <span className="text-2xl font-bold text-gray-900 dark:text-white">Clippers</span>
+            <span className="text-2xl font-bold text-gray-900 dark:text-white">ViralSnipAI</span>
           </Link>
         </div>
 
@@ -79,8 +155,23 @@ export default function SignUpPage() {
             </div>
           </div>
 
-          {/* Email Form */}
+          {/* Email/Password Form */}
           <form onSubmit={handleSubmit} className="space-y-6 text-left">
+            <div className="space-y-2">
+              <label htmlFor="name" className="text-base font-medium text-gray-700 dark:text-neutral-300">
+                Name (optional)
+              </label>
+              <input
+                id="name"
+                type="text"
+                placeholder="Your name"
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                className="w-full rounded-lg border border-gray-300 bg-white px-4 py-3 text-base text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-neutral-700 dark:bg-neutral-900 dark:text-white dark:placeholder:text-neutral-500"
+              />
+              {errors.name && <p className="text-sm text-red-600 dark:text-red-400">{errors.name}</p>}
+            </div>
+
             <div className="space-y-2">
               <label htmlFor="email" className="text-base font-medium text-gray-700 dark:text-neutral-300">
                 Email address
@@ -94,6 +185,35 @@ export default function SignUpPage() {
                 required
                 className="w-full rounded-lg border border-gray-300 bg-white px-4 py-3 text-base text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-neutral-700 dark:bg-neutral-900 dark:text-white dark:placeholder:text-neutral-500"
               />
+              {errors.email && <p className="text-sm text-red-600 dark:text-red-400">{errors.email}</p>}
+            </div>
+
+            <div className="space-y-2">
+              <label htmlFor="password" className="text-base font-medium text-gray-700 dark:text-neutral-300">
+                Password
+              </label>
+              <div className="relative">
+                <input
+                  id="password"
+                  type={showPassword ? "text" : "password"}
+                  placeholder="At least 8 characters"
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  required
+                  className="w-full rounded-lg border border-gray-300 bg-white px-4 py-3 pr-12 text-base text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-neutral-700 dark:bg-neutral-900 dark:text-white dark:placeholder:text-neutral-500"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700 dark:text-neutral-400 dark:hover:text-neutral-200"
+                >
+                  {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                </button>
+              </div>
+              {errors.password && <p className="text-sm text-red-600 dark:text-red-400">{errors.password}</p>}
+              <p className="text-sm text-gray-500 dark:text-neutral-400">
+                Must contain at least 8 characters, one uppercase letter, and one number
+              </p>
             </div>
 
             <button
@@ -101,14 +221,17 @@ export default function SignUpPage() {
               disabled={isSubmitting}
               className="w-full rounded-lg bg-blue-600 px-6 py-3 text-base font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:opacity-50"
             >
-              {isSubmitting ? "Creating account..." : "Sign up"}
+              {isSubmitting ? "Creating account..." : "Create account"}
             </button>
           </form>
 
           {/* Additional Links */}
           <div className="text-sm">
             <span className="text-gray-600 dark:text-neutral-400">Already have an account? </span>
-            <Link href="/signin" className="font-semibold text-blue-600 underline hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300">
+            <Link
+              href={`/signin${callbackUrl !== "/snipradar-onboarding" ? `?callbackUrl=${encodeURIComponent(callbackUrl)}` : ""}`}
+              className="font-semibold text-blue-600 underline hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+            >
               Sign in
             </Link>
           </div>
@@ -126,15 +249,15 @@ export default function SignUpPage() {
               Privacy Policy
             </Link>
           </p>
-          <p>
-            Having trouble logging in?{" "}
-            <Link href="/support" className="underline hover:text-gray-900 dark:hover:text-neutral-200">
-              Click Here
-            </Link>{" "}
-            and try again.
-          </p>
         </div>
       </div>
     </div>
   );
+}
+
+function sanitizeCallbackUrl(input: string | null) {
+  if (!input || !input.startsWith("/")) {
+    return "/snipradar-onboarding";
+  }
+  return input;
 }

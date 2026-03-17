@@ -83,7 +83,8 @@ export async function POST(request: Request) {
     if (!(file instanceof File)) {
       return NextResponse.json({ error: "File required" }, { status: 400, headers: { "Cache-Control": "no-store" } });
     }
-    const title = typeof formData.get("title") === "string" ? formData.get("title") : null;
+    const titleEntry = formData.get("title");
+    const title = typeof titleEntry === "string" ? titleEntry : null;
     return handleUploadJob({ userId: user.id, file, title });
   }
 

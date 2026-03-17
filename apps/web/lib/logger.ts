@@ -1,5 +1,5 @@
 /**
- * Structured logging utility for Clippers
+ * Structured logging utility for ViralSnipAI
  *
  * Provides consistent logging with different levels and optional context.
  * In production, can be easily extended to send logs to external services.

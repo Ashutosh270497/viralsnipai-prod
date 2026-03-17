@@ -89,7 +89,7 @@ export class VideoStitchingService {
       };
     } catch (error) {
       logger.error('Video stitching failed', { error, segmentCount: segments.length });
-      throw AppError.videoProcessing('Failed to stitch video segments', String(error));
+      throw AppError.internal(`Failed to stitch video segments: ${String(error)}`);
     }
   }
 

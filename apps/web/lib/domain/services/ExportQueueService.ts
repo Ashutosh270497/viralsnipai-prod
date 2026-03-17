@@ -20,9 +20,9 @@ export class ExportQueueService {
     logger.info('Queuing export job', { exportId });
 
     try {
-      await queueExportJob(exportId);
+      const queued = await queueExportJob(exportId);
 
-      logger.info('Export job queued successfully', { exportId });
+      logger.info('Export queue evaluated', { exportId, queued });
     } catch (error) {
       logger.error('Failed to queue export job', { error, exportId });
       throw error;

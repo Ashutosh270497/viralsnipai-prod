@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Sparkles, Wand2, Loader2 } from "lucide-react";
+import { Sparkles, Wand2, Loader2, FileText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -12,7 +12,6 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -31,20 +30,10 @@ interface GeneratedPrompts {
 }
 
 interface AIPromptGeneratorDialogProps {
-  onPromptsGenerated: (prompts: Omit<GeneratedPrompts, 'reasoning'>) => void;
+  onPromptsGenerated: (prompts: Omit<GeneratedPrompts, "reasoning">) => void;
+  transcript?: string | null;
+  videoTitle?: string;
 }
-
-const CONTENT_TYPES = [
-  { value: "business", label: "Business / Entrepreneurship" },
-  { value: "fitness", label: "Fitness / Health" },
-  { value: "education", label: "Education / Tutorial" },
-  { value: "entertainment", label: "Entertainment / Comedy" },
-  { value: "personal_development", label: "Personal Development" },
-  { value: "cooking", label: "Cooking / Food" },
-  { value: "technology", label: "Technology / Software" },
-  { value: "lifestyle", label: "Lifestyle / Vlog" },
-  { value: "other", label: "Other" },
-];
 
 const PLATFORMS = [
   { value: "YouTube Shorts", label: "YouTube Shorts" },
@@ -53,36 +42,30 @@ const PLATFORMS = [
   { value: "All Platforms", label: "All Platforms" },
 ];
 
-export function AIPromptGeneratorDialog({ onPromptsGenerated }: AIPromptGeneratorDialogProps) {
+export function AIPromptGeneratorDialog({
+  onPromptsGenerated,
+  transcript,
+  videoTitle,
+}: AIPromptGeneratorDialogProps) {
   const { toast } = useToast();
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [useTemplate, setUseTemplate] = useState(false);
 
-  // Form state
-  const [context, setContext] = useState("");
-  const [contentType, setContentType] = useState("");
   const [platform, setPlatform] = useState<string>("YouTube Shorts");
   const [customInstructions, setCustomInstructions] = useState("");
 
-  // Generated prompts
-  const [generatedPrompts, setGeneratedPrompts] = useState<GeneratedPrompts | null>(null);
+  const [generatedPrompts, setGeneratedPrompts] =
+    useState<GeneratedPrompts | null>(null);
+
+  const hasTranscript = !!transcript && transcript.trim().length > 20;
 
   const handleGenerate = async () => {
-    if (!context.trim() && !useTemplate) {
+    if (!hasTranscript) {
       toast({
         variant: "destructive",
-        title: "Context required",
-        description: "Please describe your video content or enable quick template mode.",
-      });
-      return;
-    }
-
-    if (useTemplate && !contentType) {
-      toast({
-        variant: "destructive",
-        title: "Content type required",
-        description: "Please select a content type for template generation.",
+        title: "No transcript available",
+        description:
+          "Ingest a video first so the AI can analyze its content.",
       });
       return;
     }
@@ -93,11 +76,10 @@ export function AIPromptGeneratorDialog({ onPromptsGenerated }: AIPromptGenerato
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          context: context || `${contentType} content for ${platform}`,
-          contentType,
+          transcript: transcript!.slice(0, 12000),
+          videoTitle: videoTitle || undefined,
           platform,
           customInstructions: customInstructions || undefined,
-          useTemplate,
         }),
       });
 
@@ -109,8 +91,9 @@ export function AIPromptGeneratorDialog({ onPromptsGenerated }: AIPromptGenerato
       setGeneratedPrompts(data.prompts);
 
       toast({
-        title: "Prompts generated!",
-        description: "Review and apply the AI-generated prompts below.",
+        title: "Prompts generated from video analysis",
+        description:
+          "Review the prompts below — they're tailored to your video content.",
       });
     } catch (error) {
       console.error(error);
@@ -135,23 +118,13 @@ export function AIPromptGeneratorDialog({ onPromptsGenerated }: AIPromptGenerato
     });
 
     toast({
-      title: "Prompts applied!",
-      description: "The generated prompts have been filled in.",
+      title: "Prompts applied",
+      description: "The video-specific prompts have been filled in.",
     });
 
-    // Reset and close
     setGeneratedPrompts(null);
-    setContext("");
     setCustomInstructions("");
     setOpen(false);
-  };
-
-  const handleReset = () => {
-    setGeneratedPrompts(null);
-    setContext("");
-    setContentType("");
-    setCustomInstructions("");
-    setUseTemplate(false);
   };
 
   return (
@@ -161,6 +134,7 @@ export function AIPromptGeneratorDialog({ onPromptsGenerated }: AIPromptGenerato
           variant="outline"
           size="sm"
           className="h-9 rounded-xl border-violet-200 bg-gradient-to-r from-violet-50 to-purple-50 text-violet-700 hover:from-violet-100 hover:to-purple-100 dark:border-violet-800 dark:from-violet-950 dark:to-purple-950 dark:text-violet-300 shadow-sm"
+          disabled={!hasTranscript}
         >
           <Sparkles className="mr-2 h-4 w-4" />
           AI Generate Prompts
@@ -173,80 +147,40 @@ export function AIPromptGeneratorDialog({ onPromptsGenerated }: AIPromptGenerato
             AI Prompt Generator
           </DialogTitle>
           <DialogDescription>
-            Let AI create optimized prompts for detecting viral moments in your video.
+            Analyzes your video transcript to create optimized detection prompts.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-6 py-4">
-          {/* Quick Template Mode Toggle */}
-          <div className="flex items-center gap-3 rounded-xl border border-border/50 bg-muted/30 p-4">
-            <input
-              type="checkbox"
-              id="useTemplate"
-              checked={useTemplate}
-              onChange={(e) => setUseTemplate(e.target.checked)}
-              className="h-4 w-4 rounded border-gray-300 text-violet-600 focus:ring-violet-500"
-            />
-            <div className="flex-1">
-              <Label htmlFor="useTemplate" className="text-sm font-semibold cursor-pointer">
-                Quick Template Mode
-              </Label>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                Use pre-built templates for faster generation (no AI call needed)
+        <div className="space-y-5 py-4">
+          {/* Transcript status */}
+          <div className="flex items-start gap-3 rounded-xl border border-emerald-200 bg-emerald-50/50 p-4 dark:border-emerald-800 dark:bg-emerald-950/30">
+            <FileText className="h-5 w-5 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-medium text-emerald-800 dark:text-emerald-200">
+                Video transcript loaded
+                {videoTitle && (
+                  <span className="font-normal text-emerald-600 dark:text-emerald-400">
+                    {" "}— {videoTitle}
+                  </span>
+                )}
+              </p>
+              <p className="text-xs text-emerald-600/80 dark:text-emerald-400/80 mt-0.5">
+                {Math.round((transcript?.length ?? 0) / 5)} words will be
+                analyzed to generate tailored prompts.
               </p>
             </div>
-          </div>
-
-          {/* Context Input */}
-          {!useTemplate && (
-            <div className="space-y-2">
-              <Label htmlFor="context" className="text-sm font-semibold">
-                Video Context <span className="text-red-500">*</span>
-              </Label>
-              <p className="text-xs text-muted-foreground">
-                Describe your video content, main topics, and what makes it valuable
-              </p>
-              <textarea
-                id="context"
-                className="mt-2 h-24 w-full resize-y rounded-xl border border-border/50 bg-background px-3 py-2 text-sm outline-none transition-colors focus-visible:border-violet-300 focus-visible:ring-2 focus-visible:ring-violet-200"
-                value={context}
-                onChange={(e) => setContext(e.target.value)}
-                placeholder="Ex: This is a 30-minute podcast interview about AI productivity tools for solopreneurs. We discuss specific workflows, tools like ChatGPT and Notion, and share real transformation stories with metrics."
-              />
-            </div>
-          )}
-
-          {/* Content Type */}
-          <div className="space-y-2">
-            <Label htmlFor="contentType" className="text-sm font-semibold">
-              Content Type {useTemplate && <span className="text-red-500">*</span>}
-            </Label>
-            <Select value={contentType} onValueChange={setContentType}>
-              <SelectTrigger className="h-10 rounded-xl">
-                <SelectValue placeholder="Select content type" />
-              </SelectTrigger>
-              <SelectContent>
-                {CONTENT_TYPES.map((type) => (
-                  <SelectItem key={type.value} value={type.value}>
-                    {type.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
           </div>
 
           {/* Platform */}
           <div className="space-y-2">
-            <Label htmlFor="platform" className="text-sm font-semibold">
-              Target Platform
-            </Label>
+            <Label className="text-sm font-semibold">Target Platform</Label>
             <Select value={platform} onValueChange={setPlatform}>
               <SelectTrigger className="h-10 rounded-xl">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
                 {PLATFORMS.map((p) => (
-                  <SelectItem key={p.value} value={p.value}>
+                  <SelectItem showIndicator key={p.value} value={p.value}>
                     {p.label}
                   </SelectItem>
                 ))}
@@ -255,50 +189,40 @@ export function AIPromptGeneratorDialog({ onPromptsGenerated }: AIPromptGenerato
           </div>
 
           {/* Custom Instructions */}
-          {!useTemplate && (
-            <div className="space-y-2">
-              <Label htmlFor="customInstructions" className="text-sm font-semibold">
-                Custom Instructions (Optional)
-              </Label>
-              <textarea
-                id="customInstructions"
-                className="mt-2 h-20 w-full resize-y rounded-xl border border-border/50 bg-background px-3 py-2 text-sm outline-none transition-colors focus-visible:border-violet-300 focus-visible:ring-2 focus-visible:ring-violet-200"
-                value={customInstructions}
-                onChange={(e) => setCustomInstructions(e.target.value)}
-                placeholder="Ex: Focus on the first 15 minutes only, emphasize specific tool names, avoid technical jargon"
-              />
-            </div>
-          )}
+          <div className="space-y-2">
+            <Label className="text-sm font-semibold">
+              Custom Instructions (Optional)
+            </Label>
+            <p className="text-xs text-muted-foreground">
+              Guide the AI — e.g. &quot;focus on the first 10 minutes&quot; or
+              &quot;emphasize controversial takes&quot;
+            </p>
+            <textarea
+              className="mt-1 h-20 w-full resize-y rounded-xl border border-border/50 bg-background px-3 py-2 text-sm outline-none transition-colors focus-visible:border-violet-300 focus-visible:ring-2 focus-visible:ring-violet-200"
+              value={customInstructions}
+              onChange={(e) => setCustomInstructions(e.target.value)}
+              placeholder="Ex: Focus on the startup growth advice, skip the personal anecdotes"
+            />
+          </div>
 
           {/* Generate Button */}
-          <div className="flex gap-3">
-            <Button
-              onClick={handleGenerate}
-              disabled={loading}
-              className="flex-1 h-10 rounded-xl bg-gradient-to-r from-violet-600 via-purple-600 to-fuchsia-600 hover:from-violet-700 hover:via-purple-700 hover:to-fuchsia-700"
-            >
-              {loading ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Generating...
-                </>
-              ) : (
-                <>
-                  <Sparkles className="mr-2 h-4 w-4" />
-                  Generate Prompts
-                </>
-              )}
-            </Button>
-            {generatedPrompts && (
-              <Button
-                onClick={handleReset}
-                variant="outline"
-                className="h-10 rounded-xl"
-              >
-                Reset
-              </Button>
+          <Button
+            onClick={handleGenerate}
+            disabled={loading}
+            className="w-full h-10 rounded-xl bg-gradient-to-r from-violet-600 via-purple-600 to-fuchsia-600 hover:from-violet-700 hover:via-purple-700 hover:to-fuchsia-700"
+          >
+            {loading ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Analyzing transcript...
+              </>
+            ) : (
+              <>
+                <Sparkles className="mr-2 h-4 w-4" />
+                Analyze Video & Generate Prompts
+              </>
             )}
-          </div>
+          </Button>
 
           {/* Generated Prompts Display */}
           {generatedPrompts && (
@@ -317,45 +241,27 @@ export function AIPromptGeneratorDialog({ onPromptsGenerated }: AIPromptGenerato
               </div>
 
               <div className="space-y-3">
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-semibold uppercase tracking-wide text-violet-700 dark:text-violet-300">
-                    Brief
-                  </Label>
-                  <p className="text-sm leading-relaxed text-foreground/90">
-                    {generatedPrompts.brief}
-                  </p>
-                </div>
-
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-semibold uppercase tracking-wide text-violet-700 dark:text-violet-300">
-                    Audience
-                  </Label>
-                  <p className="text-sm leading-relaxed text-foreground/90">
-                    {generatedPrompts.audience}
-                  </p>
-                </div>
-
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-semibold uppercase tracking-wide text-violet-700 dark:text-violet-300">
-                    Tone
-                  </Label>
-                  <p className="text-sm leading-relaxed text-foreground/90">
-                    {generatedPrompts.tone}
-                  </p>
-                </div>
-
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-semibold uppercase tracking-wide text-violet-700 dark:text-violet-300">
-                    Call to Action
-                  </Label>
-                  <p className="text-sm leading-relaxed text-foreground/90">
-                    {generatedPrompts.callToAction}
-                  </p>
-                </div>
+                {(
+                  [
+                    ["Brief", generatedPrompts.brief],
+                    ["Audience", generatedPrompts.audience],
+                    ["Tone", generatedPrompts.tone],
+                    ["Call to Action", generatedPrompts.callToAction],
+                  ] as const
+                ).map(([label, value]) => (
+                  <div key={label} className="space-y-1.5">
+                    <Label className="text-xs font-semibold uppercase tracking-wide text-violet-700 dark:text-violet-300">
+                      {label}
+                    </Label>
+                    <p className="text-sm leading-relaxed text-foreground/90">
+                      {value}
+                    </p>
+                  </div>
+                ))}
 
                 <div className="mt-4 rounded-lg border border-violet-200/60 bg-white/50 p-3 dark:border-violet-800/40 dark:bg-violet-950/30">
                   <Label className="text-xs font-semibold uppercase tracking-wide text-violet-700 dark:text-violet-300">
-                    Why these prompts?
+                    Analysis reasoning
                   </Label>
                   <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
                     {generatedPrompts.reasoning}

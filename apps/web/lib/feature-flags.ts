@@ -5,7 +5,32 @@ export type FeatureFlags = {
   veoEnabled: boolean;
   soraEnabled: boolean;
   voicerEnabled: boolean;
+  snipRadarEnabled: boolean;
+  snipRadarOverviewV2Enabled: boolean;
+  snipRadarAnalyticsV2Enabled: boolean;
+  snipRadarCreateV2Enabled: boolean;
+  snipRadarDiscoverV2Enabled: boolean;
+  snipRadarPublishV2Enabled: boolean;
+  snipRadarGrowthPlanV2Enabled: boolean;
 };
+
+export const FEATURE_FLAG_KEYS = [
+  "uiV2Enabled",
+  "transcribeUiEnabled",
+  "imagenEnabled",
+  "veoEnabled",
+  "soraEnabled",
+  "voicerEnabled",
+  "snipRadarEnabled",
+  "snipRadarOverviewV2Enabled",
+  "snipRadarAnalyticsV2Enabled",
+  "snipRadarCreateV2Enabled",
+  "snipRadarDiscoverV2Enabled",
+  "snipRadarPublishV2Enabled",
+  "snipRadarGrowthPlanV2Enabled",
+] as const satisfies ReadonlyArray<keyof FeatureFlags>;
+
+export type FeatureFlagKey = (typeof FEATURE_FLAG_KEYS)[number];
 
 function parseBooleanFlag(value: string | undefined): boolean {
   if (!value) {
@@ -23,6 +48,32 @@ export function readEnvFeatureFlags(): FeatureFlags {
   const veoValue = process.env.VEO_ENABLED ?? process.env.NEXT_PUBLIC_VEO_ENABLED ?? "false";
   const soraValue = process.env.SORA_ENABLED ?? process.env.NEXT_PUBLIC_SORA_ENABLED ?? "false";
   const voicerValue = process.env.VOICER_ENABLED ?? process.env.NEXT_PUBLIC_VOICER_ENABLED ?? "true";
+  const snipRadarValue =
+    process.env.SNIPRADAR_ENABLED ?? process.env.NEXT_PUBLIC_SNIPRADAR_ENABLED ?? "true";
+  const snipRadarOverviewV2Value =
+    process.env.SNIPRADAR_V2_OVERVIEW_ENABLED ??
+    process.env.NEXT_PUBLIC_SNIPRADAR_V2_OVERVIEW_ENABLED ??
+    "true";
+  const snipRadarAnalyticsV2Value =
+    process.env.SNIPRADAR_V2_ANALYTICS_ENABLED ??
+    process.env.NEXT_PUBLIC_SNIPRADAR_V2_ANALYTICS_ENABLED ??
+    "true";
+  const snipRadarCreateV2Value =
+    process.env.SNIPRADAR_V2_CREATE_ENABLED ??
+    process.env.NEXT_PUBLIC_SNIPRADAR_V2_CREATE_ENABLED ??
+    "true";
+  const snipRadarDiscoverV2Value =
+    process.env.SNIPRADAR_V2_DISCOVER_ENABLED ??
+    process.env.NEXT_PUBLIC_SNIPRADAR_V2_DISCOVER_ENABLED ??
+    "true";
+  const snipRadarPublishV2Value =
+    process.env.SNIPRADAR_V2_PUBLISH_ENABLED ??
+    process.env.NEXT_PUBLIC_SNIPRADAR_V2_PUBLISH_ENABLED ??
+    "true";
+  const snipRadarGrowthPlanV2Value =
+    process.env.SNIPRADAR_V2_GROWTH_PLAN_ENABLED ??
+    process.env.NEXT_PUBLIC_SNIPRADAR_V2_GROWTH_PLAN_ENABLED ??
+    "true";
   const forceVeoEnabled = parseBooleanFlag(process.env.FORCE_VEO_ENABLED);
   return {
     uiV2Enabled: parseBooleanFlag(envValue),
@@ -31,7 +82,14 @@ export function readEnvFeatureFlags(): FeatureFlags {
     // Veo is temporarily paused unless FORCE_VEO_ENABLED=true is supplied.
     veoEnabled: forceVeoEnabled && parseBooleanFlag(veoValue),
     soraEnabled: parseBooleanFlag(soraValue),
-    voicerEnabled: parseBooleanFlag(voicerValue)
+    voicerEnabled: parseBooleanFlag(voicerValue),
+    snipRadarEnabled: parseBooleanFlag(snipRadarValue),
+    snipRadarOverviewV2Enabled: parseBooleanFlag(snipRadarOverviewV2Value),
+    snipRadarAnalyticsV2Enabled: parseBooleanFlag(snipRadarAnalyticsV2Value),
+    snipRadarCreateV2Enabled: parseBooleanFlag(snipRadarCreateV2Value),
+    snipRadarDiscoverV2Enabled: parseBooleanFlag(snipRadarDiscoverV2Value),
+    snipRadarPublishV2Enabled: parseBooleanFlag(snipRadarPublishV2Value),
+    snipRadarGrowthPlanV2Enabled: parseBooleanFlag(snipRadarGrowthPlanV2Value),
   };
 }
 
@@ -57,4 +115,8 @@ export function isSoraEnabled(): boolean {
 
 export function isVoicerEnabled(): boolean {
   return readEnvFeatureFlags().voicerEnabled;
+}
+
+export function isSnipRadarEnabled(): boolean {
+  return readEnvFeatureFlags().snipRadarEnabled;
 }

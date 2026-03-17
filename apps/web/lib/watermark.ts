@@ -2,7 +2,7 @@ import path from "path";
 import sharp from "sharp";
 import type { BrandKit } from "@prisma/client";
 
-export const DEFAULT_WATERMARK_TEXT = "made with Clippers";
+export const DEFAULT_WATERMARK_TEXT = "made with ViralSnipAI";
 
 export type WatermarkStyle = {
   enabled: boolean;

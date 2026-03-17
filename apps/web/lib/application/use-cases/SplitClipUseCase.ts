@@ -100,8 +100,8 @@ export class SplitClipUseCase {
       viralityFactors: clip.viralityFactors,
     };
 
-    const createdFirstClip = await this.clipRepo.create(firstClipData as any);
-    const createdSecondClip = await this.clipRepo.create(secondClipData as any);
+    const createdFirstClip = await this.clipRepo.create(firstClipData);
+    const createdSecondClip = await this.clipRepo.create(secondClipData);
 
     logger.info('Two new clips created', {
       firstClipId: createdFirstClip.id,
@@ -116,7 +116,7 @@ export class SplitClipUseCase {
     // Step 6: Update project timestamp
     await this.projectRepo.update(clip.projectId, {
       updatedAt: new Date(),
-    } as any);
+    });
 
     logger.info('Clip split completed', {
       originalClipId: clipId,

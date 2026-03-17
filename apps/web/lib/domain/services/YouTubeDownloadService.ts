@@ -19,16 +19,24 @@ export interface YouTubeDownloadResult {
   thumbnail?: string;
 }
 
+export interface YouTubeDownloadOptions {
+  onProgress?: (fraction: number) => Promise<void> | void;
+}
+
 @injectable()
 export class YouTubeDownloadService {
   /**
    * Download a YouTube video and return file paths and metadata
    */
-  async downloadVideo(sourceUrl: string, projectId: string): Promise<YouTubeDownloadResult> {
+  async downloadVideo(
+    sourceUrl: string,
+    projectId: string,
+    options?: YouTubeDownloadOptions
+  ): Promise<YouTubeDownloadResult> {
     logger.info('Downloading YouTube video', { sourceUrl, projectId });
 
     try {
-      const result = await downloadYouTubeVideo(sourceUrl, projectId);
+      const result = await downloadYouTubeVideo(sourceUrl, projectId, options);
 
       logger.info('YouTube video downloaded successfully', {
         projectId,
@@ -36,7 +44,10 @@ export class YouTubeDownloadService {
         title: result.title,
       });
 
-      return result;
+      return {
+        ...result,
+        durationSec: result.durationSec || 0,
+      };
     } catch (error) {
       logger.error('Failed to download YouTube video', {
         error,

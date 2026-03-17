@@ -52,8 +52,9 @@ export async function POST(request: Request) {
     );
   }
 
+  const filenameEntry = formData.get("filename");
   const filename =
-    (typeof formData.get("filename") === "string" && formData.get("filename")) || "voice-prompt.webm";
+    (typeof filenameEntry === "string" && filenameEntry) || "voice-prompt.webm";
   const mimeType = audio.type || "audio/webm";
 
   if (isMockEnabled() || !openAIClient) {
@@ -74,7 +75,8 @@ export async function POST(request: Request) {
       response_format: "text"
     });
 
-    const text = typeof transcription.text === "string" ? transcription.text : "";
+    // When response_format is "text", transcription is a string directly
+    const text = typeof transcription === "string" ? transcription : "";
     return NextResponse.json({ text }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     console.error("Whisper transcription failed", error);

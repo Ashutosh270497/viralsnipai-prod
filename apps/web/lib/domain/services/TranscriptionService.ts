@@ -31,6 +31,7 @@ export interface TranscriptionResult {
 export interface TranscriptionOptions {
   language?: string;
   model?: string;
+  forceRetranscribeOnUntimed?: boolean;
 }
 
 @injectable()
@@ -109,8 +110,16 @@ export class TranscriptionService {
     options?: TranscriptionOptions
   ): Promise<TranscriptionResult> {
     if (existingTranscript) {
+      const parsed = this.parseTranscript(existingTranscript);
+      if (options?.forceRetranscribeOnUntimed && !this.hasTimedSegments(parsed)) {
+        logger.warn('Existing transcript has no timing data, re-transcribing source', {
+          filePath,
+        });
+        return await this.transcribe(filePath, options);
+      }
+
       logger.info('Using existing transcript');
-      return this.parseTranscript(existingTranscript);
+      return parsed;
     }
 
     logger.info('No existing transcript, creating new one');
@@ -144,8 +153,28 @@ export class TranscriptionService {
    * @returns Plain text transcript for storage
    */
   serializeTranscription(transcription: TranscriptionResult): string {
-    // Store only the text to avoid massive JSON blobs in the database
-    // The transcript field is meant for plain text, not structured data
-    return transcription.text;
+    const hasSegments = Array.isArray(transcription.segments) && transcription.segments.length > 0;
+
+    if (!hasSegments) {
+      return transcription.text;
+    }
+
+    return JSON.stringify({
+      text: transcription.text,
+      segments: transcription.segments,
+    });
+  }
+
+  hasTimedSegments(transcription: TranscriptionResult): boolean {
+    if (!Array.isArray(transcription.segments) || transcription.segments.length === 0) {
+      return false;
+    }
+
+    return transcription.segments.some(
+      (segment) =>
+        Number.isFinite(segment.start) &&
+        Number.isFinite(segment.end) &&
+        segment.end > segment.start
+    );
   }
 }

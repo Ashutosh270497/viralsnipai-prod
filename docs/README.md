@@ -1,6 +1,6 @@
-# Clippers Documentation
+# ViralSnipAI Documentation
 
-Welcome to the Clippers project documentation. This folder contains product-level and feature-specific documentation.
+Welcome to the ViralSnipAI project documentation. This folder contains product-level and feature-specific documentation.
 
 ---
 
@@ -25,11 +25,23 @@ Technical architecture and development guides:
 ## 📚 Available Documentation
 
 ### Product Requirements
-**[PRD_Clippers.md](./PRD_Clippers.md)** (3.4 KB)
+**[PRD_ViralSnipAI.md](./PRD_ViralSnipAI.md)** (3.4 KB)
 - Product vision and goals
 - Target personas
 - Feature specifications
 - User journeys
+
+---
+
+### Delivery Operations
+**[SUPER_AGENT_OPERATING_SYSTEM.md](./SUPER_AGENT_OPERATING_SYSTEM.md)**
+- How to run 4 parallel agents with one coordinator
+- Branch/worktree strategy
+- Daily execution cadence and merge order
+
+**[AGENT_EXECUTION_BOARD.md](./AGENT_EXECUTION_BOARD.md)**
+- Sprint board template for agent assignment
+- Backlog, integration, validation and release checks
 
 ---
 
@@ -94,7 +106,7 @@ pnpm format                   # Format with Prettier
 ## 🎯 Quick Links
 
 ### New to the Project?
-1. Read [PRD_Clippers.md](./PRD_Clippers.md) - Understand the product
+1. Read [PRD_ViralSnipAI.md](./PRD_ViralSnipAI.md) - Understand the product
 2. Read [apps/web/docs/README.md](../apps/web/docs/README.md) - Technical overview
 3. Read [apps/web/docs/REFACTORING_SUMMARY.md](../apps/web/docs/REFACTORING_SUMMARY.md) - Quick start
 
@@ -141,7 +153,7 @@ clippers/
 │
 ├── docs/                              ← You are here (Product-level)
 │   ├── README.md
-│   ├── PRD_Clippers.md                ← Product requirements
+│   ├── PRD_ViralSnipAI.md                ← Product requirements
 │   ├── AGENT_EDITOR_GUIDE.md          ← Feature guide
 │   ├── DEBUGGING_AGENT_EDITOR.md      ← Debugging guide
 │   └── assets/                        ← Visual assets

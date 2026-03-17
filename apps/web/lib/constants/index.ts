@@ -132,6 +132,7 @@ export const VIDEO = {
   PRESETS: {
     SHORTS_9X16_1080: 'shorts_9x16_1080',
     SQUARE_1X1_1080: 'square_1x1_1080',
+    PORTRAIT_4X5_1080: 'portrait_4x5_1080',
     LANDSCAPE_16X9_1080: 'landscape_16x9_1080',
   } as const,
 

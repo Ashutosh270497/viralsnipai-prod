@@ -4,6 +4,8 @@ declare module "next-auth" {
   interface Session {
     user: {
       id: string;
+      onboardingCompleted?: boolean;
+      youtubeChannelUrl?: string | null;
     } & DefaultSession["user"];
   }
 
@@ -12,5 +14,15 @@ declare module "next-auth" {
     email: string;
     name?: string | null;
     image?: string | null;
+    onboardingCompleted?: boolean;
+    youtubeChannelUrl?: string | null;
+  }
+}
+
+declare module "next-auth/jwt" {
+  interface JWT {
+    id: string;
+    onboardingCompleted?: boolean;
+    youtubeChannelUrl?: string | null;
   }
 }

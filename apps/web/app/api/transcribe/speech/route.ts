@@ -66,7 +66,9 @@ export async function POST(request: Request) {
   const responseFormat = RESPONSE_FORMAT_MAP[format] ?? "mp3";
 
   const synthesizeChunk = async (model: string, voiceToUse: string, chunk: string) => {
+    if (!openAIClient) throw new Error("OpenAI client not initialized");
     if (shouldUseResponsesApi(model)) {
+      // Type assertion needed - modalities API is newer than current type definitions
       const response = await openAIClient.responses.create({
         model,
         input: chunk,
@@ -75,7 +77,7 @@ export async function POST(request: Request) {
           voice: voiceToUse,
           format: responseFormat
         }
-      });
+      } as any);
 
       const audioBase64 = extractAudioBase64(response);
       if (!audioBase64) {

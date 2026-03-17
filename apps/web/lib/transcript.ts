@@ -2,7 +2,7 @@ import fs from "fs";
 import { promises as fsp } from "fs";
 import { promisify } from "util";
 import path from "path";
-import type { AudioTranscriptionSegment } from "openai/resources/audio/transcriptions";
+import type { TranscriptionSegment as AudioTranscriptionSegment } from "openai/resources/audio/transcriptions";
 
 import { openAIClient } from "@/lib/openai";
 import { transcodeToMp3 } from "@/lib/ffmpeg";
@@ -31,6 +31,7 @@ const DEFAULT_MODEL = process.env.WHISPER_MODEL ?? "gpt-4o-mini-transcribe";
 const MAX_ATTEMPTS = Number(process.env.TRANSCRIBE_MAX_ATTEMPTS ?? 3);
 const RETRY_DELAY_BASE_MS = Number(process.env.TRANSCRIBE_RETRY_DELAY_MS ?? 1500);
 const MAX_DIRECT_UPLOAD_BYTES = Number(process.env.TRANSCRIBE_MAX_DIRECT_BYTES ?? 24 * 1024 * 1024);
+const TIMING_FALLBACK_MODEL = process.env.TRANSCRIBE_TIMING_FALLBACK_MODEL ?? "whisper-1";
 const AUDIO_EXTENSIONS = new Set([".mp3", ".m4a", ".aac", ".wav", ".webm", ".ogg", ".oga", ".flac"]);
 
 export async function transcribeFile(filePath: string): Promise<TranscriptionResult> {
@@ -53,43 +54,77 @@ export async function transcribeFile(filePath: string): Promise<TranscriptionRes
   const prepared = await prepareTranscriptionSource(filePath);
 
   try {
-    const responseFormat = DEFAULT_MODEL.toLowerCase().includes("whisper") ? "verbose_json" : "json";
-    const attemptTranscription = async () => {
-      const fileStream = fs.createReadStream(prepared.path);
-      try {
-        const params: any = {
-          file: fileStream,
-          model: DEFAULT_MODEL,
-          response_format: responseFormat
-        };
-
-        // Request word-level timestamps for better caption generation
-        if (responseFormat === "verbose_json") {
-          params.timestamp_granularities = ["segment", "word"];
-        }
-
-        return await openAIClient.audio.transcriptions.create(params);
-      } finally {
-        fileStream.destroy();
-      }
-    };
-
-    let response: Awaited<ReturnType<typeof attemptTranscription>> | null = null;
+    const plans: Array<{ model: string; format: "verbose_json" | "json" }> = [
+      { model: DEFAULT_MODEL, format: "verbose_json" },
+      ...(TIMING_FALLBACK_MODEL !== DEFAULT_MODEL
+        ? [{ model: TIMING_FALLBACK_MODEL, format: "verbose_json" as const }]
+        : []),
+      { model: DEFAULT_MODEL, format: "json" },
+    ];
+    let response: any = null;
+    let usedFormat: "verbose_json" | "json" = "json";
     let lastError: unknown = null;
-    const attempts = Math.max(1, MAX_ATTEMPTS);
 
-    for (let attempt = 0; attempt < attempts; attempt += 1) {
-      try {
-        response = await attemptTranscription();
-        break;
-      } catch (error) {
-        lastError = error;
-        if (attempt === attempts - 1 || !isRetryableTranscriptionError(error)) {
-          throw error;
+    for (const plan of plans) {
+      const attemptTranscription = async () => {
+        const fileStream = fs.createReadStream(prepared.path);
+        try {
+          const params: any = {
+            file: fileStream,
+            model: plan.model,
+            response_format: plan.format,
+          };
+
+          if (plan.format === "verbose_json") {
+            params.timestamp_granularities = ["segment", "word"];
+          }
+
+          return await openAIClient!.audio.transcriptions.create(params);
+        } finally {
+          fileStream.destroy();
         }
-        const backoff = RETRY_DELAY_BASE_MS * Math.pow(2, attempt);
-        console.warn(`Transcription attempt ${attempt + 1} failed (${parseErrorMessage(error)}). Retrying in ${backoff}ms...`);
-        await sleep(backoff);
+      };
+
+      const attempts = Math.max(1, MAX_ATTEMPTS);
+      let formatResponse: Awaited<ReturnType<typeof attemptTranscription>> | null = null;
+      let formatError: unknown = null;
+
+      for (let attempt = 0; attempt < attempts; attempt += 1) {
+        try {
+          formatResponse = await attemptTranscription();
+          break;
+        } catch (error) {
+          formatError = error;
+          if (attempt === attempts - 1 || !isRetryableTranscriptionError(error)) {
+            break;
+          }
+
+          const backoff = RETRY_DELAY_BASE_MS * Math.pow(2, attempt);
+          console.warn(
+            `Transcription attempt ${attempt + 1} (${plan.model}/${plan.format}) failed (${parseErrorMessage(
+              error
+            )}). Retrying in ${backoff}ms...`
+          );
+          await sleep(backoff);
+        }
+      }
+
+      if (formatResponse) {
+        response = formatResponse;
+        usedFormat = plan.format;
+        break;
+      }
+
+      lastError = formatError;
+      if (plan.format === "verbose_json" && isUnsupportedVerboseModeError(formatError)) {
+        console.warn(
+          `[Transcribe] ${plan.model} does not support verbose_json timestamps. Trying next fallback.`
+        );
+        continue;
+      }
+
+      if (formatError) {
+        throw formatError;
       }
     }
 
@@ -100,7 +135,7 @@ export async function transcribeFile(filePath: string): Promise<TranscriptionRes
       return generateMockResult(fileName, durationGuess);
     }
 
-    if (responseFormat === "verbose_json" && typeof response === "object") {
+    if (usedFormat === "verbose_json" && typeof response === "object") {
       const verbose = response as {
         text?: string;
         segments?: AudioTranscriptionSegment[];
@@ -161,6 +196,20 @@ export async function transcribeFile(filePath: string): Promise<TranscriptionRes
   } finally {
     await prepared.cleanup();
   }
+}
+
+function isUnsupportedVerboseModeError(error: unknown): boolean {
+  const message = parseErrorMessage(error).toLowerCase();
+  if (!message) {
+    return false;
+  }
+
+  return (
+    message.includes("timestamp_granularities") ||
+    message.includes("response_format") ||
+    message.includes("verbose_json") ||
+    message.includes("not supported")
+  );
 }
 
 function isRetryableTranscriptionError(error: unknown) {

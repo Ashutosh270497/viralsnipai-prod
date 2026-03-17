@@ -8,27 +8,52 @@ export interface RenderJob {
 
 const jobQueue: RenderJob[] = [];
 let isRunning = false;
+let isProcessing = false;
+let loopTimer: NodeJS.Timeout | null = null;
 
 export function enqueueRender(job: RenderJob) {
   jobQueue.push(job);
+  // Trigger immediate processing so jobs do not wait for the next timer tick.
+  void processNextJob();
+}
+
+async function safeStatusChange(job: RenderJob, status: JobStatus, error?: unknown) {
+  try {
+    await job.onStatusChange?.(status, error);
+  } catch (callbackError) {
+    // Never let status callback failures strand queue processing.
+    console.error("[jobs] status callback failed", { status, callbackError });
+  }
 }
 
 async function processNextJob() {
+  if (isProcessing) {
+    return;
+  }
+
   if (jobQueue.length === 0) {
     return;
   }
 
-  const job = jobQueue.shift();
+  const job = jobQueue[0];
   if (!job) {
     return;
   }
 
+  isProcessing = true;
   try {
-    job.onStatusChange?.("processing");
+    await safeStatusChange(job, "processing");
     await job.handler();
-    job.onStatusChange?.("done");
+    await safeStatusChange(job, "done");
   } catch (error) {
-    job.onStatusChange?.("failed", error);
+    await safeStatusChange(job, "failed", error);
+  } finally {
+    jobQueue.shift();
+    isProcessing = false;
+    // Process remaining jobs without waiting for the next timer tick.
+    if (jobQueue.length > 0) {
+      void processNextJob();
+    }
   }
 }
 
@@ -38,12 +63,15 @@ export function processJobs(intervalMs = 1500) {
   }
 
   isRunning = true;
-  const timer = setInterval(() => {
+  loopTimer = setInterval(() => {
     void processNextJob();
   }, intervalMs);
 
   return () => {
-    clearInterval(timer);
+    if (loopTimer) {
+      clearInterval(loopTimer);
+      loopTimer = null;
+    }
     isRunning = false;
   };
 }

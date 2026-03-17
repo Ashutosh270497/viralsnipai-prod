@@ -19,6 +19,14 @@ export default async function BrandKitPage() {
   ]);
   const canToggleWatermark = isPaidPlan(account?.plan);
 
+  // Type-safe caption style parsing
+  const captionStyleData = brandKit.captionStyle as Record<string, any> | null | undefined;
+  const captionStyle = {
+    karaoke: captionStyleData?.karaoke ?? true,
+    outline: captionStyleData?.outline ?? true,
+    position: (captionStyleData?.position as "bottom" | "middle" | "top") ?? "bottom"
+  };
+
   return (
     <div className="space-y-6">
       <div className="space-y-1">
@@ -33,11 +41,7 @@ export default async function BrandKitPage() {
           logoPath: brandKit.logoPath,
           logoStoragePath: brandKit.logoStoragePath,
           watermark: brandKit.watermark,
-          captionStyle: {
-            karaoke: brandKit.captionStyle?.karaoke ?? true,
-            outline: brandKit.captionStyle?.outline ?? true,
-            position: (brandKit.captionStyle?.position as "bottom" | "middle" | "top") ?? "bottom"
-          }
+          captionStyle
         }}
       />
     </div>

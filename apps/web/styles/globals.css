@@ -5,60 +5,209 @@
 @tailwind utilities;
 
 :root {
-  --background: 270 30% 99%;
-  --foreground: 270 12% 9%;
+  --background: 0 0% 99%;
+  --foreground: 210 29% 8%;
   --card: 0 0% 100%;
-  --card-foreground: 270 12% 9%;
+  --card-foreground: 210 29% 8%;
   --popover: 0 0% 100%;
-  --popover-foreground: 270 12% 9%;
-  --primary: 271 91% 65%;
+  --popover-foreground: 210 29% 8%;
+  --primary: 160 84% 30%;          /* emerald 600 — legible on light bg */
   --primary-foreground: 0 0% 100%;
-  --secondary: 270 20% 96%;
-  --secondary-foreground: 270 12% 9%;
-  --muted: 270 20% 92%;
-  --muted-foreground: 270 8% 45%;
-  --accent: 292 84% 61%;
+  --secondary: 210 20% 96%;
+  --secondary-foreground: 210 29% 8%;
+  --muted: 210 20% 92%;
+  --muted-foreground: 210 8% 45%;
+  --accent: 160 84% 30%;
   --accent-foreground: 0 0% 100%;
   --destructive: 0 85% 60%;
   --destructive-foreground: 0 0% 98%;
-  --border: 270 20% 90%;
-  --input: 270 20% 90%;
-  --ring: 271 91% 65%;
-  --radius: 16px;
+  --border: 210 20% 90%;
+  --input: 210 20% 90%;
+  --ring: 160 84% 30%;
+  --radius: 10px;
 }
 
 .dark {
-  --background: 270 12% 8%;
-  --foreground: 0 0% 98%;
-  --card: 270 12% 11%;
-  --card-foreground: 0 0% 98%;
-  --popover: 270 12% 12%;
-  --popover-foreground: 0 0% 98%;
-  --primary: 271 91% 65%;
-  --primary-foreground: 0 0% 0%;
-  --secondary: 270 12% 15%;
-  --secondary-foreground: 0 0% 98%;
-  --muted: 270 12% 17%;
-  --muted-foreground: 270 12% 65%;
-  --accent: 292 84% 61%;
+  /* Terminal Pro — pure black base, emerald accent */
+  --background: 0 0% 3%;           /* #080808 near-absolute black */
+  --foreground: 210 17% 93%;       /* #E8ECF2 crisp off-white */
+  --card: 0 0% 6%;                 /* #0f0f0f raised surface */
+  --card-foreground: 210 17% 93%;
+  --popover: 0 0% 8%;              /* #141414 dropdown / sheet */
+  --popover-foreground: 210 17% 93%;
+  --primary: 160 84% 39%;          /* #10b981 emerald 500 */
+  --primary-foreground: 0 0% 100%;
+  --secondary: 0 0% 10%;           /* #1a1a1a subtle raised bg */
+  --secondary-foreground: 0 0% 72%; /* body text on dark surface */
+  --muted: 0 0% 13%;               /* #212121 inputs / disabled */
+  --muted-foreground: 0 0% 45%;    /* #737373 placeholder / secondary */
+  --accent: 160 84% 39%;           /* same as primary for consistency */
   --accent-foreground: 0 0% 100%;
-  --destructive: 0 72% 51%;
+  --destructive: 0 68% 50%;
   --destructive-foreground: 0 0% 98%;
-  --border: 270 12% 21%;
-  --input: 270 12% 21%;
-  --ring: 271 91% 65%;
+  --border: 0 0% 14%;              /* #242424 subtle dividers */
+  --input: 0 0% 14%;
+  --ring: 160 84% 39%;
+  --radius: 10px;
 }
 
 * {
   @apply border-border;
 }
 
-body {
-  @apply bg-background text-foreground antialiased;
+html {
+  scroll-behavior: smooth;
 }
 
+body {
+  @apply bg-background text-foreground antialiased;
+  font-feature-settings: "rlig" 1, "calt" 1;
+}
+
+/* Focus ring */
+:focus-visible {
+  @apply outline-none ring-2 ring-ring ring-offset-2 ring-offset-background;
+}
+
+/* Smooth custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: hsl(var(--border));
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--muted-foreground) / 0.4);
+}
+/* Firefox */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: hsl(var(--border)) transparent;
+}
+
+/* Glass — light mode */
 .glass {
   background: rgba(255, 255, 255, 0.75);
   backdrop-filter: blur(18px);
   border: 1px solid rgba(255, 255, 255, 0.4);
+}
+
+/* Dark mode glass — pure black base, no color tint */
+.dark .glass {
+  background: rgba(15, 15, 15, 0.85);
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+/* Emerald glow helpers */
+.glow-primary {
+  box-shadow: 0 0 20px hsl(var(--primary) / 0.35), 0 0 40px hsl(var(--primary) / 0.15);
+}
+.glow-primary-sm {
+  box-shadow: 0 0 10px hsl(var(--primary) / 0.3);
+}
+.glow-primary-xs {
+  box-shadow: 0 0 6px hsl(var(--primary) / 0.5);
+}
+
+/* Surface elevation layers (dark-first) */
+.surface-0  { background: hsl(var(--background)); }
+.surface-1  { background: hsl(var(--card)); }
+.surface-2  { background: hsl(var(--secondary)); }
+.surface-3  { background: hsl(var(--muted)); }
+
+/* Gradient text — emerald to foreground */
+.gradient-text {
+  background: linear-gradient(135deg, hsl(var(--primary)) 0%, hsl(var(--foreground)) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Thin glowing border — hover on cards */
+.border-glow {
+  border-color: hsl(var(--primary) / 0.3);
+  box-shadow: 0 0 0 1px hsl(var(--primary) / 0.12), 0 4px 20px hsl(var(--primary) / 0.08);
+}
+
+/* Emerald terminal glow — for active/focus highlights */
+.dark .glow-accent {
+  box-shadow: 0 0 0 1px rgba(16, 185, 129, 0.25), 0 0 20px rgba(16, 185, 129, 0.12);
+}
+
+/* Fade-in with slight upward motion */
+@keyframes enterUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.animate-enter { animation: enterUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) both; }
+
+/* Stagger children */
+.stagger > * { animation: enterUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) both; }
+.stagger > *:nth-child(1) { animation-delay: 0ms;  }
+.stagger > *:nth-child(2) { animation-delay: 60ms; }
+.stagger > *:nth-child(3) { animation-delay: 120ms; }
+.stagger > *:nth-child(4) { animation-delay: 180ms; }
+
+/* Landing page animations */
+@keyframes scroll {
+  0%   { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+
+.animate-scroll {
+  animation: scroll 30s linear infinite;
+}
+
+.animate-scroll:hover {
+  animation-play-state: paused;
+}
+
+/* Smooth fade in animation */
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fade-in-up {
+  animation: fadeInUp 0.6s ease-out forwards;
+}
+
+/* Fade in */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+.animate-fade-in {
+  animation: fadeIn 0.4s ease-out forwards;
+}
+
+/* Slide in from bottom */
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.animate-slide-up {
+  animation: slideUp 0.35s ease-out forwards;
+}
+
+/* Shimmer for skeletons */
+@keyframes shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position:  200% 0; }
+}
+.shimmer {
+  background: linear-gradient(
+    90deg,
+    hsl(var(--muted)) 25%,
+    hsl(var(--secondary)) 50%,
+    hsl(var(--muted)) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.6s infinite linear;
 }

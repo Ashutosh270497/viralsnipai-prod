@@ -5,7 +5,7 @@ const ELEVENLABS_MODEL_ID = process.env.ELEVENLABS_MODEL_ID?.trim() ?? "eleven_m
 const ELEVENLABS_BASE_URL = process.env.ELEVENLABS_BASE_URL?.trim() ?? "https://api.elevenlabs.io";
 
 if (!ELEVENLABS_API_KEY) {
-  console.warn("[Voicer] ELEVENLABS_API_KEY is not set. Voice cloning requests will fail.");
+  // Warn at startup if key is missing — requests will throw ElevenLabsError at runtime
 }
 
 export class ElevenLabsError extends Error {
@@ -52,12 +52,12 @@ export async function createElevenLabsVoice(options: CreateVoiceOptions): Promis
   const blob = new Blob([options.sample.buffer], {
     type: options.sample.contentType ?? "audio/mpeg"
   });
-  form.append("files", blob, options.sample.filename ?? "sample.mp3");
+  form.append("files", blob as any, options.sample.filename ?? "sample.mp3");
 
   const response = await fetch(`${ELEVENLABS_BASE_URL.replace(/\/$/, "")}/v1/voices/add`, {
     method: "POST",
     headers: {
-      "xi-api-key": ELEVENLABS_API_KEY
+      "xi-api-key": ELEVENLABS_API_KEY!
     },
     body: form
   });
@@ -102,7 +102,7 @@ export async function generateElevenLabsSpeech(options: GenerateSpeechOptions): 
     {
       method: "POST",
       headers: {
-        "xi-api-key": ELEVENLABS_API_KEY,
+        "xi-api-key": ELEVENLABS_API_KEY!,
         "Content-Type": "application/json",
         Accept: "audio/mpeg"
       },

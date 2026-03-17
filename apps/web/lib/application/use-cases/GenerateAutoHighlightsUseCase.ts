@@ -23,13 +23,25 @@ import { ClipExtractionService } from '@/lib/domain/services/ClipExtractionServi
 import { ThumbnailGenerationService } from '@/lib/domain/services/ThumbnailGenerationService';
 import { VideoExtractionService } from '@/lib/domain/services/VideoExtractionService';
 import { viralityService } from '@/lib/services/virality.service';
-import { transcriptEnhancementService } from '@/lib/services/transcript-enhancement.service';
+import { transcriptEnhancementService, type TranscriptEnhancement } from '@/lib/services/transcript-enhancement.service';
 import { logger } from '@/lib/logger';
 import { AppError } from '@/lib/utils/error-handler';
-import type { Clip } from '@/lib/types';
+import type { Clip, ViralityFactors as ClipViralityFactors, EnhancementData } from '@/lib/types';
+import type { TranscriptionSegment } from '@/lib/transcript';
+import { buildSRT, type CaptionEntry } from '@/lib/srt-utils';
+import { detectSceneChanges, PRESETS, probeVideoGeometry } from '@/lib/ffmpeg';
+import {
+  analyzeClipQuality,
+  blendViralityScore,
+  buildClipReframePlans,
+  selectBestReframePlan,
+} from '@/lib/repurpose/clip-optimization';
 import path from 'path';
 import fs from 'fs/promises';
 import { nanoid } from 'nanoid';
+
+const PREVIEW_PRESET = 'shorts_9x16_1080' as const;
+const PREVIEW_TARGET_RATIO = PRESETS[PREVIEW_PRESET].width / PRESETS[PREVIEW_PRESET].height;
 
 export interface GenerateAutoHighlightsInput {
   assetId: string;
@@ -102,10 +114,26 @@ export class GenerateAutoHighlightsUseCase {
       }
     }
 
-    const transcriptionResult = await this.transcriptionService.getOrCreateTranscription(
-      asset.path,
-      asset.transcript
+    const transcriptionSourcePath = asset.storagePath || asset.path;
+
+    let transcriptionResult = await this.transcriptionService.getOrCreateTranscription(
+      transcriptionSourcePath,
+      asset.transcript ?? null
     );
+
+    if (!this.transcriptionService.hasTimedSegments(transcriptionResult)) {
+      logger.warn('Transcript is missing timing segments. Re-transcribing source for clip accuracy.', {
+        assetId,
+        sourcePath: transcriptionSourcePath,
+      });
+
+      transcriptionResult = await this.transcriptionService.transcribe(transcriptionSourcePath);
+      transcriptionGenerated = true;
+      await this.assetRepo.update(assetId, {
+        transcript: this.transcriptionService.serializeTranscription(transcriptionResult),
+        durationSec,
+      });
+    }
 
     // Save transcription if newly generated
     if (!asset.transcript) {
@@ -135,7 +163,32 @@ export class GenerateAutoHighlightsUseCase {
       throw AppError.internal('AI failed to generate any highlight suggestions');
     }
 
-    // Step 4: Extract and normalize clips
+    // Step 4: Detect scene transitions (visual motion proxy) for cleaner cuts.
+    let sceneCutsMs: number[] = [];
+    try {
+      sceneCutsMs = await detectSceneChanges({
+        inputPath: transcriptionSourcePath,
+        threshold: 0.34,
+        maxCuts: 350,
+      });
+    } catch (error) {
+      logger.warn('Scene detection failed, continuing with transcript-only alignment', {
+        assetId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+
+    let sourceGeometry = null;
+    try {
+      sourceGeometry = await probeVideoGeometry(transcriptionSourcePath);
+    } catch (error) {
+      logger.warn('Video geometry probe failed, continuing without reframe plans', {
+        assetId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+
+    // Step 5: Extract and normalize clips
     const extractedClips = this.clipExtractionService.extractClips(
       analysisResult.suggestions,
       durationSec * 1000, // Convert to milliseconds
@@ -143,6 +196,7 @@ export class GenerateAutoHighlightsUseCase {
       {
         targetClipCount: targetCount,
         minClipCount: Math.min(targetCount, 3),
+        sceneCutsMs,
       }
     );
 
@@ -177,7 +231,7 @@ export class GenerateAutoHighlightsUseCase {
     );
 
     // Step 7: Analyze transcript quality (Phase 1 enhancement)
-    const enhancementAnalyses = new Map<string, any>();
+    const enhancementAnalyses = new Map<string, EnhancementData>();
     if (transcriptionResult.segments && transcriptionResult.segments.length > 0) {
       logger.info('Analyzing transcript quality (Phase 1 enhancement)', {
         segmentCount: transcriptionResult.segments.length,
@@ -193,12 +247,20 @@ export class GenerateAutoHighlightsUseCase {
 
         if (segments.length > 0) {
           try {
-            const enhancement = await transcriptEnhancementService.analyzeTranscript(
+            const enhancement: TranscriptEnhancement = await transcriptEnhancementService.analyzeTranscript(
               segments,
-              clip.startMs / 1000,
-              clip.endMs / 1000
+              clip.endMs - clip.startMs
             );
-            enhancementAnalyses.set(`segment-${i}`, enhancement);
+            enhancementAnalyses.set(`segment-${i}`, {
+              fillerPercentage: enhancement.fillerAnalysis.fillerPercentage,
+              wordsPerSecond: enhancement.pacingAnalysis.wordsPerSecond,
+              energyProfile: enhancement.pacingAnalysis.energyProfile,
+              qualityScore: enhancement.overallQuality.score,
+              hasDeadAir: enhancement.pauseAnalysis.hasExcessiveDeadAir,
+              pauseCount: enhancement.pauseAnalysis.totalPauses,
+              issues: enhancement.overallQuality.issues,
+              strengths: enhancement.overallQuality.strengths,
+            });
           } catch (error) {
             logger.warn('Failed to analyze transcript quality for clip', {
               clipIndex: i,
@@ -209,24 +271,51 @@ export class GenerateAutoHighlightsUseCase {
       }
     }
 
-    // Step 8: Create clips in database
+    // Step 8: Create clips in database (with SRT captions from transcript segments)
     const createdClips: Clip[] = [];
 
     for (let i = 0; i < extractedClips.length; i++) {
       const extractedClip = extractedClips[i];
-      const viralityAnalysis = viralityAnalyses[i];
+      const viralityAnalysis = viralityAnalyses.get(`segment-${i}`);
       const enhancement = enhancementAnalyses.get(`segment-${i}`);
+      const qualitySignals =
+        extractedClip.qualitySignals ??
+        analyzeClipQuality({
+          startMs: extractedClip.startMs,
+          endMs: extractedClip.endMs,
+          transcriptionSegments: transcriptionResult.segments,
+          sceneCutsMs,
+        });
+      const reframePlans = buildClipReframePlans({
+        geometry: sourceGeometry,
+        qualitySignals,
+      });
+      const blendedScore = blendViralityScore(viralityAnalysis?.score, qualitySignals.overallScore);
 
-      const viralityFactors = {
-        hookStrength: viralityAnalysis?.hookStrength ?? 0,
-        emotionalPeak: viralityAnalysis?.emotionalPeak ?? 0,
-        storyArc: viralityAnalysis?.storyArc ?? 0,
-        pacing: viralityAnalysis?.pacing ?? 0,
-        transcriptQuality: viralityAnalysis?.transcriptQuality ?? 0,
+      const viralityFactors: ClipViralityFactors = {
+        hookStrength: viralityAnalysis?.factors.hookStrength ?? 0,
+        emotionalPeak: viralityAnalysis?.factors.emotionalPeak ?? 0,
+        storyArc: viralityAnalysis?.factors.storyArc ?? 0,
+        pacing: viralityAnalysis?.factors.pacing ?? 0,
+        transcriptQuality: viralityAnalysis?.factors.transcriptQuality ?? 0,
         reasoning: viralityAnalysis?.reasoning,
-        improvements: viralityAnalysis?.improvements || [],
+        improvements: viralityAnalysis?.improvements ?? [],
         enhancement: enhancement || undefined,
+        qualitySignals,
+        reframePlans,
+        metadata: {
+          aiScore: viralityAnalysis?.score ?? null,
+          deterministicScore: qualitySignals.overallScore,
+          selectionScore: extractedClip.selectionScore ?? qualitySignals.overallScore,
+          sourceGeometry,
+        },
       };
+
+      const captionSrt = this.buildClipCaptionSrt(
+        transcriptionResult,
+        extractedClip.startMs,
+        extractedClip.endMs
+      );
 
       const clip = await this.clipRepo.create({
         projectId: asset.projectId,
@@ -236,9 +325,10 @@ export class GenerateAutoHighlightsUseCase {
         title: extractedClip.title,
         summary: extractedClip.hook,
         callToAction: extractedClip.callToAction,
-        viralityScore: viralityAnalysis?.viralityScore ?? null,
-        viralityFactors: viralityFactors as any,
-      } as any);
+        viralityScore: blendedScore,
+        viralityFactors,
+        ...(captionSrt && { captionSrt }),
+      });
 
       createdClips.push(clip);
     }
@@ -282,11 +372,18 @@ export class GenerateAutoHighlightsUseCase {
         const previewPublicUrl = `/uploads/previews/${asset.projectId}/${previewFilename}`;
 
         // Extract video clip
+        const previewReframePlan = selectBestReframePlan(
+          clip.viralityFactors?.reframePlans,
+          PREVIEW_TARGET_RATIO
+        );
+
         await this.videoExtractionService.extractClip({
           inputPath: sourceVideoPath,
           startMs: clip.startMs,
           endMs: clip.endMs,
           outputPath: previewOutputPath,
+          preset: PREVIEW_PRESET,
+          reframePlan: previewReframePlan,
         });
 
         logger.info('Preview video generated for clip', {
@@ -365,5 +462,118 @@ export class GenerateAutoHighlightsUseCase {
         averageViralityScore,
       },
     };
+  }
+
+  private buildClipCaptionSrt(
+    transcription: { segments?: TranscriptionSegment[] },
+    clipStartMs: number,
+    clipEndMs: number
+  ): string | undefined {
+    if (!transcription.segments || transcription.segments.length === 0) {
+      return undefined;
+    }
+
+    const clipStartSec = clipStartMs / 1000;
+    const clipEndSec = clipEndMs / 1000;
+    const overlapping = transcription.segments.filter(
+      (seg) => seg.end > clipStartSec && seg.start < clipEndSec
+    );
+
+    if (overlapping.length === 0) {
+      return undefined;
+    }
+
+    const dedupedWords: Array<{ word: string; start: number; end: number }> = [];
+    const seen = new Set<string>();
+
+    for (const segment of overlapping) {
+      if (!segment.words || segment.words.length === 0) {
+        continue;
+      }
+
+      for (const word of segment.words) {
+        if (word.end <= clipStartSec || word.start >= clipEndSec) {
+          continue;
+        }
+
+        const start = Math.max(clipStartSec, word.start);
+        const end = Math.min(clipEndSec, word.end);
+        if (end <= start) {
+          continue;
+        }
+
+        const text = word.word?.trim();
+        if (!text) {
+          continue;
+        }
+
+        const key = `${start.toFixed(3)}|${end.toFixed(3)}|${text.toLowerCase()}`;
+        if (seen.has(key)) {
+          continue;
+        }
+
+        seen.add(key);
+        dedupedWords.push({ word: text, start, end });
+      }
+    }
+
+    dedupedWords.sort((a, b) => a.start - b.start || a.end - b.end);
+
+    if (dedupedWords.length > 0) {
+      const WORDS_PER_CUE = 4;
+      const entries: CaptionEntry[] = [];
+
+      for (let i = 0; i < dedupedWords.length; i += WORDS_PER_CUE) {
+        const chunk = dedupedWords.slice(i, i + WORDS_PER_CUE);
+        const first = chunk[0];
+        const last = chunk[chunk.length - 1];
+
+        const startMs = Math.max(0, Math.round((first.start - clipStartSec) * 1000));
+        const endMs = Math.max(
+          startMs + 120,
+          Math.round((last.end - clipStartSec) * 1000)
+        );
+        const text = chunk.map((word) => word.word).join(" ").trim();
+
+        if (!text) {
+          continue;
+        }
+
+        entries.push({
+          index: entries.length + 1,
+          startMs,
+          endMs,
+          text,
+        });
+      }
+
+      if (entries.length > 0) {
+        return buildSRT(entries);
+      }
+    }
+
+    const fallbackEntries: CaptionEntry[] = overlapping
+      .map((segment) => {
+        const startSec = Math.max(clipStartSec, segment.start);
+        const endSec = Math.min(clipEndSec, segment.end);
+        const text = segment.text.trim();
+        if (!text || endSec <= startSec) {
+          return null;
+        }
+
+        return {
+          index: 0,
+          startMs: Math.max(0, Math.round((startSec - clipStartSec) * 1000)),
+          endMs: Math.max(1, Math.round((endSec - clipStartSec) * 1000)),
+          text,
+        } satisfies CaptionEntry;
+      })
+      .filter((entry): entry is CaptionEntry => entry !== null)
+      .map((entry, index) => ({
+        ...entry,
+        index: index + 1,
+      }));
+
+    return fallbackEntries.length > 0 ? buildSRT(fallbackEntries) : undefined;
   }
 }

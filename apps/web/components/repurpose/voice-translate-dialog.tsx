@@ -74,7 +74,7 @@ export function VoiceTranslateDialog({
             <div>
               <DialogTitle className="text-xl">Translate Video Voice</DialogTitle>
               <DialogDescription>
-                Replace the video's audio with AI-generated voice in your selected languages
+                Replace the video&apos;s audio with AI-generated voice in your selected languages
               </DialogDescription>
             </div>
           </div>
@@ -84,7 +84,7 @@ export function VoiceTranslateDialog({
           {!isLoading && (
             <Alert className="border-violet-200/40 bg-gradient-to-br from-violet-50/60 to-purple-50/40 dark:border-violet-900/30 dark:from-violet-950/30 dark:to-purple-950/20">
               <AlertDescription className="text-sm">
-                <strong>How it works:</strong> We'll translate the transcript text, generate AI voice audio,
+                <strong>How it works:</strong> We&apos;ll translate the transcript text, generate AI voice audio,
                 and create a new video with the translated voice. Processing takes 2-5 minutes per language.
                 You can select up to <strong>3 languages</strong> at once.
               </AlertDescription>
@@ -101,7 +101,7 @@ export function VoiceTranslateDialog({
               </div>
               <p className="text-xs text-muted-foreground">
                 Processing {selectedLanguages.length} language{selectedLanguages.length !== 1 ? 's' : ''}.
-                You'll be notified when complete.
+                You&apos;ll be notified when complete.
               </p>
             </div>
           )}

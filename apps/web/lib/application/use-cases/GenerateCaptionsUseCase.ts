@@ -19,10 +19,18 @@ import type { IAssetRepository } from '@/lib/domain/repositories/IAssetRepositor
 import type { IProjectRepository } from '@/lib/domain/repositories/IProjectRepository';
 import { CaptionGenerationService } from '@/lib/domain/services/CaptionGenerationService';
 import { VideoExtractionService } from '@/lib/domain/services/VideoExtractionService';
+import { TranscriptionService } from '@/lib/domain/services/TranscriptionService';
+import { ThumbnailGenerationService } from '@/lib/domain/services/ThumbnailGenerationService';
+import { concatClipsPassthrough, PRESETS } from '@/lib/ffmpeg';
 import { getLocalUploadDir } from '@/lib/storage';
 import { logger } from '@/lib/logger';
 import { AppError } from '@/lib/utils/error-handler';
 import type { Clip } from '@/lib/types';
+import { resolveTranscriptEditRanges } from '@/lib/repurpose/transcript-edit-ranges';
+import { selectBestReframePlan } from '@/lib/repurpose/clip-optimization';
+
+const PREVIEW_PRESET = 'shorts_9x16_1080' as const;
+const PREVIEW_TARGET_RATIO = PRESETS[PREVIEW_PRESET].width / PRESETS[PREVIEW_PRESET].height;
 
 export interface GenerateCaptionsInput {
   clipId: string;
@@ -46,7 +54,9 @@ export class GenerateCaptionsUseCase {
     @inject(TYPES.IAssetRepository) private assetRepo: IAssetRepository,
     @inject(TYPES.IProjectRepository) private projectRepo: IProjectRepository,
     @inject(TYPES.CaptionGenerationService) private captionService: CaptionGenerationService,
-    @inject(TYPES.VideoExtractionService) private videoExtractor: VideoExtractionService
+    @inject(TYPES.VideoExtractionService) private videoExtractor: VideoExtractionService,
+    @inject(TYPES.TranscriptionService) private transcriptionService: TranscriptionService,
+    @inject(TYPES.ThumbnailGenerationService) private thumbnailService: ThumbnailGenerationService
   ) {}
 
   async execute(input: GenerateCaptionsInput): Promise<GenerateCaptionsOutput> {
@@ -90,12 +100,37 @@ export class GenerateCaptionsUseCase {
     let captionGenerated = false;
 
     if (asset.transcript) {
+      let transcriptPayload = asset.transcript;
+      const parsedTranscript = this.transcriptionService.parseTranscript(asset.transcript);
+
+      if (!this.transcriptionService.hasTimedSegments(parsedTranscript)) {
+        logger.warn('Stored transcript has no timing data. Re-transcribing for accurate clip captions.', {
+          clipId,
+          assetId: asset.id,
+        });
+
+        try {
+          const retranscribed = await this.transcriptionService.transcribe(asset.storagePath);
+          transcriptPayload = this.transcriptionService.serializeTranscription(retranscribed);
+
+          await this.assetRepo.update(asset.id, {
+            transcript: transcriptPayload,
+          });
+        } catch (error) {
+          logger.warn('Re-transcription failed, using existing transcript fallback', {
+            clipId,
+            assetId: asset.id,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
+
       logger.info('Generating captions from transcript', { clipId });
 
       srtContent = await this.captionService.generateSRT(
         clip.startMs,
         clip.endMs,
-        asset.transcript,
+        transcriptPayload,
         {
           maxWordsPerCaption: options.maxWordsPerCaption || 4,
           maxDurationMs: options.maxDurationMs || 2000,
@@ -110,46 +145,124 @@ export class GenerateCaptionsUseCase {
       // Fallback if no transcript
       const durationMs = clip.endMs - clip.startMs;
       const durationSeconds = Math.max(durationMs / 1000, 1);
+      const midpoint = Math.min(59, Math.floor(durationSeconds / 2))
+        .toString()
+        .padStart(2, '0');
+      const end = Math.min(59, Math.floor(durationSeconds))
+        .toString()
+        .padStart(2, '0');
 
-      srtContent = `1\n00:00:00,000 --> 00:00:${Math.min(59, Math.floor(durationSeconds / 2))
-        .toString()
-        .padStart(2, '0')},000\n${clip.title ?? 'Clip highlight'}\n\n2\n00:00:${Math.min(
-        59,
-        Math.floor(durationSeconds / 2)
-      )
-        .toString()
-        .padStart(
-          2,
-          '0'
-        )},000 --> 00:00:${Math.min(59, Math.floor(durationSeconds)).toString().padStart(2, '0')},000\n[Transcript not available]`;
+      srtContent = `1\n00:00:00,000 --> 00:00:${midpoint},000\n[Transcript unavailable]\n\n2\n00:00:${midpoint},000 --> 00:00:${end},000\n[Regenerate captions for editable transcript]`;
     }
 
     // Step 5: Save SRT file
     await fs.writeFile(srtPath, srtContent, 'utf-8');
 
-    // Step 6: Extract video preview clip (without burned captions)
-    logger.info('Extracting video preview clip', { clipId });
+    // Step 6: Extract/compose video preview clip (without burned captions)
+    const transcriptEditRanges = resolveTranscriptEditRanges(
+      clip.viralityFactors,
+      clip.startMs,
+      clip.endMs
+    );
+    const previewReframePlan = selectBestReframePlan(
+      clip.viralityFactors?.reframePlans,
+      PREVIEW_TARGET_RATIO
+    );
 
-    await this.videoExtractor.extractClip({
-      inputPath: asset.storagePath,
-      startMs: clip.startMs,
-      endMs: clip.endMs,
-      outputPath: previewPath,
+    logger.info('Generating video preview clip', {
+      clipId,
+      hasTranscriptCuts: transcriptEditRanges.length > 1,
+      rangeCount: transcriptEditRanges.length,
     });
+
+    if (transcriptEditRanges.length > 1) {
+      const tempDir = path.join(previewsDir, `${clip.id}-segments`);
+      await fs.mkdir(tempDir, { recursive: true });
+      const segmentPaths: string[] = [];
+
+      try {
+        for (let index = 0; index < transcriptEditRanges.length; index += 1) {
+          const range = transcriptEditRanges[index];
+          const segmentPath = path.join(tempDir, `${clip.id}-${index + 1}.mp4`);
+          await this.videoExtractor.extractClip({
+            inputPath: asset.storagePath,
+            startMs: range.startMs,
+            endMs: range.endMs,
+            outputPath: segmentPath,
+            preset: PREVIEW_PRESET,
+            reframePlan: previewReframePlan,
+          });
+          segmentPaths.push(segmentPath);
+        }
+
+        await concatClipsPassthrough({
+          clipPaths: segmentPaths,
+          outputPath: previewPath,
+        });
+      } catch (error) {
+        logger.warn('Internal-cut preview stitch failed, falling back to single-range preview', {
+          clipId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+
+        await this.videoExtractor.extractClip({
+          inputPath: asset.storagePath,
+          startMs: clip.startMs,
+          endMs: clip.endMs,
+          outputPath: previewPath,
+          preset: PREVIEW_PRESET,
+          reframePlan: previewReframePlan,
+        });
+      } finally {
+        await Promise.all(
+          segmentPaths.map(async (segmentPath) => {
+            await fs.unlink(segmentPath).catch(() => null);
+          })
+        );
+        await fs.rm(tempDir, { recursive: true, force: true }).catch(() => null);
+      }
+    } else {
+      await this.videoExtractor.extractClip({
+        inputPath: asset.storagePath,
+        startMs: clip.startMs,
+        endMs: clip.endMs,
+        outputPath: previewPath,
+        preset: PREVIEW_PRESET,
+        reframePlan: previewReframePlan,
+      });
+    }
 
     const previewGenerated = true;
     logger.info('Video preview extracted successfully', { clipId });
 
-    // Step 7: Update clip with caption and preview path
+    let thumbnailUrl: string | undefined;
+    try {
+      const thumbnailResult = await this.thumbnailService.generateClipThumbnail(
+        asset.storagePath,
+        clip.startMs,
+        clip.endMs,
+        clip.projectId,
+        clip.id
+      );
+      thumbnailUrl = thumbnailResult?.publicUrl;
+    } catch (error) {
+      logger.warn('Preview thumbnail regeneration failed', {
+        clipId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+
+    // Step 7: Update clip with caption, preview path, and thumbnail
     const updatedClip = await this.clipRepo.update(clipId, {
       captionSrt: srtContent,
       previewPath: `/api/uploads/previews/${clip.id}.mp4`,
-    } as any);
+      ...(thumbnailUrl ? { thumbnail: thumbnailUrl } : {}),
+    });
 
     // Step 8: Update project timestamp
     await this.projectRepo.update(clip.projectId, {
       updatedAt: new Date(),
-    } as any);
+    });
 
     logger.info('Caption generation completed', {
       clipId,

@@ -334,9 +334,9 @@ export function CaptionStyleSelector({ clipId, onStyleApplied }: CaptionStyleSel
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="srt">SRT (SubRip)</SelectItem>
-                <SelectItem value="vtt">WebVTT</SelectItem>
-                <SelectItem value="json">JSON (Custom Rendering)</SelectItem>
+                <SelectItem showIndicator value="srt">SRT (SubRip)</SelectItem>
+                <SelectItem showIndicator value="vtt">WebVTT</SelectItem>
+                <SelectItem showIndicator value="json">JSON (Custom Rendering)</SelectItem>
               </SelectContent>
             </Select>
           </div>

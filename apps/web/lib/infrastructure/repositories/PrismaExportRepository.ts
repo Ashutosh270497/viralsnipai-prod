@@ -17,6 +17,19 @@ import type {
 
 @injectable()
 export class PrismaExportRepository implements IExportRepository {
+  private supportsIncludeCaptions(): boolean {
+    const runtimeModel = (prisma as any)?._runtimeDataModel?.models?.Export;
+    if (!runtimeModel) {
+      return false;
+    }
+
+    if (Array.isArray(runtimeModel.fields)) {
+      return runtimeModel.fields.some((field: { name?: string }) => field?.name === 'includeCaptions');
+    }
+
+    return Object.prototype.hasOwnProperty.call(runtimeModel.fields ?? {}, 'includeCaptions');
+  }
+
   async findById(id: string): Promise<ExportRecord | null> {
     const exportRecord = await prisma.export.findUnique({
       where: { id },
@@ -37,7 +50,7 @@ export class PrismaExportRepository implements IExportRepository {
   }
 
   async findByStatus(
-    status: 'pending' | 'processing' | 'completed' | 'failed'
+    status: 'queued' | 'processing' | 'done' | 'failed'
   ): Promise<ExportRecord[]> {
     const exports = await prisma.export.findMany({
       where: { status },
@@ -51,7 +64,7 @@ export class PrismaExportRepository implements IExportRepository {
     const exports = await prisma.export.findMany({
       where: {
         status: {
-          in: ['pending', 'processing'],
+          in: ['queued', 'processing'],
         },
       },
       orderBy: { createdAt: 'desc' },
@@ -61,12 +74,17 @@ export class PrismaExportRepository implements IExportRepository {
   }
 
   async create(data: CreateExportData): Promise<ExportRecord> {
+    const includeCaptionsSupported = this.supportsIncludeCaptions();
     const exportRecord = await prisma.export.create({
       data: {
         projectId: data.projectId,
-        clipId: data.clipId,
+        clipIds: data.clipIds,
         preset: data.preset,
-        status: data.status || 'pending',
+        ...(includeCaptionsSupported && { includeCaptions: data.includeCaptions ?? false }),
+        status: data.status || 'queued',
+        outputPath: data.outputPath ?? '',
+        storagePath: data.storagePath ?? '',
+        ...(data.error !== undefined && { error: data.error }),
       },
     });
 
@@ -74,16 +92,17 @@ export class PrismaExportRepository implements IExportRepository {
   }
 
   async update(id: string, data: UpdateExportData): Promise<ExportRecord> {
+    const includeCaptionsSupported = this.supportsIncludeCaptions();
     const exportRecord = await prisma.export.update({
       where: { id },
       data: {
         ...(data.status !== undefined && { status: data.status }),
-        ...(data.progress !== undefined && { progress: data.progress }),
-        ...(data.downloadUrl !== undefined && { downloadUrl: data.downloadUrl }),
+        ...(data.clipIds !== undefined && { clipIds: data.clipIds }),
+        ...(includeCaptionsSupported &&
+          data.includeCaptions !== undefined && { includeCaptions: data.includeCaptions }),
+        ...(data.outputPath !== undefined && { outputPath: data.outputPath }),
+        ...(data.storagePath !== undefined && { storagePath: data.storagePath }),
         ...(data.error !== undefined && { error: data.error }),
-        ...(data.completedAt !== undefined && {
-          completedAt: data.completedAt ? new Date(data.completedAt) : null,
-        }),
       },
     });
 
@@ -116,14 +135,15 @@ export class PrismaExportRepository implements IExportRepository {
     return {
       id: prismaExport.id,
       projectId: prismaExport.projectId,
-      clipId: prismaExport.clipId,
+      clipIds: Array.isArray(prismaExport.clipIds) ? prismaExport.clipIds : [],
       preset: prismaExport.preset,
+      includeCaptions: Boolean(prismaExport.includeCaptions),
       status: prismaExport.status,
-      progress: prismaExport.progress,
-      downloadUrl: prismaExport.downloadUrl,
+      outputPath: prismaExport.outputPath,
+      storagePath: prismaExport.storagePath,
       error: prismaExport.error,
       createdAt: prismaExport.createdAt.toISOString(),
-      completedAt: prismaExport.completedAt?.toISOString(),
+      updatedAt: prismaExport.updatedAt?.toISOString(),
     };
   }
 }

@@ -53,7 +53,20 @@ export function FeatureFlagProvider({ children }: { children: React.ReactNode })
       // Veo remains controlled by the environment toggle only.
       veoEnabled: envFlags.veoEnabled,
       soraEnabled: overrides.soraEnabled ?? envFlags.soraEnabled,
-      voicerEnabled: overrides.voicerEnabled ?? envFlags.voicerEnabled
+      voicerEnabled: overrides.voicerEnabled ?? envFlags.voicerEnabled,
+      snipRadarEnabled: overrides.snipRadarEnabled ?? envFlags.snipRadarEnabled,
+      snipRadarOverviewV2Enabled:
+        overrides.snipRadarOverviewV2Enabled ?? envFlags.snipRadarOverviewV2Enabled,
+      snipRadarAnalyticsV2Enabled:
+        overrides.snipRadarAnalyticsV2Enabled ?? envFlags.snipRadarAnalyticsV2Enabled,
+      snipRadarCreateV2Enabled:
+        overrides.snipRadarCreateV2Enabled ?? envFlags.snipRadarCreateV2Enabled,
+      snipRadarDiscoverV2Enabled:
+        overrides.snipRadarDiscoverV2Enabled ?? envFlags.snipRadarDiscoverV2Enabled,
+      snipRadarPublishV2Enabled:
+        overrides.snipRadarPublishV2Enabled ?? envFlags.snipRadarPublishV2Enabled,
+      snipRadarGrowthPlanV2Enabled:
+        overrides.snipRadarGrowthPlanV2Enabled ?? envFlags.snipRadarGrowthPlanV2Enabled,
     };
     return {
       flags,

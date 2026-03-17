@@ -8,14 +8,17 @@
  */
 
 import { injectable } from 'inversify';
-import { extractClip } from '@/lib/ffmpeg';
+import { extractClip, PRESETS } from '@/lib/ffmpeg';
 import { logger } from '@/lib/logger';
+import type { ClipReframePlan } from '@/lib/types';
 
 export interface ClipExtractionInput {
   inputPath: string;
   startMs: number;
   endMs: number;
   outputPath: string;
+  preset?: keyof typeof PRESETS;
+  reframePlan?: ClipReframePlan | null;
 }
 
 @injectable()
@@ -25,7 +28,7 @@ export class VideoExtractionService {
    * Captions will be displayed via browser's native subtitle system
    */
   async extractClip(input: ClipExtractionInput): Promise<void> {
-    const { inputPath, startMs, endMs, outputPath } = input;
+    const { inputPath, startMs, endMs, outputPath, preset, reframePlan } = input;
 
     logger.info('Extracting video clip', {
       inputPath,
@@ -33,6 +36,8 @@ export class VideoExtractionService {
       endMs,
       outputPath,
       duration: endMs - startMs,
+      preset,
+      reframeMode: reframePlan?.mode ?? 'none',
     });
 
     try {
@@ -41,6 +46,8 @@ export class VideoExtractionService {
         startMs,
         endMs,
         outputPath,
+        preset,
+        reframePlan,
       });
 
       logger.info('Video clip extracted successfully', { outputPath });

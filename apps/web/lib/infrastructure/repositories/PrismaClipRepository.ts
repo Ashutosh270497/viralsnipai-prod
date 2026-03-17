@@ -30,7 +30,7 @@ export class PrismaClipRepository implements IClipRepository {
   async findByProjectId(projectId: string): Promise<Clip[]> {
     const clips = await prisma.clip.findMany({
       where: { projectId },
-      orderBy: { viralityScore: 'desc' },
+      orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
     });
 
     return clips.map(this.mapToClip);
@@ -97,9 +97,14 @@ export class PrismaClipRepository implements IClipRepository {
         assetId: data.assetId,
         startMs: data.startMs,
         endMs: data.endMs,
+        ...(data.order !== undefined && { order: data.order }),
         title: data.title,
         summary: data.summary,
         callToAction: data.callToAction,
+        ...(data.captionSrt !== undefined && { captionSrt: data.captionSrt }),
+        ...(data.captionStyle !== undefined && { captionStyle: data.captionStyle as any }),
+        ...(data.thumbnail !== undefined && { thumbnail: data.thumbnail }),
+        ...(data.previewPath !== undefined && { previewPath: data.previewPath }),
         viralityScore: data.viralityScore,
         viralityFactors: data.viralityFactors as any,
       },
@@ -119,9 +124,14 @@ export class PrismaClipRepository implements IClipRepository {
             assetId: clip.assetId,
             startMs: clip.startMs,
             endMs: clip.endMs,
+            ...(clip.order !== undefined && { order: clip.order }),
             title: clip.title,
             summary: clip.summary,
             callToAction: clip.callToAction,
+            ...(clip.captionSrt !== undefined && { captionSrt: clip.captionSrt }),
+            ...(clip.captionStyle !== undefined && { captionStyle: clip.captionStyle as any }),
+            ...(clip.thumbnail !== undefined && { thumbnail: clip.thumbnail }),
+            ...(clip.previewPath !== undefined && { previewPath: clip.previewPath }),
             viralityScore: clip.viralityScore,
             viralityFactors: clip.viralityFactors as any,
           },
@@ -136,12 +146,18 @@ export class PrismaClipRepository implements IClipRepository {
     const clip = await prisma.clip.update({
       where: { id },
       data: {
+        ...(data.startMs !== undefined && { startMs: data.startMs }),
+        ...(data.endMs !== undefined && { endMs: data.endMs }),
+        ...(data.order !== undefined && { order: data.order }),
         ...(data.title !== undefined && { title: data.title }),
         ...(data.summary !== undefined && { summary: data.summary }),
         ...(data.callToAction !== undefined && { callToAction: data.callToAction }),
         ...(data.captionSrt !== undefined && { captionSrt: data.captionSrt }),
+        ...(data.captionStyle !== undefined && { captionStyle: data.captionStyle as any }),
         ...(data.thumbnail !== undefined && { thumbnail: data.thumbnail }),
         ...(data.previewPath !== undefined && { previewPath: data.previewPath }),
+        ...(data.viralityScore !== undefined && { viralityScore: data.viralityScore }),
+        ...(data.viralityFactors !== undefined && { viralityFactors: data.viralityFactors as any }),
       },
     });
 
@@ -177,10 +193,12 @@ export class PrismaClipRepository implements IClipRepository {
       assetId: prismaClip.assetId,
       startMs: prismaClip.startMs,
       endMs: prismaClip.endMs,
+      order: prismaClip.order,
       title: prismaClip.title,
       summary: prismaClip.summary,
       callToAction: prismaClip.callToAction,
       captionSrt: prismaClip.captionSrt,
+      captionStyle: prismaClip.captionStyle as any,
       previewPath: prismaClip.previewPath,
       thumbnail: prismaClip.thumbnail,
       viralityScore: prismaClip.viralityScore,

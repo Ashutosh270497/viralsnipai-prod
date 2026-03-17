@@ -12,7 +12,8 @@ const config: Config = {
   theme: {
     extend: {
       fontFamily: {
-        sans: ["var(--ui-font-family-sans)", "sans-serif"]
+        sans: ["var(--ui-font-family-sans)", "sans-serif"],
+        mono: ["var(--ui-font-family-mono)", "monospace"],
       },
       boxShadow: {
         xs: "var(--ui-shadow-sm)",

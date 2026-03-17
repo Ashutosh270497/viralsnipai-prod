@@ -26,7 +26,7 @@ function getStatusIcon(status: VoiceTranslation['status']) {
   }
 }
 
-function getStatusBadgeVariant(status: VoiceTranslation['status']): "default" | "secondary" | "destructive" {
+function getStatusBadgeVariant(status: VoiceTranslation['status']): "default" | "secondary" | "warning" {
   switch (status) {
     case 'completed':
       return 'default';
@@ -34,7 +34,7 @@ function getStatusBadgeVariant(status: VoiceTranslation['status']): "default" | 
     case 'queued':
       return 'secondary';
     case 'failed':
-      return 'destructive';
+      return 'warning';
   }
 }
 

@@ -25,6 +25,54 @@ type CommandAction = {
 
 const ACTIONS: CommandAction[] = [
   {
+    id: "go-snipradar-overview",
+    label: "SnipRadar Overview",
+    hint: "Open your X growth dashboard",
+    route: "/snipradar"
+  },
+  {
+    id: "go-snipradar-discover",
+    label: "SnipRadar Discover",
+    hint: "Track accounts and find viral opportunities",
+    route: "/snipradar/discover/tracker"
+  },
+  {
+    id: "go-snipradar-create",
+    label: "SnipRadar Create",
+    hint: "Draft and refine posts with live scoring",
+    route: "/snipradar/create/drafts"
+  },
+  {
+    id: "go-snipradar-inbox",
+    label: "SnipRadar Inbox",
+    hint: "Review browser captures and push them into Draft Studio",
+    route: "/snipradar/inbox"
+  },
+  {
+    id: "go-snipradar-relationships",
+    label: "SnipRadar Relationships",
+    hint: "Manage leads, follow-ups, and reply history",
+    route: "/snipradar/relationships"
+  },
+  {
+    id: "go-snipradar-publish",
+    label: "SnipRadar Publish",
+    hint: "Schedule queued drafts and plan calendar",
+    route: "/snipradar/publish/scheduler"
+  },
+  {
+    id: "go-snipradar-analytics",
+    label: "SnipRadar Analytics",
+    hint: "Review performance and growth trends",
+    route: "/snipradar/analytics"
+  },
+  {
+    id: "go-snipradar-growth-plan",
+    label: "SnipRadar Growth Plan",
+    hint: "Generate phased execution roadmap",
+    route: "/snipradar/growth-planner"
+  },
+  {
     id: "go-projects",
     label: "Go to Projects",
     hint: "Open your workspace projects",

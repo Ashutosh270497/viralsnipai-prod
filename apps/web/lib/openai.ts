@@ -1,6 +1,8 @@
 import OpenAI from "openai";
 
 import { generateGeminiHighlights, HAS_GEMINI_KEY } from "@/lib/google-gemini";
+import { generateHooksViaOpenRouter, generateScriptViaOpenRouter } from "./openai-with-router";
+import { openRouterClient, OPENROUTER_MODELS, HAS_OPENROUTER_KEY, routedChatCompletion } from "./openrouter-client";
 
 const OPENAI_HOOKS_MODEL =
   process.env.OPENAI_HOOKS_MODEL?.trim() ??
@@ -22,7 +24,11 @@ const OPENAI_IMAGEN_PROMPT_MODEL =
 
 const hasApiKey = Boolean(process.env.OPENAI_API_KEY);
 const client = hasApiKey
-  ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+  ? new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY,
+      timeout: 60_000, // 60 second timeout — prevents hanging requests
+      maxRetries: 1,   // Let our own retry logic handle retries
+    })
   : null;
 
 function mockHooks(topic: string) {
@@ -135,6 +141,11 @@ const VIRAL_CLIP_EXAMPLES = [
 ] as const;
 
 export async function generateHooks(payload: HookPayload) {
+  // Try OpenRouter first if OPENROUTER_ENABLED=true and OPENROUTER_API_KEY is set.
+  // Returns null on failure so we fall through to OpenAI automatically.
+  const orHooks = await generateHooksViaOpenRouter(payload);
+  if (orHooks) return orHooks;
+
   if (!client) {
     return mockHooks(payload.topic);
   }
@@ -191,6 +202,11 @@ export async function generateHooks(payload: HookPayload) {
 }
 
 export async function generateScript(payload: ScriptPayload) {
+  // Try OpenRouter first if OPENROUTER_ENABLED=true and OPENROUTER_API_KEY is set.
+  // Returns null on failure so we fall through to OpenAI automatically.
+  const orScript = await generateScriptViaOpenRouter(payload);
+  if (orScript) return orScript;
+
   if (!client) {
     return mockScript(payload.hook);
   }
@@ -280,7 +296,6 @@ export async function generateHighlights(payload: HighlightPayload) {
 
   const openAIModel = requestedModel && !wantsGemini ? requestedModel : OPENAI_HIGHLIGHTS_MODEL;
 
-  console.log("[Highlights] Using OpenAI model", openAIModel);
   // Use smarter transcript truncation for longer videos
   const maxTranscriptLength = 50000; // Increased from 16000 to 50000
   const truncatedTranscript = payload.transcript.length > maxTranscriptLength
@@ -302,57 +317,100 @@ export async function generateHighlights(payload: HighlightPayload) {
       "Prioritise hooks that feel contrarian yet actionable. Highlight scrappy wins, emotional stakes, and clear takeaways.",
     examples: VIRAL_CLIP_EXAMPLES
   };
+
+  // Shared system prompt used by both OpenRouter and OpenAI paths
+  const highlightsSystemContent = [
+    "You are an elite social video editor and viral content strategist with deep expertise in TikTok, Instagram Reels, and YouTube Shorts algorithms.",
+    "Your mission: identify clips with MAXIMUM viral potential based on proven patterns that consistently generate millions of views.",
+    "",
+    "**VIRAL MECHANICS TO PRIORITIZE:**",
+    "1. PATTERN INTERRUPT: Challenge assumptions, 'You're doing X wrong', 'Stop doing X'",
+    "2. CURIOSITY GAP: Tease specific results without revealing how ('$1000 to $50k', 'doubled my...')",
+    "3. TRANSFORMATION STORIES: Before/after with emotional stakes and metrics (%, time, money)",
+    "4. CONTRARIAN TAKES: Against conventional wisdom or expert advice",
+    "5. PERSONAL VULNERABILITY: High-stakes stories ('My marriage was ending', 'I was broke')",
+    "6. INSTANT GRATIFICATION: Quick results ('30-second technique', '90-second routine')",
+    "7. AUTHORITY CHALLENGE: 'Doctors hate this', 'Experts don't want you to know'",
+    "8. RELATABILITY + SOLUTION: Universal struggles with unexpected solutions",
+    "",
+    "**FIRST 3 SECONDS REQUIREMENTS:**",
+    "- Bold statement, provocative question, or shocking claim",
+    "- Specific numbers/metrics when possible",
+    "- Pattern interrupt that stops scrolling",
+    "- NO slow intros, greetings, or context",
+    "",
+    "**MIDDLE SECTION NEEDS:**",
+    "- Rising tension or escalating insights",
+    "- Specific, actionable information (not vague)",
+    "- Emotional peaks: surprise, excitement, inspiration, controversy",
+    "- Fast pacing, no dead air",
+    "",
+    "**ENDING MUST DELIVER:**",
+    "- Clear payoff resolving the hook's promise",
+    "- Strong CTA (try tonight, DM me, link in bio)",
+    "- Urgency/scarcity when appropriate",
+    "- Optional: cliffhanger for next video",
+    "",
+    "**OUTPUT:** Valid JSON only: {\"highlights\":[{...}]}",
+    "Each needs: title, hook, start_percent, end_percent, optional call_to_action",
+    "Numeric percentages (0-100), chronological, start < end",
+    "Target 30-45 seconds per clip. Return 3-10 viral moments.",
+    "Sentence boundaries only. No overlaps.",
+    "",
+    "**SELECTION CRITERIA:**",
+    "- Would this stop mid-scroll in 3 seconds?",
+    "- Delivers specific, valuable insight/transformation?",
+    "- Emotional resonance or controversy?",
+    "- Would viewers share or tag friends?",
+    "",
+    "Return best options even if transcript lacks strong viral moments, prioritizing specificity, contrarian angles, and emotional stakes."
+  ].join(" ");
+
+  // Try OpenRouter for highlights if enabled and not explicitly requesting OpenAI/a specific model
+  const OPENROUTER_HIGHLIGHTS_ENABLED = process.env.OPENROUTER_ENABLED === 'true';
+  if (OPENROUTER_HIGHLIGHTS_ENABLED && HAS_OPENROUTER_KEY && openRouterClient && !wantsOpenAI) {
+    try {
+      console.log("[Highlights] Trying OpenRouter model", OPENROUTER_MODELS.highlights);
+      const orResp = await openRouterClient.chat.completions.create({
+        model: OPENROUTER_MODELS.highlights,
+        messages: [
+          { role: "system", content: highlightsSystemContent },
+          { role: "user", content: JSON.stringify(userPayload) }
+        ],
+        max_tokens: 4096,
+        temperature: 0.3,
+      });
+      const orRaw = orResp.choices[0]?.message?.content ?? "{}";
+      const orText = orRaw.trim().startsWith("{") ? orRaw : (orRaw.match(/\{[\s\S]*\}/)?.[0] ?? "{}");
+      try {
+        const parsedOr = JSON.parse(orText) as { highlights?: Array<any> };
+        if (parsedOr.highlights && Array.isArray(parsedOr.highlights) && parsedOr.highlights.length > 0) {
+          return parsedOr.highlights
+            .map((h) => ({
+              title: h.title ?? h.headline ?? "Highlight",
+              hook: h.hook ?? h.opening ?? h.title ?? "",
+              startPercent: Number.parseFloat(h.start_percent ?? h.startPercent ?? 0),
+              endPercent: Number.parseFloat(h.end_percent ?? h.endPercent ?? 0),
+              callToAction: h.cta ?? h.call_to_action ?? h.outro ?? undefined,
+            }))
+            .filter((item) => Number.isFinite(item.startPercent) && Number.isFinite(item.endPercent));
+        }
+      } catch {
+        // JSON parse failed — fall through to OpenAI
+      }
+      console.log("[Highlights] OpenRouter returned no usable highlights, falling back to OpenAI.");
+    } catch (error) {
+      console.warn("[Highlights] OpenRouter generation failed, falling back to OpenAI:", error instanceof Error ? error.message : error);
+    }
+  }
+
+  console.log("[Highlights] Using OpenAI model", openAIModel);
   const response = await client.responses.create({
     model: openAIModel,
     input: [
       {
         role: "system",
-        content: [
-          "You are an elite social video editor and viral content strategist with deep expertise in TikTok, Instagram Reels, and YouTube Shorts algorithms.",
-          "Your mission: identify clips with MAXIMUM viral potential based on proven patterns that consistently generate millions of views.",
-          "",
-          "**VIRAL MECHANICS TO PRIORITIZE:**",
-          "1. PATTERN INTERRUPT: Challenge assumptions, 'You're doing X wrong', 'Stop doing X'",
-          "2. CURIOSITY GAP: Tease specific results without revealing how ('$1000 to $50k', 'doubled my...')",
-          "3. TRANSFORMATION STORIES: Before/after with emotional stakes and metrics (%, time, money)",
-          "4. CONTRARIAN TAKES: Against conventional wisdom or expert advice",
-          "5. PERSONAL VULNERABILITY: High-stakes stories ('My marriage was ending', 'I was broke')",
-          "6. INSTANT GRATIFICATION: Quick results ('30-second technique', '90-second routine')",
-          "7. AUTHORITY CHALLENGE: 'Doctors hate this', 'Experts don't want you to know'",
-          "8. RELATABILITY + SOLUTION: Universal struggles with unexpected solutions",
-          "",
-          "**FIRST 3 SECONDS REQUIREMENTS:**",
-          "- Bold statement, provocative question, or shocking claim",
-          "- Specific numbers/metrics when possible",
-          "- Pattern interrupt that stops scrolling",
-          "- NO slow intros, greetings, or context",
-          "",
-          "**MIDDLE SECTION NEEDS:**",
-          "- Rising tension or escalating insights",
-          "- Specific, actionable information (not vague)",
-          "- Emotional peaks: surprise, excitement, inspiration, controversy",
-          "- Fast pacing, no dead air",
-          "",
-          "**ENDING MUST DELIVER:**",
-          "- Clear payoff resolving the hook's promise",
-          "- Strong CTA (try tonight, DM me, link in bio)",
-          "- Urgency/scarcity when appropriate",
-          "- Optional: cliffhanger for next video",
-          "",
-          "**OUTPUT:** Valid JSON only: {\"highlights\":[{...}]}",
-          "Each needs: title, hook, start_percent, end_percent, optional call_to_action",
-          "Numeric percentages (0-100), chronological, start < end",
-          "Target 30-45 seconds per clip. Return 3-10 viral moments.",
-          "Sentence boundaries only. No overlaps.",
-          "",
-          "**SELECTION CRITERIA:**",
-          "- Would this stop mid-scroll in 3 seconds?",
-          "- Delivers specific, valuable insight/transformation?",
-          "- Emotional resonance or controversy?",
-          "- Would viewers share or tag friends?",
-          "",
-          "Return best options even if transcript lacks strong viral moments, prioritizing specificity, contrarian angles, and emotional stakes."
-        ].join(" ")
+        content: highlightsSystemContent
       },
       {
         role: "user",
@@ -442,28 +500,25 @@ export async function generateImagenPrompt(
     negative_prompt: payload.negativePrompt?.trim() || null
   };
 
-  const response = await client.responses.create({
-    model: OPENAI_IMAGEN_PROMPT_MODEL,
-    input: [
-      {
-        role: "system",
-        content:
-          "You are an imaginative creative director who crafts concise, compelling prompts for Google Imagen or similar diffusion models. Respond with strictly valid JSON shaped as {\"prompt\":\"...\",\"negative_prompt\":\"...\"}. The prompt should be 1-3 sentences, prioritize subject + setting + mood + stylistic guidance, and avoid camera jargon unless requested. Suggest an optional negative_prompt if obvious artifacts should be avoided."
-      },
-      {
-        role: "user",
-        content: JSON.stringify(requestBody)
-      }
-    ]
-  });
+  const systemContent =
+    "You are an imaginative creative director who crafts concise, compelling prompts for Google Imagen or similar diffusion models. Respond with strictly valid JSON shaped as {\"prompt\":\"...\",\"negative_prompt\":\"...\"}. The prompt should be 1-3 sentences, prioritize subject + setting + mood + stylistic guidance, and avoid camera jargon unless requested. Suggest an optional negative_prompt if obvious artifacts should be avoided.";
 
-  let text =
-    response.output_text ??
-    response.output
-      ?.flatMap((chunk: any) => chunk.content?.map((item: any) => item.text?.value ?? "").filter(Boolean))
-      ?.join("")
-      ?.trim() ??
-    "";
+  let text: string;
+  try {
+    text = await routedChatCompletion(
+      client,
+      'imagenPrompt',
+      OPENAI_IMAGEN_PROMPT_MODEL,
+      [
+        { role: "system", content: systemContent },
+        { role: "user", content: JSON.stringify(requestBody) }
+      ],
+      { maxTokens: 512, temperature: 0.7 }
+    );
+  } catch (err) {
+    console.warn("[Imagen] routedChatCompletion failed", err);
+    return { prompt: fallbackPrompt };
+  }
 
   if (!text) {
     return { prompt: fallbackPrompt };

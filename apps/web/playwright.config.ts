@@ -9,7 +9,7 @@ export default defineConfig({
   retries: process.env.CI ? 1 : 0,
   reporter: [
     ["list"],
-    ...(process.env.CI ? [["html", { outputFolder: "./playwright-report" }]] : [])
+    ...(process.env.CI ? [["html", { outputFolder: "./playwright-report" }] as ["html", { outputFolder: string }]] : [])
   ],
   use: {
     baseURL: process.env.PLAYWRIGHT_BASE_URL ?? "http://localhost:3000",

@@ -27,7 +27,7 @@ export function CookieBanner() {
     <div className="fixed inset-x-0 bottom-4 z-50 flex justify-center px-4">
       <div className="flex w-full max-w-3xl flex-col gap-3 rounded-2xl border border-border/70 bg-background/95 p-4 shadow-lg sm:flex-row sm:items-center sm:justify-between">
         <p className="text-sm text-muted-foreground">
-          We use cookies to personalize Clippers and analyze usage. We never sell your data. See our privacy policy for details.
+          We use cookies to personalize ViralSnipAI and analyze usage. We never sell your data. See our privacy policy for details.
         </p>
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" asChild>

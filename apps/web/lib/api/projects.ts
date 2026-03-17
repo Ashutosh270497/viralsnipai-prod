@@ -7,6 +7,7 @@
  */
 
 import { apiClient } from './client';
+import type { ClipCaptionStyleConfig } from "@/lib/repurpose/caption-style-config";
 
 // Types for API responses
 export interface Project {
@@ -27,26 +28,32 @@ export interface Clip {
   summary?: string | null;
   callToAction?: string | null;
   captionSrt?: string | null;
+  captionStyle?: ClipCaptionStyleConfig | null;
   previewPath?: string | null;
   viralityScore?: number | null;
 }
 
 export interface ExportRecord {
   id: string;
+  projectId: string;
+  clipIds: string[];
   preset: string;
   status: string;
-  progress?: number;
-  downloadUrl?: string;
+  outputPath?: string;
+  storagePath?: string;
   error?: string;
+  createdAt: string;
+  updatedAt?: string;
 }
 
 export interface Asset {
   id: string;
   path: string;
-  type: string;
+  type: "audio" | "video" | string;
   durationSec?: number | null;
   durationSeconds?: number | null;
   transcript?: string | null;
+  sourceLanguage?: string;
   createdAt: string;
 }
 
@@ -63,6 +70,7 @@ export interface UpdateClipData {
   summary?: string;
   callToAction?: string;
   captionSrt?: string;
+  captionStyle?: ClipCaptionStyleConfig | null;
 }
 
 export interface CreateProjectData {
@@ -143,7 +151,7 @@ export const projectsApi = {
   /**
    * Create a new export
    */
-  createExport: (projectId: string, data: { clipIds: string[]; preset: string }) =>
+  createExport: (projectId: string, data: { clipIds: string[]; preset: string; includeCaptions?: boolean }) =>
     apiClient.post<{ export: ExportRecord }>(`/api/exports`, {
       projectId,
       ...data

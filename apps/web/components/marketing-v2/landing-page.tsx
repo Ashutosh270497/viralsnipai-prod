@@ -7,23 +7,25 @@ import type { ReactNode } from "react";
 import {
   ArrowRight,
   Check,
-  Clapperboard,
-  Download,
-  LineChart,
-  PenTool,
-  Play,
   Sparkles,
-  Wand2,
-  Youtube,
-  Instagram,
-  Linkedin,
-  Twitter,
-  Scissors,
   Zap,
   Users,
-  BarChart3
+  BarChart3,
+  Video,
+  Scissors,
+  Wand2,
+  Globe,
+  Clock,
+  TrendingUp,
+  MessageSquare,
+  Shield,
+  Rocket,
+  Play,
+  Star,
+  CheckCircle2
 } from "lucide-react";
-import { motion, useReducedMotion } from "framer-motion";
+import { motion, useReducedMotion, useInView } from "framer-motion";
+import { useRef } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -34,127 +36,175 @@ import { PricingGrid } from "@/components/marketing-v2/pricing-grid";
 import {
   PRICING_PLANS,
   type SupportedCurrency,
-  type BillingCycle,
   getMonthlyPrice
 } from "@/components/marketing-v2/pricing-config";
 
-const heroHighlights = [
-  "Trusted by 1.2M+ shorts editors",
-  "4.9 ★ average rating",
-  "Clips ready in minutes"
+const features = [
+  {
+    icon: Sparkles,
+    title: "AI-Powered Clipping",
+    description: "Automatically identify and extract viral moments from your long-form content with advanced AI analysis.",
+    color: "from-blue-500 to-cyan-500"
+  },
+  {
+    icon: Scissors,
+    title: "Smart Editing",
+    description: "One-click editing with auto-captions, face tracking, and dynamic layouts optimized for each platform.",
+    color: "from-purple-500 to-pink-500"
+  },
+  {
+    icon: Globe,
+    title: "Multi-Platform Export",
+    description: "Export perfectly sized content for YouTube Shorts, TikTok, Instagram Reels, and more - all at once.",
+    color: "from-orange-500 to-red-500"
+  },
+  {
+    icon: Wand2,
+    title: "Brand Customization",
+    description: "Apply your brand colors, fonts, logos, and watermarks consistently across all your clips.",
+    color: "from-green-500 to-emerald-500"
+  },
+  {
+    icon: Clock,
+    title: "Scheduled Publishing",
+    description: "Plan and schedule your content calendar. Post automatically at the perfect time for maximum engagement.",
+    color: "from-indigo-500 to-blue-500"
+  },
+  {
+    icon: TrendingUp,
+    title: "Analytics Dashboard",
+    description: "Track performance, identify trends, and optimize your content strategy with detailed analytics.",
+    color: "from-pink-500 to-rose-500"
+  }
 ];
 
-const featureGrid = [
+const stats = [
+  { number: "20M+", label: "Active Creators", icon: Users },
+  { number: "500M+", label: "Clips Generated", icon: Video },
+  { number: "4.9/5", label: "User Rating", icon: Star },
+  { number: "150+", label: "Countries", icon: Globe }
+];
+
+const testimonials = [
   {
-    title: "Auto Curation",
-    description: "AI scans your footage, detects viral-worthy moments, and assembles clipped timelines automatically.",
+    name: "Alex Rivera",
+    role: "Content Creator",
+    avatar: "AR",
+    content: "ViralSnipAI transformed my workflow. I went from spending 8 hours editing to just 30 minutes. My productivity increased 15x!",
+    metric: "15x productivity boost",
+    gradient: "from-blue-500 to-cyan-500"
+  },
+  {
+    name: "Sarah Chen",
+    role: "YouTube Educator",
+    avatar: "SC",
+    content: "The AI understands context so well. It picks the exact moments my audience loves. My engagement rate doubled in 3 months.",
+    metric: "2x engagement increase",
+    gradient: "from-purple-500 to-pink-500"
+  },
+  {
+    name: "Marcus Johnson",
+    role: "Podcast Producer",
+    avatar: "MJ",
+    content: "I run a clipping service for 15 podcasters now. ViralSnipAI made it possible to scale my business without hiring a team.",
+    metric: "$25K monthly revenue",
+    gradient: "from-orange-500 to-red-500"
+  }
+];
+
+const workflow = [
+  {
+    step: "1",
+    title: "Upload Your Content",
+    description: "Drop your video link or upload directly. Supports YouTube, Vimeo, and local files up to 4 hours.",
+    icon: Video
+  },
+  {
+    step: "2",
+    title: "AI Analyzes & Extracts",
+    description: "Our AI scans your content, identifies viral moments, and creates optimized clips automatically.",
     icon: Sparkles
   },
   {
-    title: "Face Tracking",
-    description: "Keep speakers framed perfectly in vertical shots with real-time face detection and smart reframing.",
-    icon: PenTool
-  },
-  {
-    title: "Auto Captioning",
-    description: "Burn-in captions in your fonts with emoji emphasis, karaoke highlights, and translation support.",
+    step: "3",
+    title: "Customize & Brand",
+    description: "Apply your style, add captions, adjust timing, and preview across different platforms.",
     icon: Wand2
   },
   {
-    title: "Hook Titles & CTAs",
-    description: "Generate scroll-stopping titles, call-to-actions, and overlays that keep viewers watching to the end.",
-    icon: Clapperboard
+    step: "4",
+    title: "Export & Publish",
+    description: "Download or schedule direct publishing to all your social channels with one click.",
+    icon: Rocket
   }
 ];
 
-const exampleClips = [
-  { title: "Creator vlog", views: "1M" },
-  { title: "Podcast debate", views: "1M" },
-  { title: "News reaction", views: "837K" },
-  { title: "Sports highlight", views: "721K" },
-  { title: "Talk show moment", views: "601K" }
-];
-
-const insightsCards = [
+const templatePacks = [
   {
-    title: "How @kickclipper scaled to $300K/month editing IShowSpeed content",
-    image: "/marketing/stories/kickclipper.png"
+    name: "Podcast Clips",
+    description: "Auto jump cuts, speaker captions, and quote callouts tuned for long-form podcasts.",
+    icon: MessageSquare
   },
   {
-    title: "This TikTok clipper hit 32M views in 30 days using Clippers automations",
-    image: "/marketing/stories/tiktok-pro.png"
-  }
-];
-
-const monetizationCards = [
-  {
-    title: "Monetize with TikTok, YouTube, Whop, and Stake",
-    image: "/marketing/monetization/multiple.png"
+    name: "Educational Shorts",
+    description: "Lecture-style framing, key-point highlights, and clean subtitle themes for tutorials.",
+    icon: BarChart3
   },
   {
-    title: "Join the TikTok Creator Rewards Program",
-    image: "/marketing/monetization/rewards.png"
+    name: "Founder Updates",
+    description: "Personal-brand layouts with punchy hook overlays designed for LinkedIn and X.",
+    icon: Rocket
   }
-];
-
-const integrations = [
-  { name: "YouTube", icon: Youtube },
-  { name: "Instagram", icon: Instagram },
-  { name: "TikTok", icon: Play },
-  { name: "LinkedIn", icon: Linkedin },
-  { name: "X", icon: Twitter }
 ];
 
 const faqItems = [
   {
-    question: "How much does an AI clip cost?",
-    answer:
-      "AI clipping uses one credit per processed video (up to 20 minutes). Templates have dynamic pricing, shown before rendering. Credits reset monthly."
+    question: "How does AI clipping work?",
+    answer: "Our AI analyzes audio, visual elements, and engagement patterns to identify the most shareable moments in your content. It considers factors like pacing, emotional peaks, and topic relevance to select clips that resonate with your audience."
   },
   {
-    question: "Can I remove watermarks?",
-    answer:
-      "Yes. Pro, Expert, Business, and Custom plans unlock watermark toggles, custom overlays, and per-project branding."
+    question: "Can I edit the AI-generated clips?",
+    answer: "Absolutely! All AI clips are fully editable. You can adjust timing, add transitions, modify captions, change layouts, and apply your brand styling. Think of AI as your first draft - you have complete creative control."
   },
   {
-    question: "Which platforms can I export to?",
-    answer:
-      "One timeline outputs Shorts, Reels, TikTok, LinkedIn, and X. Schedule posts directly or download MP4s and caption files."
+    question: "Which platforms are supported?",
+    answer: "We support YouTube Shorts, TikTok, Instagram Reels, Facebook Stories, LinkedIn, Twitter/X, and Pinterest. Each export is optimized for the platform's specific requirements including aspect ratios, duration limits, and quality settings."
   },
   {
-    question: "Can my team collaborate?",
-    answer:
-      "Invite editors, leave frame-accurate comments, lock templates, and manage approvals before publishing."
+    question: "Is there a free plan?",
+    answer: "Yes. The free workspace is designed for evaluation: limited ideas, scripts, titles, thumbnails, and niche discovery so you can test the workflow before moving to a paid plan."
   },
   {
-    question: "Do you assist with onboarding?",
-    answer:
-      "Studio and Business plans include onboarding, template migration, and automation support. All plans get live chat help."
+    question: "How long does processing take?",
+    answer: "Most videos are analyzed and clipped within 2-5 minutes depending on length. You'll receive a notification when your clips are ready. Processing happens in the background so you can continue working on other projects."
+  },
+  {
+    question: "Can teams collaborate?",
+    answer: "Current self-serve billing is optimized for individual operators. Pro unlocks the highest limits, analytics depth, and developer access. Team billing and deeper collaboration controls are handled separately from this Razorpay cutover."
   }
 ];
 
-export function MarketingPageV2() {
+export function MarketingPageV3() {
   const [currency, setCurrency] = useState<SupportedCurrency>("USD");
-  const [billingCycle, setBillingCycle] = useState<BillingCycle>("monthly");
-  const prefersReducedMotion = useReducedMotion();
+  const prefersReducedMotion = useReducedMotion() || false;
 
   const productSchema = useMemo(
     () => ({
       "@context": "https://schema.org",
       "@type": "Product",
-      name: "Clippers",
-      description: "AI workspace that turns long-form recordings into viral Shorts, Reels, TikTok, LinkedIn, and X clips.",
+      name: "ViralSnipAI",
+      description: "AI-powered video clipping platform that transforms long-form content into viral short-form videos for social media.",
       brand: {
         "@type": "Organization",
-        name: "Clippers",
-        url: "https://clippers.app"
+        name: "ViralSnipAI",
+        url: "https://viralsnipai.com"
       },
       offers: PRICING_PLANS.map((plan) => ({
         "@type": "Offer",
         name: plan.name,
         priceCurrency: currency,
         price: String(getMonthlyPrice(plan, currency)),
-        url: "https://clippers.app/pricing"
+        url: "https://viralsnipai.com/pricing"
       }))
     }),
     [currency]
@@ -177,26 +227,30 @@ export function MarketingPageV2() {
   );
 
   useEffect(() => {
-    trackEvent({ name: "marketing_v2_view" });
+    trackEvent({ name: "marketing_v3_view" });
   }, []);
 
   return (
     <>
-      <main className="flex flex-1 flex-col bg-gray-50 text-foreground dark:bg-black">
-        <HeroSection />
-        <TrustBadge />
-        <FeatureSection />
-        <ExampleSection />
-        <InsightsSection />
-        <MarketplaceSection />
-        <MonetizationSection />
-        <TemplatesSection />
-        <ScheduleSection />
-        <PricingSection />
-        <CostTable />
+      <main className="flex flex-1 flex-col overflow-hidden bg-white text-foreground dark:bg-black">
+        <HeroSection prefersReducedMotion={prefersReducedMotion} />
+        <StatsSection />
+        <FeaturesSection prefersReducedMotion={prefersReducedMotion} />
+        <TemplateSection />
+        <WorkflowSection />
+        <TestimonialsSection />
+        <PricingSection currency={currency} setCurrency={setCurrency} />
         <FaqSection />
-        <FinalCta />
+        <CtaSection />
       </main>
+      <div className="fixed inset-x-4 bottom-4 z-40 md:hidden">
+        <Button asChild size="lg" className="h-12 w-full shadow-lg">
+          <Link href="/signup">
+            Start Creating Free
+            <ArrowRight className="ml-1 h-4 w-4" />
+          </Link>
+        </Button>
+      </div>
       <Script id="product-schema" type="application/ld+json" strategy="afterInteractive">
         {JSON.stringify(productSchema)}
       </Script>
@@ -205,126 +259,283 @@ export function MarketingPageV2() {
       </Script>
     </>
   );
+}
 
-  function HeroSection() {
-    return (
-      <section className="relative overflow-hidden border-b border-gray-200 bg-white dark:border-neutral-800 dark:bg-black" id="hero">
-        <div className="relative mx-auto grid w-full max-w-6xl gap-16 px-6 pb-24 pt-32 text-left sm:px-10 lg:grid-cols-[1.1fr_minmax(0,1fr)] lg:items-center">
-          <div className="flex flex-col gap-8">
-            <div className="inline-flex w-fit items-center gap-2 rounded-full border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-semibold text-blue-600 dark:border-blue-900 dark:bg-blue-950 dark:text-blue-400">
+function HeroSection({ prefersReducedMotion }: { prefersReducedMotion: boolean }) {
+  return (
+    <section id="hero" className="relative overflow-hidden bg-gradient-to-br from-gray-50 via-white to-blue-50 dark:from-neutral-950 dark:via-black dark:to-blue-950/20">
+      {/* Animated background elements */}
+      <div className="absolute inset-0 overflow-hidden">
+        <motion.div
+          className="absolute -top-1/2 -right-1/4 h-[800px] w-[800px] rounded-full bg-gradient-to-br from-blue-400/20 to-cyan-400/20 blur-3xl"
+          animate={prefersReducedMotion ? {} : {
+            scale: [1, 1.2, 1],
+            rotate: [0, 90, 0],
+          }}
+          transition={{
+            duration: 20,
+            repeat: Infinity,
+            ease: "linear"
+          }}
+        />
+        <motion.div
+          className="absolute -bottom-1/2 -left-1/4 h-[600px] w-[600px] rounded-full bg-gradient-to-br from-purple-400/20 to-pink-400/20 blur-3xl"
+          animate={prefersReducedMotion ? {} : {
+            scale: [1.2, 1, 1.2],
+            rotate: [90, 0, 90],
+          }}
+          transition={{
+            duration: 25,
+            repeat: Infinity,
+            ease: "linear"
+          }}
+        />
+      </div>
+
+      <div className="relative mx-auto max-w-7xl px-6 py-24 sm:py-32 lg:px-8">
+        <div className="mx-auto max-w-4xl text-center">
+          {/* Trust badge */}
+          <motion.div
+            initial={prefersReducedMotion ? { opacity: 1 } : { opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5 }}
+            className="mb-8 inline-flex"
+          >
+            <Badge className="gap-2 border-blue-200 bg-blue-50 px-6 py-2 text-sm font-semibold text-blue-700 dark:border-blue-900 dark:bg-blue-950 dark:text-blue-300">
               <Zap className="h-4 w-4" />
-              Creator OS 2.0
-            </div>
-            <div className="space-y-6">
-              <h1 className="text-balance text-5xl font-bold leading-tight text-gray-900 sm:text-6xl md:text-[3.75rem] dark:text-white">
-                Turn one recording into a week of ready-to-post clips
-              </h1>
-              <p className="max-w-xl text-lg leading-relaxed text-gray-600 dark:text-neutral-400">
-                Clippers finds viral hooks, remixes layouts, burns captions, and queues exports for every channel. Drop your long-form video, choose a template, and publish with branded overlays in minutes.
-              </p>
-            </div>
-            <div className="flex flex-col gap-4 sm:flex-row">
-              <Button size="lg" className="rounded-lg bg-blue-600 px-8 py-3 text-base font-semibold text-white shadow-sm hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">
-                Start for free
-              </Button>
-              <Button
-                size="lg"
-                variant="outline"
-                className="rounded-lg border-gray-300 px-8 py-3 text-base font-semibold text-gray-700 hover:bg-gray-50 dark:border-neutral-700 dark:text-neutral-200 dark:hover:bg-neutral-900"
-              >
-                Watch 90s demo
-              </Button>
-            </div>
-            <div className="grid gap-4 text-base text-gray-600 sm:grid-cols-2 dark:text-neutral-400">
-              {[
-                "Template marketplace with creator revenue share",
-                "Auto captions with brand fonts & karaoke highlights",
-                "Multi-platform exports sized for Shorts, Reels & TikTok",
-                "Team approvals, comments, and schedule queue"
-              ].map((item) => (
-                <div key={item} className="flex items-start gap-3">
-                  <Check className="mt-0.5 h-5 w-5 flex-shrink-0 text-blue-600 dark:text-blue-400" />
-                  <span>{item}</span>
-                </div>
-              ))}
-            </div>
-            <SocialProof />
-          </div>
-          <HeroVisual prefersReducedMotion={prefersReducedMotion} />
-        </div>
-      </section>
-    );
-  }
+              AI Workflow For Creators, Teams, And Agencies
+            </Badge>
+          </motion.div>
 
-  function SocialProof() {
-    return (
-      <div className="flex items-center gap-4 rounded-lg border border-gray-200 bg-white px-6 py-4 shadow-sm dark:border-neutral-800 dark:bg-neutral-900">
-        <AvatarGroup />
-        <div className="flex items-center gap-1.5 text-gray-900 dark:text-white">
-          {Array.from({ length: 5 }).map((_, index) => (
-            <span key={index} className="text-lg text-yellow-400">
-              ★
+          {/* Main headline */}
+          <motion.h1
+            initial={prefersReducedMotion ? { opacity: 1 } : { opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6, delay: 0.1 }}
+            className="mb-6 text-5xl font-bold leading-tight tracking-tight text-gray-900 sm:text-6xl lg:text-7xl dark:text-white"
+          >
+            Transform Long Videos Into
+            <span className="relative mx-3 inline-block">
+              <span className="relative z-10 bg-gradient-to-r from-blue-600 to-cyan-600 bg-clip-text text-transparent dark:from-blue-400 dark:to-cyan-400">
+                Publish-Ready Shorts
+              </span>
+              <motion.span
+                className="absolute inset-0 -z-10 bg-gradient-to-r from-blue-400/30 to-cyan-400/30 blur-xl"
+                animate={prefersReducedMotion ? {} : {
+                  scale: [1, 1.1, 1],
+                  opacity: [0.5, 0.8, 0.5],
+                }}
+                transition={{
+                  duration: 3,
+                  repeat: Infinity,
+                  ease: "easeInOut"
+                }}
+              />
             </span>
+            In Minutes
+          </motion.h1>
+
+          {/* Subheadline */}
+          <motion.p
+            initial={prefersReducedMotion ? { opacity: 1 } : { opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6, delay: 0.2 }}
+            className="mx-auto mb-10 max-w-2xl text-xl leading-relaxed text-gray-600 dark:text-neutral-400"
+          >
+            Upload once and let AI find hooks, cut highlights, add brand-safe captions, and export for TikTok, Reels, Shorts, LinkedIn, and X.
+          </motion.p>
+
+          {/* CTA Buttons */}
+          <motion.div
+            initial={prefersReducedMotion ? { opacity: 1 } : { opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6, delay: 0.3 }}
+            className="flex flex-col items-center justify-center gap-4 sm:flex-row"
+          >
+            <Button
+              asChild
+              size="lg"
+              className="group h-14 gap-2 rounded-xl bg-gradient-to-r from-blue-600 to-cyan-600 px-8 text-lg font-semibold text-white shadow-lg shadow-blue-500/25 transition-all hover:shadow-xl hover:shadow-blue-500/40 dark:from-blue-500 dark:to-cyan-500"
+            >
+              <Link href="/signup">
+                Start Creating Free
+                <ArrowRight className="h-5 w-5 transition-transform group-hover:translate-x-1" />
+              </Link>
+            </Button>
+            <Button
+              asChild
+              size="lg"
+              variant="outline"
+              className="h-14 gap-2 rounded-xl border-2 border-gray-300 bg-white px-8 text-lg font-semibold text-gray-700 hover:bg-gray-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-200 dark:hover:bg-neutral-800"
+            >
+              <Link href="#demo">
+                <Play className="h-5 w-5" />
+                Watch Demo
+              </Link>
+            </Button>
+          </motion.div>
+
+          {/* Trust indicators */}
+          <motion.div
+            initial={prefersReducedMotion ? { opacity: 1 } : { opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.6, delay: 0.4 }}
+            className="mt-10 flex flex-wrap items-center justify-center gap-8 text-sm text-gray-600 dark:text-neutral-400"
+          >
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="h-5 w-5 text-green-600 dark:text-green-400" />
+              <span>Free forever plan</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="h-5 w-5 text-green-600 dark:text-green-400" />
+              <span>No credit card required</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="h-5 w-5 text-green-600 dark:text-green-400" />
+              <span>Cancel anytime</span>
+            </div>
+          </motion.div>
+
+          {/* Demo video placeholder */}
+          <motion.div
+            id="demo"
+            initial={prefersReducedMotion ? { opacity: 1 } : { opacity: 0, y: 40 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.8, delay: 0.5 }}
+            className="mt-16"
+          >
+            <div className="relative mx-auto max-w-5xl">
+              <div className="overflow-hidden rounded-2xl border-4 border-white bg-gradient-to-br from-gray-900 to-gray-800 shadow-2xl dark:border-neutral-800">
+                <div className="aspect-video bg-gradient-to-br from-blue-500/20 to-purple-500/20 p-12">
+                  <div className="flex h-full items-center justify-center">
+                    <div className="text-center">
+                      <div className="mb-4 inline-flex h-20 w-20 items-center justify-center rounded-full bg-white/10 backdrop-blur-sm">
+                        <Play className="h-10 w-10 text-white" />
+                      </div>
+                      <p className="text-lg font-semibold text-white">Watch How It Works</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              {/* Floating elements */}
+              <motion.div
+                className="absolute -right-4 top-1/4 rounded-xl border border-white bg-white p-4 shadow-xl dark:border-neutral-700 dark:bg-neutral-900"
+                animate={prefersReducedMotion ? {} : {
+                  y: [-10, 10, -10],
+                }}
+                transition={{
+                  duration: 4,
+                  repeat: Infinity,
+                  ease: "easeInOut"
+                }}
+              >
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-green-100 dark:bg-green-950">
+                    <Check className="h-6 w-6 text-green-600 dark:text-green-400" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-gray-900 dark:text-white">Clip Ready!</p>
+                    <p className="text-xs text-gray-600 dark:text-neutral-400">2.3 seconds</p>
+                  </div>
+                </div>
+              </motion.div>
+              <motion.div
+                className="absolute -left-4 bottom-1/4 rounded-xl border border-white bg-white p-4 shadow-xl dark:border-neutral-700 dark:bg-neutral-900"
+                animate={prefersReducedMotion ? {} : {
+                  y: [10, -10, 10],
+                }}
+                transition={{
+                  duration: 5,
+                  repeat: Infinity,
+                  ease: "easeInOut"
+                }}
+              >
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-100 dark:bg-blue-950">
+                    <Sparkles className="h-6 w-6 text-blue-600 dark:text-blue-400" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-gray-900 dark:text-white">12 Clips Found</p>
+                    <p className="text-xs text-gray-600 dark:text-neutral-400">AI Analysis</p>
+                  </div>
+                </div>
+              </motion.div>
+            </div>
+          </motion.div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function StatsSection() {
+  const ref = useRef(null);
+  const isInView = useInView(ref, { once: true, margin: "-100px" });
+
+  return (
+    <section ref={ref} className="border-y border-gray-200 bg-white py-16 dark:border-neutral-800 dark:bg-black">
+      <div className="mx-auto max-w-7xl px-6 lg:px-8">
+        <div className="grid gap-8 sm:grid-cols-2 lg:grid-cols-4">
+          {stats.map((stat, index) => (
+            <motion.div
+              key={stat.label}
+              initial={{ opacity: 0, y: 20 }}
+              animate={isInView ? { opacity: 1, y: 0 } : { opacity: 0, y: 20 }}
+              transition={{ duration: 0.5, delay: index * 0.1 }}
+              className="flex flex-col items-center text-center"
+            >
+              <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-500 to-cyan-500 shadow-lg">
+                <stat.icon className="h-8 w-8 text-white" />
+              </div>
+              <div className="text-4xl font-bold text-gray-900 dark:text-white">{stat.number}</div>
+              <div className="mt-2 text-sm font-medium text-gray-600 dark:text-neutral-400">{stat.label}</div>
+            </motion.div>
           ))}
         </div>
-        <p className="text-sm text-gray-600 dark:text-neutral-400">
-          Trusted by 1.2M+ shorts clippers · 4.9 out of 5
-        </p>
       </div>
-    );
-  }
+    </section>
+  );
+}
 
-  function AvatarGroup() {
-    return (
-      <div className="flex -space-x-2">
-        {[1, 2, 3, 4].map((index) => (
-          <span
-            key={index}
-            className="inline-flex h-10 w-10 items-center justify-center rounded-full border-2 border-white bg-gray-200 text-sm font-semibold text-gray-700 dark:border-neutral-900 dark:bg-neutral-700 dark:text-neutral-200"
-          >
-            {index === 1 ? "MJ" : index === 2 ? "AL" : index === 3 ? "RS" : "PK"}
-          </span>
-        ))}
-      </div>
-    );
-  }
+function FeaturesSection({ prefersReducedMotion }: { prefersReducedMotion: boolean }) {
+  const ref = useRef(null);
+  const isInView = useInView(ref, { once: true, margin: "-100px" });
 
-  function TrustBadge() {
-    return (
-      <section className="border-b border-gray-200 bg-white py-16 text-center dark:border-neutral-800 dark:bg-black">
-        <div className="mx-auto flex w-full max-w-6xl flex-col gap-8 px-6 sm:px-10">
-          <p className="text-sm font-semibold uppercase tracking-wider text-gray-500 dark:text-neutral-500">Trusted by video-first teams</p>
-          <div className="flex flex-wrap items-center justify-center gap-6 text-sm font-semibold text-gray-700 dark:text-neutral-300">
-            {["Morning Brew", "HubSpot Podcast Network", "Creator House", "Hootsuite", "VaynerMedia"].map((brand) => (
-              <span key={brand} className="rounded-lg border border-gray-200 bg-white px-5 py-2.5 shadow-sm dark:border-neutral-800 dark:bg-neutral-900">
-                {brand}
-              </span>
-            ))}
-          </div>
+  return (
+    <section id="features" ref={ref} className="bg-gradient-to-b from-white to-gray-50 py-24 dark:from-black dark:to-neutral-950">
+      <div className="mx-auto max-w-7xl px-6 lg:px-8">
+        <div className="mx-auto max-w-2xl text-center">
+          <Badge className="mb-6 gap-2 border-blue-200 bg-blue-50 px-4 py-2 text-sm font-semibold text-blue-700 dark:border-blue-900 dark:bg-blue-950 dark:text-blue-300">
+            <Sparkles className="h-4 w-4" />
+            Powerful Features
+          </Badge>
+          <h2 className="mb-4 text-4xl font-bold tracking-tight text-gray-900 sm:text-5xl dark:text-white">
+            Everything you need to create viral content
+          </h2>
+          <p className="text-lg leading-relaxed text-gray-600 dark:text-neutral-400">
+            Professional video editing tools powered by AI. No experience needed.
+          </p>
         </div>
-      </section>
-    );
-  }
 
-  function FeatureSection() {
-    return (
-      <section className="border-b border-gray-200 bg-white py-24 dark:border-neutral-800 dark:bg-black" id="features">
-        <div className="mx-auto flex w-full max-w-6xl flex-col gap-12 px-6 sm:px-10">
-          <header className="text-center md:text-left">
-            <Badge className="bg-blue-50 text-blue-600 border-blue-200 dark:border-blue-900 dark:bg-blue-950 dark:text-blue-400">AI powered features</Badge>
-            <h2 className="mt-4 text-4xl font-bold text-gray-900 sm:text-5xl dark:text-white">AI handles the editing. You own the storytelling.</h2>
-            <p className="mt-3 text-lg text-gray-600 dark:text-neutral-400">
-              From auto curation to hook generation, Clippers removes repetitive timelines so you can focus on creative direction.
-            </p>
-          </header>
-          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
-            {featureGrid.map((feature) => (
-              <Card key={feature.title} className="border border-gray-200 bg-white shadow-sm hover:shadow-md transition-shadow dark:border-neutral-800 dark:bg-neutral-900">
+        <div className="mt-16 grid gap-8 md:grid-cols-2 lg:grid-cols-3">
+          {features.map((feature, index) => (
+            <motion.div
+              key={feature.title}
+              initial={{ opacity: 0, y: 20 }}
+              animate={isInView ? { opacity: 1, y: 0 } : { opacity: 0, y: 20 }}
+              transition={{ duration: 0.5, delay: index * 0.1 }}
+            >
+              <Card className="group h-full border-2 border-gray-200 transition-all hover:border-blue-300 hover:shadow-xl dark:border-neutral-800 dark:hover:border-blue-700">
                 <CardHeader>
-                  <div className="mb-3 inline-flex h-12 w-12 items-center justify-center rounded-lg bg-blue-50 dark:bg-blue-950">
-                    <feature.icon className="h-6 w-6 text-blue-600 dark:text-blue-400" />
+                  <div className={cn(
+                    "mb-4 inline-flex h-14 w-14 items-center justify-center rounded-xl bg-gradient-to-br shadow-lg transition-transform group-hover:scale-110",
+                    feature.color
+                  )}>
+                    <feature.icon className="h-7 w-7 text-white" />
                   </div>
-                  <CardTitle className="text-xl font-semibold text-gray-900 dark:text-white">{feature.title}</CardTitle>
+                  <CardTitle className="text-xl font-bold text-gray-900 dark:text-white">
+                    {feature.title}
+                  </CardTitle>
                 </CardHeader>
                 <CardContent>
                   <CardDescription className="text-base leading-relaxed text-gray-600 dark:text-neutral-400">
@@ -332,410 +543,390 @@ export function MarketingPageV2() {
                   </CardDescription>
                 </CardContent>
               </Card>
-            ))}
-          </div>
+            </motion.div>
+          ))}
         </div>
-      </section>
-    );
-  }
-
-  function ExampleSection() {
-    return (
-      <section className="border-b border-gray-200 bg-gray-50 py-24 dark:border-neutral-800 dark:bg-neutral-950">
-        <div className="mx-auto flex w-full max-w-6xl flex-col gap-12 px-6 text-center sm:px-10">
-          <div>
-            <h2 className="text-4xl font-bold text-gray-900 sm:text-5xl dark:text-white">Example Clips</h2>
-            <p className="mt-4 text-lg text-gray-600 dark:text-neutral-400">
-              Pull breakout moments and let Clippers remix them for each platform automatically.
-            </p>
-          </div>
-          <div className="flex flex-wrap items-stretch justify-center gap-6">
-            {exampleClips.map((clip) => (
-              <div key={clip.title} className="flex h-72 w-40 flex-col justify-between rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-neutral-800 dark:bg-neutral-900">
-                <div className="h-48 rounded-xl bg-blue-600" />
-                <p className="text-sm font-semibold text-gray-900 dark:text-white">{clip.title}</p>
-                <span className="text-xs text-gray-600 dark:text-neutral-400">
-                  ▶ {clip.views}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-    );
-  }
-
-  function InsightsSection() {
-    return (
-      <section className="border-b border-gray-200 bg-white py-24 dark:border-neutral-800 dark:bg-black" id="insights">
-        <div className="mx-auto flex w-full max-w-6xl flex-col gap-12 px-6 sm:px-10">
-          <header className="text-center md:text-left">
-            <h2 className="text-4xl font-bold text-gray-900 sm:text-5xl dark:text-white">Insights</h2>
-            <p className="mt-3 text-lg text-gray-600 dark:text-neutral-400">
-              Learn the content strategies used by top clippers building massive audiences.
-            </p>
-          </header>
-          <div className="grid gap-8 lg:grid-cols-2">
-            {insightsCards.map((insight) => (
-              <div key={insight.title} className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-neutral-800 dark:bg-neutral-900">
-                <div className="h-56 w-full bg-blue-600" />
-                <div className="px-8 py-6 text-left">
-                  <h3 className="text-xl font-semibold text-gray-900 dark:text-white">{insight.title}</h3>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-    );
-  }
-
-  function MarketplaceSection() {
-    return (
-      <section className="border-b border-gray-200 bg-gray-50 py-24 dark:border-neutral-800 dark:bg-neutral-950" id="marketplace">
-        <div className="mx-auto flex w-full max-w-6xl flex-col gap-12 px-6 sm:px-10">
-          <header className="text-center md:text-left">
-            <h2 className="text-4xl font-bold text-gray-900 sm:text-5xl dark:text-white">Template Marketplace</h2>
-            <p className="mt-3 text-lg text-gray-600 dark:text-neutral-400">
-              Submit, discover, and monetize Clippers templates. Showcase your designs or install proven systems created by the community.
-            </p>
-          </header>
-          <div className="grid gap-8 lg:grid-cols-3">
-            <Card className="border border-gray-200 bg-white shadow-sm dark:border-neutral-800 dark:bg-neutral-900">
-              <CardHeader className="space-y-3">
-                <div className="inline-flex h-12 w-12 items-center justify-center rounded-lg bg-blue-50 dark:bg-blue-950">
-                  <Users className="h-6 w-6 text-blue-600 dark:text-blue-400" />
-                </div>
-                <CardTitle className="text-xl font-semibold text-gray-900 dark:text-white">Creator submissions</CardTitle>
-                <CardDescription className="text-base leading-relaxed text-gray-600 dark:text-neutral-400">
-                  Publish your templates with safe zone checks, captions, and motion presets. Our review workflow keeps quality high while crediting every creator.
-                </CardDescription>
-              </CardHeader>
-            </Card>
-            <Card className="border border-gray-200 bg-white shadow-sm dark:border-neutral-800 dark:bg-neutral-900">
-              <CardHeader className="space-y-3">
-                <div className="inline-flex h-12 w-12 items-center justify-center rounded-lg bg-blue-50 dark:bg-blue-950">
-                  <Sparkles className="h-6 w-6 text-blue-600 dark:text-blue-400" />
-                </div>
-                <CardTitle className="text-xl font-semibold text-gray-900 dark:text-white">Search & discovery</CardTitle>
-                <CardDescription className="text-base leading-relaxed text-gray-600 dark:text-neutral-400">
-                  Filter by niche, aspect ratio, or runtime. Preview templates with live clips and one-click install them into your workspace.
-                </CardDescription>
-              </CardHeader>
-            </Card>
-            <Card className="border border-gray-200 bg-white shadow-sm dark:border-neutral-800 dark:bg-neutral-900">
-              <CardHeader className="space-y-3">
-                <div className="inline-flex h-12 w-12 items-center justify-center rounded-lg bg-blue-50 dark:bg-blue-950">
-                  <BarChart3 className="h-6 w-6 text-blue-600 dark:text-blue-400" />
-                </div>
-                <CardTitle className="text-xl font-semibold text-gray-900 dark:text-white">Revenue share</CardTitle>
-                <CardDescription className="text-base leading-relaxed text-gray-600 dark:text-neutral-400">
-                  Earn 70% on every sale, with monthly payouts. Teams can co-author packs, track analytics, and run promotions right from Clippers.
-                </CardDescription>
-              </CardHeader>
-            </Card>
-          </div>
-          <div className="flex flex-wrap items-center justify-center gap-4">
-            <Button asChild size="lg" className="rounded-lg bg-blue-600 px-8 text-base font-semibold text-white hover:bg-blue-700">
-              <Link href="/templates">Browse templates</Link>
-            </Button>
-            <Button variant="outline" asChild size="lg" className="rounded-lg border-gray-300 px-8 text-base font-semibold dark:border-neutral-700 dark:text-neutral-200 dark:hover:bg-neutral-900">
-              <Link href="/templates/submit">Submit your template</Link>
-            </Button>
-          </div>
-        </div>
-      </section>
-    );
-  }
-
-  function MonetizationSection() {
-    return (
-      <section className="border-b border-gray-200 bg-white py-24 dark:border-neutral-800 dark:bg-black">
-        <div className="mx-auto flex w-full max-w-6xl flex-col gap-12 px-6 sm:px-10">
-          <header className="text-center md:text-left">
-            <h2 className="text-4xl font-bold text-gray-900 sm:text-5xl dark:text-white">Monetization</h2>
-            <p className="mt-3 text-lg text-gray-600 dark:text-neutral-400">Learn the strategies to monetize your viral clips.</p>
-          </header>
-          <div className="grid gap-8 lg:grid-cols-2">
-            {monetizationCards.map((item) => (
-              <div key={item.title} className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-neutral-800 dark:bg-neutral-900">
-                <div className="h-52 w-full bg-blue-600" />
-                <div className="px-8 py-6 text-left">
-                  <h3 className="text-xl font-semibold text-gray-900 dark:text-white">{item.title}</h3>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-    );
-  }
-
-  function TemplatesSection() {
-    return (
-      <section className="border-b border-gray-200 bg-gray-50 py-24 dark:border-neutral-800 dark:bg-neutral-950">
-        <div className="mx-auto flex w-full max-w-6xl flex-col gap-10 px-6 text-center sm:px-10">
-          <Badge className="mx-auto bg-blue-50 text-blue-600 border-blue-200 dark:border-blue-900 dark:bg-blue-950 dark:text-blue-400">AI Templates</Badge>
-          <h2 className="text-4xl font-bold text-gray-900 sm:text-5xl dark:text-white">Create viral clips with trending AI templates</h2>
-          <p className="text-lg text-gray-600 dark:text-neutral-400">
-            Explore the library and remix trending formats without prompt engineering.
-          </p>
-          <Button size="lg" className="mx-auto rounded-lg bg-blue-600 px-8 text-base font-semibold text-white hover:bg-blue-700">
-            Explore Templates
-          </Button>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {Array.from({ length: 8 }).map((_, index) => (
-              <div key={index} className="h-48 rounded-xl border border-gray-200 bg-blue-600 shadow-sm dark:border-neutral-800" />
-            ))}
-          </div>
-        </div>
-      </section>
-    );
-  }
-
-  function ScheduleSection() {
-    return (
-      <section className="border-b border-gray-200 bg-white py-24 dark:border-neutral-800 dark:bg-black">
-        <div className="mx-auto flex w-full max-w-6xl flex-col gap-12 px-6 sm:px-10">
-          <header className="text-center md:text-left">
-            <h2 className="text-4xl font-bold text-gray-900 sm:text-5xl dark:text-white">Schedule and Post</h2>
-            <p className="mt-3 text-lg text-gray-600 dark:text-neutral-400">
-              Schedule content across TikTok, YouTube, and Instagram automatically. Set once and let Clippers post while you focus on strategy.
-            </p>
-          </header>
-          <div className="grid gap-8 md:grid-cols-2">
-            <ScheduleTile title="Schedule once, post everywhere">
-              Queue Shorts, Reels, and TikTok uploads at peak times without leaving Clippers. Auto-attach captions and thumbnails.
-            </ScheduleTile>
-            <ScheduleTile title="Automated titles & descriptions">
-              Generate optimized titles, descriptions, and hashtags with AI to maximize discoverability across every platform.
-            </ScheduleTile>
-          </div>
-        </div>
-      </section>
-    );
-  }
-
-  function ScheduleTile({ title, children }: { title: string; children: ReactNode }) {
-    return (
-      <div className="rounded-2xl border border-gray-200 bg-white p-8 text-left shadow-sm dark:border-neutral-800 dark:bg-neutral-900">
-        <h3 className="text-xl font-semibold text-gray-900 dark:text-white">{title}</h3>
-        <p className="mt-4 text-base leading-relaxed text-gray-600 dark:text-neutral-400">{children}</p>
       </div>
-    );
-  }
-
-  function PricingSection() {
-    return (
-      <section className="border-b border-gray-200 bg-gray-50 py-24 dark:border-neutral-800 dark:bg-neutral-950" id="pricing">
-        <div className="mx-auto flex w-full max-w-6xl flex-col gap-12 px-6 sm:px-10">
-          <header className="flex flex-col gap-6 text-center md:text-left">
-            <div>
-              <h2 className="text-4xl font-bold text-gray-900 sm:text-5xl dark:text-white">Pricing</h2>
-              <p className="mt-3 text-lg text-gray-600 dark:text-neutral-400">Save 30% with yearly billing. Switch currencies anytime.</p>
-            </div>
-            <div className="flex flex-wrap items-center justify-center gap-4 md:justify-start">
-              <div className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white p-1 shadow-sm dark:border-neutral-800 dark:bg-neutral-900">
-                {(["USD", "INR"] as SupportedCurrency[]).map((value) => (
-                  <button
-                    key={value}
-                    type="button"
-                    onClick={() => setCurrency(value)}
-                    className={cn(
-                      "rounded-md px-4 py-2 text-sm font-semibold transition",
-                      currency === value ? "bg-blue-600 text-white shadow-sm" : "text-gray-600 hover:text-gray-900 dark:text-neutral-400 dark:hover:text-neutral-200"
-                    )}
-                  >
-                    {value}
-                  </button>
-                ))}
-              </div>
-              <div className="inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-white p-1 shadow-sm dark:border-neutral-800 dark:bg-neutral-900">
-                {(["monthly", "yearly"] as BillingCycle[]).map((cycle) => (
-                  <button
-                    key={cycle}
-                    type="button"
-                    onClick={() => setBillingCycle(cycle)}
-                    className={cn(
-                      "rounded-md px-4 py-2 text-sm font-semibold capitalize transition",
-                      billingCycle === cycle
-                        ? "bg-blue-600 text-white shadow-sm"
-                        : "text-gray-600 hover:text-gray-900 dark:text-neutral-400 dark:hover:text-neutral-200"
-                    )}
-                  >
-                    {cycle}
-                  </button>
-                ))}
-              </div>
-              <Link
-                href="/pricing"
-                className="inline-flex items-center gap-2 text-sm font-semibold text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
-              >
-                View full pricing <ArrowRight className="h-4 w-4" />
-              </Link>
-            </div>
-          </header>
-          <PricingGrid
-            currency={currency}
-            billingCycle={billingCycle}
-            onSelectPlan={(planId, cycle) =>
-              trackEvent({ name: "pricing_select", payload: { plan: planId, cycle, currency } })
-            }
-          />
-        </div>
-      </section>
-    );
-  }
-
-  function CostTable() {
-    return (
-      <section className="border-b border-gray-200 bg-white py-24 dark:border-neutral-800 dark:bg-black">
-        <div className="mx-auto flex w-full max-w-5xl flex-col gap-10 px-6 sm:px-10">
-          <div className="text-center">
-            <h2 className="text-4xl font-bold text-gray-900 sm:text-5xl dark:text-white">How much does a video cost?</h2>
-            <p className="mt-3 text-lg text-gray-600 dark:text-neutral-400">
-              Clip with transparent credit pricing for Hooksmith and AI templates.
-            </p>
-          </div>
-          <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm dark:border-neutral-800 dark:bg-neutral-900">
-            <table className="w-full text-left text-base">
-              <thead className="bg-gray-50 text-gray-700 dark:bg-neutral-800 dark:text-neutral-300">
-                <tr>
-                  <th className="px-8 py-4 font-semibold">AI Tool</th>
-                  <th className="px-8 py-4 font-semibold">Credit cost</th>
-                  <th className="px-8 py-4 font-semibold">Notes</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr className="border-t border-gray-200 dark:border-neutral-800">
-                  <td className="px-8 py-4 font-semibold text-gray-900 dark:text-white">
-                    AI Clipping <span className="ml-2 rounded-full bg-green-50 px-3 py-1 text-sm text-green-700 dark:bg-green-950 dark:text-green-400">¼ competitor price</span>
-                  </td>
-                  <td className="px-8 py-4 text-gray-600 dark:text-neutral-400">1 credit per video (20 minutes)</td>
-                  <td className="px-8 py-4 text-gray-600 dark:text-neutral-400">Includes hooks, captions, smart crops</td>
-                </tr>
-                <tr className="border-t border-gray-200 dark:border-neutral-800">
-                  <td className="px-8 py-4 font-semibold text-gray-900 dark:text-white">AI Templates</td>
-                  <td className="px-8 py-4 text-gray-600 dark:text-neutral-400">Different per template</td>
-                  <td className="px-8 py-4 text-gray-600 dark:text-neutral-400">
-                    See template gallery <Link href="/templates" className="font-semibold text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300">Learn more</Link>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </section>
-    );
-  }
-
-  function FaqSection() {
-    return (
-      <section className="border-b border-gray-200 bg-gray-50 py-24 dark:border-neutral-800 dark:bg-neutral-950" id="faq">
-        <div className="mx-auto flex w-full max-w-5xl flex-col gap-10 px-6 sm:px-10">
-          <div className="text-center">
-            <h2 className="text-4xl font-bold text-gray-900 sm:text-5xl dark:text-white">Frequently asked questions</h2>
-          </div>
-          <div className="space-y-4">
-            {faqItems.map((faq) => (
-              <details key={faq.question} className="group rounded-xl border border-gray-200 bg-white px-8 py-6 shadow-sm dark:border-neutral-800 dark:bg-neutral-900">
-                <summary className="flex cursor-pointer items-center justify-between gap-4 text-left text-base font-semibold text-gray-900 dark:text-white">
-                  {faq.question}
-                  <span className="text-gray-400 transition group-open:rotate-90 dark:text-neutral-500">
-                    →
-                  </span>
-                </summary>
-                <p className="mt-4 text-base leading-relaxed text-gray-600 dark:text-neutral-400">{faq.answer}</p>
-              </details>
-            ))}
-          </div>
-        </div>
-      </section>
-    );
-  }
-
-  function FinalCta() {
-    return (
-      <section className="bg-white py-20 text-center dark:bg-black">
-        <div className="mx-auto flex w-full max-w-3xl flex-col items-center gap-8 px-6">
-          <h2 className="text-4xl font-bold text-gray-900 sm:text-5xl dark:text-white">
-            Ready to create engaging Shorts today?
-          </h2>
-          <p className="text-lg text-gray-600 dark:text-neutral-400">
-            Drop your video link and start generating viral clips in minutes.
-          </p>
-          <div className="w-full max-w-xl">
-            <form className="flex items-center gap-3" onSubmit={(event) => event.preventDefault()}>
-              <input
-                type="url"
-                placeholder="https://youtube.com/watch?v=..."
-                className="flex-1 rounded-lg border border-gray-300 bg-white px-4 py-3 text-base text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-neutral-700 dark:bg-neutral-900 dark:text-white dark:placeholder:text-neutral-500"
-              />
-              <Button
-                type="submit"
-                size="lg"
-                className="rounded-lg bg-blue-600 px-8 text-base font-semibold text-white hover:bg-blue-700"
-                onClick={() => trackEvent({ name: "hero_get_clips" })}
-              >
-                Generate preview
-              </Button>
-            </form>
-          </div>
-        </div>
-      </section>
-    );
-  }
+    </section>
+  );
 }
 
-function HeroVisual({ prefersReducedMotion }: { prefersReducedMotion: boolean }) {
+function TemplateSection() {
+  const ref = useRef(null);
+  const isInView = useInView(ref, { once: true, margin: "-100px" });
+
   return (
-    <motion.div
-      className="relative mx-auto w-full max-w-lg"
-      initial={prefersReducedMotion ? { opacity: 1, y: 0 } : { opacity: 0, y: 24 }}
-      animate={prefersReducedMotion ? { opacity: 1, y: 0 } : { opacity: 1, y: 0 }}
-      transition={{ duration: 0.6, ease: "easeOut" }}
-    >
-      <div className="relative overflow-hidden rounded-2xl border border-gray-200 bg-white p-6 shadow-lg dark:border-neutral-800 dark:bg-neutral-900">
-        <div className="grid gap-4">
-          <div className="rounded-xl bg-blue-600 p-6 text-white shadow-sm">
-            <div className="flex items-center justify-between text-xs font-semibold uppercase tracking-wider text-blue-100">
-              <span>Clip remix timeline</span>
-              <span>Live</span>
-            </div>
-            <p className="mt-4 text-xl font-bold">"Creator Economy Roundtable"</p>
-            <div className="mt-4 flex items-center gap-2 text-sm text-blue-100">
-              <span className="rounded-full bg-blue-500 px-3 py-1">12 highlights</span>
-              <span className="rounded-full bg-blue-500 px-3 py-1">Auto captions on</span>
-            </div>
-          </div>
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm dark:border-neutral-800 dark:bg-neutral-800">
-              <p className="text-xs font-semibold uppercase tracking-wider text-blue-600 dark:text-blue-400">Marketplace</p>
-              <p className="mt-2 text-sm text-gray-600 dark:text-neutral-400">"Viral Coach Starter Pack" installed for this project.</p>
-              <Button variant="ghost" size="sm" className="mt-3 text-sm text-blue-600 hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-neutral-700">
-                Manage templates
-              </Button>
-            </div>
-            <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm dark:border-neutral-800 dark:bg-neutral-800">
-              <p className="text-xs font-semibold uppercase tracking-wider text-blue-600 dark:text-blue-400">Smart captions</p>
-              <p className="mt-2 text-sm text-gray-600 dark:text-neutral-400">Translate to 6 languages with karaoke highlights.</p>
-              <div className="mt-3 flex items-center gap-2 text-xs text-gray-500 dark:text-neutral-400">
-                <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-3 py-1 text-blue-600 dark:bg-blue-950 dark:text-blue-400">
-                  <Download className="h-3.5 w-3.5" />
-                  Export SRT
-                </span>
-              </div>
-            </div>
-          </div>
-          <div className="rounded-xl border border-dashed border-blue-300 bg-blue-50 p-5 text-sm text-gray-700 dark:border-blue-900 dark:bg-blue-950 dark:text-neutral-300">
-            <div className="flex items-center justify-between text-xs font-semibold uppercase tracking-wider text-blue-600 dark:text-blue-400">
-              <span>Schedule queue</span>
-              <span>Tomorrow · 09:00</span>
-            </div>
-            <p className="mt-3 text-gray-900 dark:text-white">Shorts, Reels, TikTok, and LinkedIn posts ready to publish with branded overlays.</p>
-          </div>
+    <section id="marketplace" ref={ref} className="bg-white py-24 dark:bg-black">
+      <div className="mx-auto max-w-7xl px-6 lg:px-8">
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={isInView ? { opacity: 1, y: 0 } : { opacity: 0, y: 20 }}
+          transition={{ duration: 0.5 }}
+          className="mx-auto max-w-2xl text-center"
+        >
+          <Badge className="mb-6 gap-2 border-indigo-200 bg-indigo-50 px-4 py-2 text-sm font-semibold text-indigo-700 dark:border-indigo-900 dark:bg-indigo-950 dark:text-indigo-300">
+            <Wand2 className="h-4 w-4" />
+            Template Marketplace
+          </Badge>
+          <h2 className="mb-4 text-4xl font-bold tracking-tight text-gray-900 sm:text-5xl dark:text-white">
+            Start with proven clip styles
+          </h2>
+          <p className="text-lg leading-relaxed text-gray-600 dark:text-neutral-400">
+            Pick a layout pack by content type and ship consistent posts faster.
+          </p>
+        </motion.div>
+
+        <div className="mt-14 grid gap-6 md:grid-cols-3">
+          {templatePacks.map((pack, index) => (
+            <motion.div
+              key={pack.name}
+              initial={{ opacity: 0, y: 20 }}
+              animate={isInView ? { opacity: 1, y: 0 } : { opacity: 0, y: 20 }}
+              transition={{ duration: 0.45, delay: index * 0.08 }}
+            >
+              <Card className="h-full border-2 border-gray-200 transition-all hover:border-indigo-300 hover:shadow-xl dark:border-neutral-800 dark:hover:border-indigo-700">
+                <CardHeader>
+                  <div className="mb-3 inline-flex h-12 w-12 items-center justify-center rounded-lg bg-gradient-to-br from-indigo-500 to-blue-500 shadow">
+                    <pack.icon className="h-6 w-6 text-white" />
+                  </div>
+                  <CardTitle className="text-xl font-bold text-gray-900 dark:text-white">
+                    {pack.name}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <CardDescription className="text-base leading-relaxed text-gray-600 dark:text-neutral-400">
+                    {pack.description}
+                  </CardDescription>
+                </CardContent>
+              </Card>
+            </motion.div>
+          ))}
         </div>
       </div>
-    </motion.div>
+    </section>
+  );
+}
+
+function WorkflowSection() {
+  const ref = useRef(null);
+  const isInView = useInView(ref, { once: true, margin: "-100px" });
+
+  return (
+    <section id="workflow" ref={ref} className="bg-white py-24 dark:bg-black">
+      <div className="mx-auto max-w-7xl px-6 lg:px-8">
+        <div className="mx-auto max-w-2xl text-center">
+          <h2 className="mb-4 text-4xl font-bold tracking-tight text-gray-900 sm:text-5xl dark:text-white">
+            How it works
+          </h2>
+          <p className="text-lg leading-relaxed text-gray-600 dark:text-neutral-400">
+            From upload to viral clip in 4 simple steps
+          </p>
+        </div>
+
+        <div className="mt-16 grid gap-12 lg:grid-cols-4">
+          {workflow.map((step, index) => (
+            <motion.div
+              key={step.step}
+              initial={{ opacity: 0, x: -20 }}
+              animate={isInView ? { opacity: 1, x: 0 } : { opacity: 0, x: -20 }}
+              transition={{ duration: 0.5, delay: index * 0.15 }}
+              className="relative"
+            >
+              {/* Connector line */}
+              {index < workflow.length - 1 && (
+                <div className="absolute left-1/2 top-16 hidden h-full w-0.5 bg-gradient-to-b from-blue-500 to-cyan-500 lg:block" style={{ transform: "translateX(-50%)" }} />
+              )}
+              
+              <div className="relative flex flex-col items-center text-center">
+                <div className="relative mb-6">
+                  <div className="flex h-20 w-20 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-500 to-cyan-500 shadow-xl">
+                    <step.icon className="h-10 w-10 text-white" />
+                  </div>
+                  <div className="absolute -right-2 -top-2 flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-purple-500 to-pink-500 text-sm font-bold text-white shadow-lg">
+                    {step.step}
+                  </div>
+                </div>
+                <h3 className="mb-3 text-xl font-bold text-gray-900 dark:text-white">{step.title}</h3>
+                <p className="text-base leading-relaxed text-gray-600 dark:text-neutral-400">{step.description}</p>
+              </div>
+            </motion.div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function TestimonialsSection() {
+  const ref = useRef(null);
+  const isInView = useInView(ref, { once: true, margin: "-100px" });
+
+  return (
+    <section ref={ref} className="bg-gradient-to-b from-gray-50 to-white py-24 dark:from-neutral-950 dark:to-black">
+      <div className="mx-auto max-w-7xl px-6 lg:px-8">
+        <div className="mx-auto max-w-2xl text-center">
+          <Badge className="mb-6 gap-2 border-green-200 bg-green-50 px-4 py-2 text-sm font-semibold text-green-700 dark:border-green-900 dark:bg-green-950 dark:text-green-300">
+            <MessageSquare className="h-4 w-4" />
+            Success Stories
+          </Badge>
+          <h2 className="mb-4 text-4xl font-bold tracking-tight text-gray-900 sm:text-5xl dark:text-white">
+            Loved by creators worldwide
+          </h2>
+          <p className="text-lg leading-relaxed text-gray-600 dark:text-neutral-400">
+            Real stories from real creators achieving real results
+          </p>
+        </div>
+
+        <div className="mt-16 grid gap-8 lg:grid-cols-3">
+          {testimonials.map((testimonial, index) => (
+            <motion.div
+              key={testimonial.name}
+              initial={{ opacity: 0, y: 20 }}
+              animate={isInView ? { opacity: 1, y: 0 } : { opacity: 0, y: 20 }}
+              transition={{ duration: 0.5, delay: index * 0.1 }}
+            >
+              <Card className="h-full border-2 border-gray-200 shadow-lg transition-all hover:shadow-2xl dark:border-neutral-800">
+                <CardHeader>
+                  <div className="flex items-center gap-4">
+                    <div className={cn(
+                      "flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br text-2xl font-bold text-white shadow-lg",
+                      testimonial.gradient
+                    )}>
+                      {testimonial.avatar}
+                    </div>
+                    <div>
+                      <CardTitle className="text-lg font-bold text-gray-900 dark:text-white">
+                        {testimonial.name}
+                      </CardTitle>
+                      <p className="text-sm text-gray-600 dark:text-neutral-400">{testimonial.role}</p>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <p className="text-base leading-relaxed text-gray-700 dark:text-neutral-300">
+                    &ldquo;{testimonial.content}&rdquo;
+                  </p>
+                  <div className="inline-flex items-center gap-2 rounded-full bg-green-50 px-4 py-2 text-sm font-semibold text-green-700 dark:bg-green-950 dark:text-green-400">
+                    <TrendingUp className="h-4 w-4" />
+                    {testimonial.metric}
+                  </div>
+                </CardContent>
+              </Card>
+            </motion.div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function PricingSection({
+  currency,
+  setCurrency,
+}: {
+  currency: SupportedCurrency;
+  setCurrency: (currency: SupportedCurrency) => void;
+}) {
+  const ref = useRef(null);
+  const isInView = useInView(ref, { once: true, margin: "-100px" });
+
+  return (
+    <section ref={ref} id="pricing" className="bg-gradient-to-b from-white to-gray-50 py-24 dark:from-black dark:to-neutral-950">
+      <div className="mx-auto max-w-7xl px-6 lg:px-8">
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={isInView ? { opacity: 1, y: 0 } : { opacity: 0, y: 20 }}
+          transition={{ duration: 0.5 }}
+          className="mx-auto max-w-2xl text-center"
+        >
+          <Badge className="mb-6 gap-2 border-purple-200 bg-purple-50 px-4 py-2 text-sm font-semibold text-purple-700 dark:border-purple-900 dark:bg-purple-950 dark:text-purple-300">
+            <Shield className="h-4 w-4" />
+            Simple Pricing
+          </Badge>
+          <h2 className="mb-4 text-4xl font-bold tracking-tight text-gray-900 sm:text-5xl dark:text-white">
+            Choose your plan
+          </h2>
+          <p className="mb-8 text-lg leading-relaxed text-gray-600 dark:text-neutral-400">
+            Start free. Scale as you grow. Cancel anytime.
+          </p>
+
+          {/* Toggle controls */}
+          <div className="flex flex-wrap items-center justify-center gap-4">
+            <div className="inline-flex items-center gap-2 rounded-xl border-2 border-gray-200 bg-white p-1.5 shadow-sm dark:border-neutral-800 dark:bg-neutral-900">
+              {(["USD", "INR"] as SupportedCurrency[]).map((curr) => (
+                <button
+                  key={curr}
+                  type="button"
+                  onClick={() => setCurrency(curr)}
+                  className={cn(
+                    "rounded-lg px-6 py-2.5 text-sm font-semibold transition-all",
+                    currency === curr
+                      ? "bg-gradient-to-r from-blue-600 to-cyan-600 text-white shadow-md"
+                      : "text-gray-600 hover:bg-gray-50 dark:text-neutral-400 dark:hover:bg-neutral-800"
+                  )}
+                >
+                  {curr}
+                </button>
+              ))}
+            </div>
+            <span className="inline-flex items-center rounded-xl border-2 border-gray-200 bg-white px-6 py-2.5 text-sm font-semibold text-gray-600 shadow-sm dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-300">
+              Monthly only
+            </span>
+          </div>
+        </motion.div>
+
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={isInView ? { opacity: 1, y: 0 } : { opacity: 0, y: 20 }}
+          transition={{ duration: 0.5, delay: 0.2 }}
+          className="mt-16"
+        >
+          <PricingGrid
+            currency={currency}
+            onSelectPlan={(planId) =>
+              trackEvent({ name: "pricing_select", payload: { plan: planId, cycle: "monthly", currency } })
+            }
+          />
+        </motion.div>
+      </div>
+    </section>
+  );
+}
+
+function FaqSection() {
+  const ref = useRef(null);
+  const isInView = useInView(ref, { once: true, margin: "-100px" });
+  const [openIndex, setOpenIndex] = useState<number | null>(null);
+
+  return (
+    <section id="faq" ref={ref} className="bg-white py-24 dark:bg-black">
+      <div className="mx-auto max-w-3xl px-6 lg:px-8">
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={isInView ? { opacity: 1, y: 0 } : { opacity: 0, y: 20 }}
+          transition={{ duration: 0.5 }}
+          className="mb-16 text-center"
+        >
+          <h2 className="mb-4 text-4xl font-bold tracking-tight text-gray-900 sm:text-5xl dark:text-white">
+            Frequently asked questions
+          </h2>
+          <p className="text-lg leading-relaxed text-gray-600 dark:text-neutral-400">
+            Everything you need to know about ViralSnipAI
+          </p>
+        </motion.div>
+
+        <div className="space-y-4">
+          {faqItems.map((faq, index) => (
+            <motion.div
+              key={index}
+              initial={{ opacity: 0, y: 10 }}
+              animate={isInView ? { opacity: 1, y: 0 } : { opacity: 0, y: 10 }}
+              transition={{ duration: 0.3, delay: index * 0.05 }}
+            >
+              <button
+                onClick={() => setOpenIndex(openIndex === index ? null : index)}
+                className="w-full rounded-xl border-2 border-gray-200 bg-white p-6 text-left transition-all hover:border-blue-300 hover:shadow-lg dark:border-neutral-800 dark:bg-neutral-900 dark:hover:border-blue-700"
+              >
+                <div className="flex items-start justify-between gap-4">
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                    {faq.question}
+                  </h3>
+                  <motion.div
+                    animate={{ rotate: openIndex === index ? 45 : 0 }}
+                    transition={{ duration: 0.2 }}
+                    className="flex-shrink-0"
+                  >
+                    <div className="flex h-6 w-6 items-center justify-center rounded-full bg-blue-100 dark:bg-blue-950">
+                      <span className="text-sm font-bold text-blue-600 dark:text-blue-400">+</span>
+                    </div>
+                  </motion.div>
+                </div>
+                <motion.div
+                  initial={false}
+                  animate={{
+                    height: openIndex === index ? "auto" : 0,
+                    opacity: openIndex === index ? 1 : 0,
+                  }}
+                  transition={{ duration: 0.3 }}
+                  className="overflow-hidden"
+                >
+                  <p className="mt-4 text-base leading-relaxed text-gray-600 dark:text-neutral-400">
+                    {faq.answer}
+                  </p>
+                </motion.div>
+              </button>
+            </motion.div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function CtaSection() {
+  return (
+    <section className="relative overflow-hidden bg-gradient-to-br from-blue-600 via-blue-700 to-cyan-600 py-24 dark:from-blue-800 dark:via-blue-900 dark:to-cyan-800">
+      {/* Background pattern */}
+      <div className="absolute inset-0 opacity-20">
+        <div className="absolute -top-24 -left-24 h-96 w-96 rounded-full bg-white blur-3xl" />
+        <div className="absolute -bottom-24 -right-24 h-96 w-96 rounded-full bg-white blur-3xl" />
+      </div>
+
+      <div className="relative mx-auto max-w-4xl px-6 text-center lg:px-8">
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5 }}
+          viewport={{ once: true }}
+        >
+          <Badge className="mb-6 gap-2 border-white/30 bg-white/10 px-4 py-2 text-sm font-semibold text-white backdrop-blur-sm">
+            <Rocket className="h-4 w-4" />
+            Join 20M+ Creators
+          </Badge>
+          <h2 className="mb-6 text-4xl font-bold text-white sm:text-5xl lg:text-6xl">
+            Ready to go viral?
+          </h2>
+          <p className="mb-10 text-xl leading-relaxed text-blue-50">
+            Start creating engaging short-form content today. No credit card required.
+          </p>
+
+          <div className="flex flex-col items-center justify-center gap-4 sm:flex-row">
+            <Button
+              asChild
+              size="lg"
+              className="group h-14 gap-2 rounded-xl bg-white px-8 text-lg font-semibold text-blue-600 shadow-2xl transition-all hover:bg-blue-50 hover:shadow-blue-900/50"
+            >
+              <Link href="/signup">
+                Start Creating Free
+                <ArrowRight className="h-5 w-5 transition-transform group-hover:translate-x-1" />
+              </Link>
+            </Button>
+            <Button
+              asChild
+              size="lg"
+              variant="outline"
+              className="h-14 gap-2 rounded-xl border-2 border-white bg-transparent px-8 text-lg font-semibold text-white hover:bg-white/10"
+            >
+              <Link href="#pricing">View Pricing</Link>
+            </Button>
+          </div>
+
+          <div className="mt-10 flex flex-wrap items-center justify-center gap-8 text-sm text-blue-50">
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="h-5 w-5" />
+              <span>10 free clips monthly</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="h-5 w-5" />
+              <span>No credit card required</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="h-5 w-5" />
+              <span>Setup in 2 minutes</span>
+            </div>
+          </div>
+        </motion.div>
+      </div>
+    </section>
   );
 }

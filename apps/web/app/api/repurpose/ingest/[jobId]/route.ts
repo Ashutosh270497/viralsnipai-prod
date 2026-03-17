@@ -53,6 +53,7 @@ export const GET = withErrorHandling(
     return ApiResponseBuilder.success({
       jobId: job.id,
       status: job.status,
+      metadata: job.metadata,
       assetId: job.assetId,
       asset: job.asset,
       processingTime: job.processingTime,

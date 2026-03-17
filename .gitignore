@@ -4,9 +4,12 @@ node_modules/
 
 # Builds
 .next/
+.swc/
 out/
 dist/
 coverage/
+test-results/
+*.tsbuildinfo
 
 # Environment
 .env*
@@ -24,11 +27,15 @@ apps/web/public/voice-translations/
 # Misc
 .DS_Store
 .DS_Store?
-pnpm-lock.yaml
 *.backup
 *.old
 *.tmp
 tmp/
+
+# Docs / reports (internal only)
+*.docx
+*.xlsx
+*.pdf
 
 # IDE
 .vscode/

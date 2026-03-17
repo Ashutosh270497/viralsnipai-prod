@@ -22,9 +22,11 @@ export class PrismaProjectRepository implements IProjectRepository {
       where: { id },
       include: {
         clips: {
-          orderBy: { viralityScore: 'desc' },
+          orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
         },
-        assets: true,
+        assets: {
+          orderBy: { createdAt: 'desc' },
+        },
         exports: {
           orderBy: { createdAt: 'desc' },
         },
@@ -40,9 +42,15 @@ export class PrismaProjectRepository implements IProjectRepository {
     const projects = await prisma.project.findMany({
       where: { userId },
       include: {
-        clips: true,
-        assets: true,
-        exports: true,
+        clips: {
+          orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
+        },
+        assets: {
+          orderBy: { createdAt: 'desc' },
+        },
+        exports: {
+          orderBy: { createdAt: 'desc' },
+        },
       },
       orderBy: { createdAt: 'desc' },
     });
@@ -82,9 +90,15 @@ export class PrismaProjectRepository implements IProjectRepository {
         topic: data.topic,
       },
       include: {
-        clips: true,
-        assets: true,
-        exports: true,
+        clips: {
+          orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
+        },
+        assets: {
+          orderBy: { createdAt: 'desc' },
+        },
+        exports: {
+          orderBy: { createdAt: 'desc' },
+        },
       },
     });
 
@@ -97,11 +111,24 @@ export class PrismaProjectRepository implements IProjectRepository {
       data: {
         ...(data.title !== undefined && { title: data.title }),
         ...(data.topic !== undefined && { topic: data.topic }),
+        ...(data.sourceUrl !== undefined && { sourceUrl: data.sourceUrl }),
+        ...(data.updatedAt !== undefined && {
+          updatedAt:
+            data.updatedAt instanceof Date
+              ? data.updatedAt
+              : new Date(data.updatedAt),
+        }),
       },
       include: {
-        clips: true,
-        assets: true,
-        exports: true,
+        clips: {
+          orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
+        },
+        assets: {
+          orderBy: { createdAt: 'desc' },
+        },
+        exports: {
+          orderBy: { createdAt: 'desc' },
+        },
       },
     });
 
@@ -138,11 +165,14 @@ export class PrismaProjectRepository implements IProjectRepository {
         assetId: clip.assetId,
         startMs: clip.startMs,
         endMs: clip.endMs,
+        order: clip.order,
         title: clip.title,
         summary: clip.summary,
         callToAction: clip.callToAction,
         captionSrt: clip.captionSrt,
+        captionStyle: clip.captionStyle as any,
         previewPath: clip.previewPath,
+        thumbnail: clip.thumbnail,
         viralityScore: clip.viralityScore,
         viralityFactors: clip.viralityFactors as any,
         createdAt: clip.createdAt.toISOString(),
@@ -152,24 +182,27 @@ export class PrismaProjectRepository implements IProjectRepository {
         id: asset.id,
         projectId: asset.projectId,
         path: asset.path,
+        storagePath: asset.storagePath,
         type: asset.type,
         durationSec: asset.durationSec,
         durationSeconds: asset.durationSec,
         transcript: asset.transcript,
         transcription: asset.transcript,
+        sourceLanguage: asset.sourceLanguage,
         createdAt: asset.createdAt.toISOString(),
       })),
       exports: prismaProject.exports?.map((exp: any) => ({
         id: exp.id,
         projectId: exp.projectId,
-        clipId: exp.clipId,
+        clipIds: Array.isArray(exp.clipIds) ? exp.clipIds : [],
         preset: exp.preset,
+        includeCaptions: Boolean(exp.includeCaptions),
         status: exp.status,
-        progress: exp.progress,
-        downloadUrl: exp.downloadUrl,
+        outputPath: exp.outputPath,
+        storagePath: exp.storagePath,
         error: exp.error,
         createdAt: exp.createdAt.toISOString(),
-        completedAt: exp.completedAt?.toISOString(),
+        updatedAt: exp.updatedAt?.toISOString(),
       })),
     };
   }

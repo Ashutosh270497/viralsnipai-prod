@@ -18,21 +18,22 @@ import { TYPES } from '@/lib/infrastructure/di/types';
 import type { IProjectRepository } from '@/lib/domain/repositories/IProjectRepository';
 import type { IClipRepository } from '@/lib/domain/repositories/IClipRepository';
 import type { IExportRepository } from '@/lib/domain/repositories/IExportRepository';
+import type { ExportRecord } from '@/lib/types';
 import { ExportQueueService } from '@/lib/domain/services/ExportQueueService';
 import { getLocalUploadDir } from '@/lib/storage';
 import { logger } from '@/lib/logger';
 import { AppError } from '@/lib/utils/error-handler';
-import type { Export } from '@/lib/types';
 
 export interface QueueExportInput {
   projectId: string;
   clipIds: string[];
-  preset: 'shorts_9x16_1080' | 'square_1x1_1080' | 'landscape_16x9_1080';
+  preset: 'shorts_9x16_1080' | 'square_1x1_1080' | 'portrait_4x5_1080' | 'landscape_16x9_1080';
+  includeCaptions?: boolean;
   userId: string;
 }
 
 export interface QueueExportOutput {
-  export: Export;
+  export: ExportRecord;
   queued: boolean;
 }
 
@@ -46,12 +47,13 @@ export class QueueExportUseCase {
   ) {}
 
   async execute(input: QueueExportInput): Promise<QueueExportOutput> {
-    const { projectId, clipIds, preset, userId } = input;
+    const { projectId, clipIds, preset, includeCaptions = false, userId } = input;
 
     logger.info('Starting export queue', {
       projectId,
       clipIds,
       preset,
+      includeCaptions,
       userId,
     });
 
@@ -75,23 +77,37 @@ export class QueueExportUseCase {
       throw AppError.badRequest('No clips available in this project');
     }
 
-    // Note: We trust that the provided clipIds belong to the project
-    // The export job will validate this during processing
+    const projectClips = await this.clipRepo.findByProjectId(projectId);
+    const validClipIds = new Set(projectClips.map((clip) => clip.id));
+    const selectedClipIds = clipIds.filter((clipId) => validClipIds.has(clipId));
+
+    if (selectedClipIds.length === 0) {
+      throw AppError.badRequest('Selected clips are invalid or no longer available');
+    }
+
+    if (selectedClipIds.length !== clipIds.length) {
+      logger.warn('Ignoring stale clip ids during export queue', {
+        projectId,
+        requestedClipCount: clipIds.length,
+        validClipCount: selectedClipIds.length,
+      });
+    }
 
     logger.info('Validated clips for export', {
       projectId,
-      requestedClips: clipIds.length,
+      requestedClips: selectedClipIds.length,
     });
 
     // Step 3: Create export record
     const exportRecord = await this.exportRepo.create({
       projectId: project.id,
-      clipIds: clipIds,
-      preset: preset,
+      clipIds: selectedClipIds,
+      preset,
+      includeCaptions,
       outputPath: '', // Will be set after determining storage path
       storagePath: '', // Will be set next
       status: 'queued',
-    } as any);
+    });
 
     logger.info('Export record created', { exportId: exportRecord.id });
 
@@ -103,7 +119,7 @@ export class QueueExportUseCase {
     const updatedExport = await this.exportRepo.update(exportRecord.id, {
       storagePath,
       outputPath,
-    } as any);
+    });
 
     logger.info('Export paths configured', {
       exportId: exportRecord.id,
@@ -117,7 +133,7 @@ export class QueueExportUseCase {
     // Step 6: Update project timestamp
     await this.projectRepo.update(projectId, {
       updatedAt: new Date(),
-    } as any);
+    });
 
     logger.info('Export queued successfully', {
       exportId: exportRecord.id,

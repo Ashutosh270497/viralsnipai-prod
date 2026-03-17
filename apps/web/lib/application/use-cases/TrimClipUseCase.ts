@@ -80,7 +80,7 @@ export class TrimClipUseCase {
       endMs,
       captionSrt: null, // Invalidate captions - user must regenerate
       previewPath: null, // Invalidate preview - user must regenerate
-    } as any);
+    });
 
     const captionsInvalidated = clip.captionSrt !== null || clip.previewPath !== null;
 
@@ -93,7 +93,7 @@ export class TrimClipUseCase {
     // Step 5: Update project timestamp
     await this.projectRepo.update(clip.projectId, {
       updatedAt: new Date(),
-    } as any);
+    });
 
     logger.info('Clip trim completed', { clipId });
 

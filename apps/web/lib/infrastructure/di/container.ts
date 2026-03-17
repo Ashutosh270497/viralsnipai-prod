@@ -73,7 +73,6 @@ import { TranslateVideoVoiceUseCase } from '@/lib/application/use-cases/Translat
  */
 const container = new Container({
   defaultScope: 'Singleton',
-  skipBaseClassChecks: true,
 });
 
 /**

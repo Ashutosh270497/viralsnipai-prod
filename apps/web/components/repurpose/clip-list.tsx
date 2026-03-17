@@ -1,8 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
-import { CheckSquare, Loader2, Play, Flame, Info, Download, ChevronDown, GripVertical, Filter, ArrowUpDown, Wand2 } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { CheckSquare, Loader2, Play, Flame, Info, Download, ChevronDown, GripVertical, Filter, ArrowUpDown } from "lucide-react";
 import Image from "next/image";
 import { DndContext, closestCenter, DragEndEvent } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy, useSortable } from "@dnd-kit/sortable";
@@ -23,6 +22,7 @@ import { Progress } from "@/components/ui/progress";
 import { useToast } from "@/components/ui/use-toast";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { CaptionEditorDialog } from "@/components/repurpose/caption-editor-dialog";
+import type { ViralityFactors } from "@/lib/types";
 import { cn, formatDuration } from "@/lib/utils";
 
 // Convert SRT to VTT format and return as data URL
@@ -38,30 +38,11 @@ function srtToVttDataUrl(srt: string): string {
   return URL.createObjectURL(blob);
 }
 
-interface ViralityFactors {
-  hookStrength: number;
-  emotionalPeak: number;
-  storyArc: number;
-  pacing: number;
-  transcriptQuality: number;
-  reasoning?: string;
-  improvements?: string[];
-  enhancement?: {
-    fillerPercentage: number;
-    wordsPerSecond: number;
-    energyProfile: string;
-    qualityScore: number;
-    hasDeadAir: boolean;
-    pauseCount: number;
-    issues: string[];
-    strengths: string[];
-  };
-}
-
 type ClipType = {
   id: string;
   startMs: number;
   endMs: number;
+  order?: number | null;
   title?: string | null;
   summary?: string | null;
   callToAction?: string | null;
@@ -92,7 +73,18 @@ interface SortableClipCardProps {
   onEditCaptions: (clipId: string) => void;
   getScoreColor: (score: number) => string;
   formatFactorName: (key: string) => string;
-  projectId?: string;
+  dragEnabled: boolean;
+}
+
+function sortClipsByStoredOrder(items: ClipType[]): ClipType[] {
+  return [...items].sort((a, b) => {
+    const aOrder = a.order ?? Number.MAX_SAFE_INTEGER;
+    const bOrder = b.order ?? Number.MAX_SAFE_INTEGER;
+    if (aOrder !== bOrder) {
+      return aOrder - bOrder;
+    }
+    return a.startMs - b.startMs;
+  });
 }
 
 function SortableClipCard({
@@ -106,9 +98,10 @@ function SortableClipCard({
   onEditCaptions,
   getScoreColor,
   formatFactorName,
-  projectId
+  dragEnabled
 }: SortableClipCardProps) {
-  const router = useRouter();
+
+
   const {
     attributes,
     listeners,
@@ -116,7 +109,7 @@ function SortableClipCard({
     transform,
     transition,
     isDragging
-  } = useSortable({ id: clip.id });
+  } = useSortable({ id: clip.id, disabled: !dragEnabled });
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -125,6 +118,13 @@ function SortableClipCard({
   };
 
   const duration = clip.endMs - clip.startMs;
+  const baseFactorKeys: Array<keyof ViralityFactors> = [
+    "hookStrength",
+    "emotionalPeak",
+    "storyArc",
+    "pacing",
+    "transcriptQuality",
+  ];
 
   return (
     <Card
@@ -134,7 +134,16 @@ function SortableClipCard({
     >
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
         <div className="flex items-center gap-2 flex-1">
-          <div {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing p-1 hover:bg-muted rounded">
+          <div
+            {...attributes}
+            {...listeners}
+            className={cn(
+              "p-1 rounded",
+              dragEnabled
+                ? "cursor-grab active:cursor-grabbing hover:bg-muted"
+                : "cursor-default opacity-40"
+            )}
+          >
             <GripVertical className="h-4 w-4 text-muted-foreground" />
           </div>
           <div className="flex-1">
@@ -173,17 +182,20 @@ function SortableClipCard({
                         {clip.viralityFactors && (
                           <>
                             <div className="space-y-2">
-                              {Object.entries(clip.viralityFactors)
-                                .filter(([key]) => !['reasoning', 'improvements'].includes(key))
-                                .map(([key, value]) => (
-                                  <div key={key} className="space-y-1">
-                                    <div className="flex items-center justify-between text-xs">
-                                      <span className="text-muted-foreground">{formatFactorName(key)}</span>
-                                      <span className="font-medium">{value}/10</span>
+                              {baseFactorKeys
+                                .filter((key) => typeof clip.viralityFactors?.[key] === "number")
+                                .map((key) => {
+                                  const value = clip.viralityFactors?.[key] as number;
+                                  return (
+                                    <div key={key} className="space-y-1">
+                                      <div className="flex items-center justify-between text-xs">
+                                        <span className="text-muted-foreground">{formatFactorName(key)}</span>
+                                        <span className="font-medium">{value}/100</span>
+                                      </div>
+                                      <Progress value={value} className="h-1.5" />
                                     </div>
-                                    <Progress value={(value as number) * 10} className="h-1.5" />
-                                  </div>
-                                ))}
+                                  );
+                                })}
                             </div>
 
                             {clip.viralityFactors.reasoning && (
@@ -319,17 +331,6 @@ function SortableClipCard({
               Edit Captions
             </Button>
           )}
-          {projectId && (
-            <Button
-              variant="default"
-              size="sm"
-              className="bg-gradient-to-r from-violet-600 via-purple-600 to-fuchsia-600 hover:from-violet-700 hover:via-purple-700 hover:to-fuchsia-700"
-              onClick={() => router.push(`/agent-editor?projectId=${projectId}&clipId=${clip.id}`)}
-            >
-              <Wand2 className="mr-2 h-4 w-4" />
-              Edit with AI
-            </Button>
-          )}
           {clip.previewPath && (
             <Button
               variant="ghost"
@@ -352,18 +353,42 @@ export function ClipList({ clips, onSelect, onGenerateCaptions, loadingClipId, p
   const [isBulkGenerating, setIsBulkGenerating] = useState(false);
   const [isBulkExporting, setIsBulkExporting] = useState(false);
   const [previewClipId, setPreviewClipId] = useState<string | null>(null);
-  const [sortBy, setSortBy] = useState<string>("virality-desc");
+  const [sortBy, setSortBy] = useState<string>("manual");
   const [filterBy, setFilterBy] = useState<string>("all");
-  const [orderedClips, setOrderedClips] = useState(clips);
+  const [orderedClips, setOrderedClips] = useState<ClipType[]>(() => sortClipsByStoredOrder(clips));
   const [editingCaptionClipId, setEditingCaptionClipId] = useState<string | null>(null);
+  const [previewCaptionTrackUrl, setPreviewCaptionTrackUrl] = useState<string | null>(null);
+  const previewTrackUrlRef = useRef<string | null>(null);
   const clipSignature = useMemo(() => clips.map((clip) => clip.id).join("|"), [clips]);
+  const isManualOrderMode = sortBy === "manual" && filterBy === "all";
 
   const previewClip = clips.find(c => c.id === previewClipId);
   const editingClip = clips.find(c => c.id === editingCaptionClipId);
 
-  // Update ordered clips when clips change
+  // Keep latest clip payload while preserving user drag order.
   useEffect(() => {
-    setOrderedClips(clips);
+    setOrderedClips((prev) => {
+      if (prev.length === 0) {
+        return sortClipsByStoredOrder(clips);
+      }
+
+      const nextById = new Map(clips.map((clip) => [clip.id, clip]));
+      const merged: ClipType[] = [];
+
+      for (const existing of prev) {
+        const fresh = nextById.get(existing.id);
+        if (fresh) {
+          merged.push(fresh);
+          nextById.delete(existing.id);
+        }
+      }
+
+      for (const fresh of sortClipsByStoredOrder(Array.from(nextById.values()))) {
+        merged.push(fresh);
+      }
+
+      return merged;
+    });
   }, [clips]);
 
   useEffect(() => {
@@ -371,6 +396,39 @@ export function ClipList({ clips, onSelect, onGenerateCaptions, loadingClipId, p
     onSelect([]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clipSignature]);
+
+  const revokePreviewTrackUrl = useCallback(() => {
+    if (previewTrackUrlRef.current) {
+      URL.revokeObjectURL(previewTrackUrlRef.current);
+      previewTrackUrlRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!previewClip?.captionSrt) {
+      revokePreviewTrackUrl();
+      setPreviewCaptionTrackUrl(null);
+      return;
+    }
+
+    revokePreviewTrackUrl();
+    const trackUrl = srtToVttDataUrl(previewClip.captionSrt);
+    previewTrackUrlRef.current = trackUrl;
+    setPreviewCaptionTrackUrl(trackUrl);
+
+    return () => {
+      if (previewTrackUrlRef.current === trackUrl) {
+        URL.revokeObjectURL(trackUrl);
+        previewTrackUrlRef.current = null;
+      }
+    };
+  }, [previewClip?.captionSrt, previewClip?.id, revokePreviewTrackUrl]);
+
+  useEffect(() => {
+    return () => {
+      revokePreviewTrackUrl();
+    };
+  }, [revokePreviewTrackUrl]);
 
   function toggle(clipId: string) {
     setSelected((prev) => {
@@ -447,6 +505,7 @@ export function ClipList({ clips, onSelect, onGenerateCaptions, loadingClipId, p
 
   // Drag-and-drop handler
   function handleDragEnd(event: DragEndEvent) {
+    if (!isManualOrderMode) return;
     const { active, over } = event;
 
     if (!over || active.id === over.id) return;
@@ -522,19 +581,20 @@ export function ClipList({ clips, onSelect, onGenerateCaptions, loadingClipId, p
         <CardContent className="flex flex-wrap items-center gap-3 py-3">
           <div className="flex items-center gap-2">
             <ArrowUpDown className="h-4 w-4 text-muted-foreground" />
-            <Select value={sortBy} onValueChange={setSortBy}>
-              <SelectTrigger className="w-[180px]">
-                <SelectValue placeholder="Sort by" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="virality-desc">Highest Virality</SelectItem>
-                <SelectItem value="virality-asc">Lowest Virality</SelectItem>
-                <SelectItem value="duration-desc">Longest First</SelectItem>
-                <SelectItem value="duration-asc">Shortest First</SelectItem>
-                <SelectItem value="chronological">Chronological</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+              <Select value={sortBy} onValueChange={setSortBy}>
+                <SelectTrigger className="w-[180px]">
+                  <SelectValue placeholder="Sort by" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem showIndicator value="manual">Manual Order</SelectItem>
+                  <SelectItem showIndicator value="virality-desc">Highest Virality</SelectItem>
+                  <SelectItem showIndicator value="virality-asc">Lowest Virality</SelectItem>
+                  <SelectItem showIndicator value="duration-desc">Longest First</SelectItem>
+                  <SelectItem showIndicator value="duration-asc">Shortest First</SelectItem>
+                  <SelectItem showIndicator value="chronological">Chronological</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
 
           <div className="flex items-center gap-2">
             <Filter className="h-4 w-4 text-muted-foreground" />
@@ -543,10 +603,10 @@ export function ClipList({ clips, onSelect, onGenerateCaptions, loadingClipId, p
                 <SelectValue placeholder="Filter by score" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All Clips ({clips.length})</SelectItem>
-                <SelectItem value="high">High Score (80+)</SelectItem>
-                <SelectItem value="medium">Medium (60-79)</SelectItem>
-                <SelectItem value="low">Low (&lt;60)</SelectItem>
+                <SelectItem showIndicator value="all">All Clips ({clips.length})</SelectItem>
+                <SelectItem showIndicator value="high">High Score (80+)</SelectItem>
+                <SelectItem showIndicator value="medium">Medium (60-79)</SelectItem>
+                <SelectItem showIndicator value="low">Low (&lt;60)</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -556,6 +616,12 @@ export function ClipList({ clips, onSelect, onGenerateCaptions, loadingClipId, p
           </Badge>
         </CardContent>
       </Card>
+
+      {!isManualOrderMode ? (
+        <div className="rounded-lg border border-dashed border-border/60 bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+          Reordering is enabled only in <span className="font-medium">Manual Order</span> with <span className="font-medium">All Clips</span> filter.
+        </div>
+      ) : null}
 
       {/* Bulk Actions Bar */}
       {selected.length > 0 && (
@@ -612,6 +678,9 @@ export function ClipList({ clips, onSelect, onGenerateCaptions, loadingClipId, p
                     <DropdownMenuItem onClick={() => handleBulkExport("square_1x1_1080")}>
                       Square (1:1)
                     </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => handleBulkExport("portrait_4x5_1080")}>
+                      Portrait Feed (4:5)
+                    </DropdownMenuItem>
                     <DropdownMenuItem onClick={() => handleBulkExport("landscape_16x9_1080")}>
                       Landscape (16:9)
                     </DropdownMenuItem>
@@ -640,7 +709,7 @@ export function ClipList({ clips, onSelect, onGenerateCaptions, loadingClipId, p
                 onEditCaptions={setEditingCaptionClipId}
                 getScoreColor={getScoreColor}
                 formatFactorName={formatFactorName}
-                projectId={projectId}
+                dragEnabled={isManualOrderMode}
               />
             ))}
           </div>
@@ -670,10 +739,10 @@ export function ClipList({ clips, onSelect, onGenerateCaptions, loadingClipId, p
                 key={previewClip.id}
                 crossOrigin="anonymous"
               >
-                {previewClip.captionSrt && (
+                {previewCaptionTrackUrl && (
                   <track
                     kind="captions"
-                    src={srtToVttDataUrl(previewClip.captionSrt)}
+                    src={previewCaptionTrackUrl}
                     srcLang="en"
                     label="English"
                     default

@@ -1,7 +1,6 @@
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
-import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getCurrentUser } from '@/lib/auth';
 import { withErrorHandling } from '@/lib/utils/error-handler';
@@ -9,10 +8,11 @@ import { ApiResponseBuilder } from '@/lib/api/response';
 import { logger } from '@/lib/logger';
 import { prisma } from '@/lib/prisma';
 import { queueYouTubeIngestJob } from '@/lib/youtube-ingest-queue';
+import { youtubeUrlSchema } from '@/lib/validations';
 
 const schema = z.object({
   projectId: z.string(),
-  sourceUrl: z.string().url(),
+  sourceUrl: youtubeUrlSchema,
 });
 
 /**
@@ -45,6 +45,19 @@ export const POST = withErrorHandling(async (request: Request) => {
 
   const { projectId, sourceUrl } = result.data;
 
+  // Step 2.5: Verify project ownership before creating job
+  const project = await prisma.project.findFirst({
+    where: {
+      id: projectId,
+      userId: user.id,
+    },
+    select: { id: true },
+  });
+
+  if (!project) {
+    return ApiResponseBuilder.forbidden('Access denied to this project');
+  }
+
   logger.info('YouTube ingest API called', {
     projectId,
     sourceUrl,
@@ -57,6 +70,12 @@ export const POST = withErrorHandling(async (request: Request) => {
       projectId,
       sourceUrl,
       status: 'queued',
+      metadata: {
+        phase: 'Queued',
+        phaseKey: 'queued',
+        progress: 5,
+        message: 'Job queued',
+      } as any,
     },
   });
 

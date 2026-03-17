@@ -18,6 +18,7 @@ import { bytesToSize } from "@/lib/utils";
 
 type AspectRatio = "1:1" | "3:4" | "4:3" | "9:16" | "16:9";
 type Quality = "standard" | "premium";
+type Mode = "text-to-image" | "image-to-image";
 
 type ApiImage = {
   id: string;
@@ -189,7 +190,7 @@ export function ImagenWorkspace({ userName }: { userName: string }) {
   }, [isGenerating]);
 
   useEffect(() => {
-    if (typeof navigator !== "undefined" && navigator.mediaDevices?.getUserMedia) {
+    if (typeof navigator !== "undefined" && navigator.mediaDevices && typeof navigator.mediaDevices.getUserMedia === "function") {
       setIsMediaSupported(true);
     }
     if (typeof window !== "undefined") {
@@ -381,7 +382,7 @@ export function ImagenWorkspace({ userName }: { userName: string }) {
             recognition.interimResults = true;
             recognition.continuous = true;
             recognition.maxAlternatives = 1;
-            recognition.onresult = (event: SpeechRecognitionEvent) => {
+            recognition.onresult = (event: any) => {
               const result = event.results[event.resultIndex];
               if (!result) {
                 return;
@@ -400,7 +401,7 @@ export function ImagenWorkspace({ userName }: { userName: string }) {
                 setLiveTranscript(combined);
               }
             };
-            recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
+            recognition.onerror = (event: any) => {
               console.debug("Speech recognition fallback error", event.error);
             };
             recognition.onend = () => {
@@ -1017,12 +1018,12 @@ async function submitVoicePrompt(blob: Blob) {
                   {liveTranscript && (
                     <div className="rounded-xl border border-rose-200/50 bg-white/70 backdrop-blur-sm p-3 dark:border-rose-900/50 dark:bg-black/30">
                       <p className="text-xs italic text-gray-700 dark:text-gray-300">
-                        "{liveTranscript}"
+                        &ldquo;{liveTranscript}&rdquo;
                       </p>
                     </div>
                   )}
                   <p className="text-[10px] font-medium text-rose-600 dark:text-rose-400">
-                    💬 Speak clearly • Click "Stop" when done
+                    💬 Speak clearly • Click &ldquo;Stop&rdquo; when done
                   </p>
                 </div>
               ) : isTranscribingAudio ? (
@@ -1352,7 +1353,7 @@ async function submitVoicePrompt(blob: Blob) {
                   </div>
                   <div className="flex items-center gap-2">
                     <div className="h-1.5 w-1.5 rounded-full bg-primary" />
-                    <span>Use reference images to guide the AI's style</span>
+                    <span>Use reference images to guide the AI&apos;s style</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <div className="h-1.5 w-1.5 rounded-full bg-primary" />

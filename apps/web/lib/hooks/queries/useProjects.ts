@@ -32,6 +32,7 @@ export function useProject(projectId: string | null) {
     queryKey: projectKeys.detail(projectId!),
     queryFn: () => projectsApi.getProject(projectId!),
     enabled: !!projectId,
+    staleTime: 10 * 1000, // 10s — keep fresh for repurpose flow where data changes between steps
   });
 }
 
@@ -53,12 +54,15 @@ export function useCreateProject() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (data: CreateProjectData) => projectsApi.createProject(data),
+    mutationFn: (data: CreateProjectData) => projectsApi.createProject({
+      ...data,
+      topic: data.topic ?? undefined
+    }),
     onSuccess: (data) => {
       // Invalidate project lists
       queryClient.invalidateQueries({ queryKey: projectKeys.lists() });
       // Set the new project in cache
-      queryClient.setQueryData(projectKeys.detail(data.id), data);
+      queryClient.setQueryData(projectKeys.detail(data.project.id), data);
     },
   });
 }
@@ -71,7 +75,10 @@ export function useUpdateProject() {
 
   return useMutation({
     mutationFn: ({ id, data }: { id: string; data: UpdateProjectData }) =>
-      projectsApi.updateProject(id, data),
+      projectsApi.updateProject(id, {
+        ...data,
+        topic: data.topic ?? undefined
+      }),
     onMutate: async ({ id, data }) => {
       // Cancel outgoing refetches
       await queryClient.cancelQueries({ queryKey: projectKeys.detail(id) });
@@ -81,9 +88,17 @@ export function useUpdateProject() {
 
       // Optimistically update
       if (previousProject) {
+        const optimisticPatch: Partial<Project> = {
+          ...data,
+          updatedAt:
+            data.updatedAt instanceof Date
+              ? data.updatedAt.toISOString()
+              : data.updatedAt,
+        };
+
         queryClient.setQueryData<Project>(projectKeys.detail(id), {
           ...previousProject,
-          ...data,
+          ...optimisticPatch,
         });
       }
 
@@ -96,7 +111,7 @@ export function useUpdateProject() {
       }
     },
     onSuccess: (data) => {
-      queryClient.setQueryData(projectKeys.detail(data.id), data);
+      queryClient.setQueryData(projectKeys.detail(data.project.id), data);
       queryClient.invalidateQueries({ queryKey: projectKeys.lists() });
     },
   });

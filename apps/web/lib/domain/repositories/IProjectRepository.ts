@@ -18,6 +18,8 @@ export interface CreateProjectData {
 export interface UpdateProjectData {
   title?: string;
   topic?: string | null;
+  sourceUrl?: string | null;
+  updatedAt?: string | Date;
 }
 
 export interface IProjectRepository {

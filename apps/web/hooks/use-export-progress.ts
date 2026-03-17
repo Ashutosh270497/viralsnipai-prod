@@ -11,7 +11,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 
 export interface ExportProgress {
   id: string;
-  status: 'pending' | 'processing' | 'completed' | 'failed';
+  status: 'pending' | 'queued' | 'processing' | 'done' | 'completed' | 'failed';
   progress: number;
   downloadUrl?: string;
   error?: string;
@@ -72,9 +72,16 @@ export function useExportProgress(
         throw new Error('Failed to fetch export status');
       }
       const data = await response.json();
+      const rawStatus: string | undefined = data.export.status;
+      const normalizedStatus =
+        rawStatus === 'done' || rawStatus === 'completed'
+          ? 'done'
+          : rawStatus === 'queued' || rawStatus === 'processing' || rawStatus === 'failed'
+            ? rawStatus
+            : 'pending';
       return {
         id: exportId,
-        status: data.export.status,
+        status: normalizedStatus,
         progress: data.export.progress || 0,
         downloadUrl: data.export.downloadUrl,
         error: data.export.error
@@ -82,6 +89,17 @@ export function useExportProgress(
     } catch (error) {
       console.error(`Failed to fetch export ${exportId}:`, error);
       return null;
+    }
+  }, []);
+
+  /**
+   * Stop polling an export
+   */
+  const stopPolling = useCallback((exportId: string) => {
+    const timer = pollTimersRef.current.get(exportId);
+    if (timer) {
+      clearInterval(timer);
+      pollTimersRef.current.delete(exportId);
     }
   }, []);
 
@@ -101,7 +119,7 @@ export function useExportProgress(
         setExports(prev => new Map(prev).set(exportId, status));
 
         // Handle completion
-        if (status.status === 'completed' && status.downloadUrl) {
+        if ((status.status === 'done' || status.status === 'completed') && status.downloadUrl) {
           stopPolling(exportId);
           onCompleteRef.current?.(exportId, status.downloadUrl);
         }
@@ -120,18 +138,7 @@ export function useExportProgress(
     // Set up interval
     const timer = setInterval(poll, pollInterval);
     pollTimersRef.current.set(exportId, timer);
-  }, [fetchExportStatus, pollInterval]);
-
-  /**
-   * Stop polling an export
-   */
-  const stopPolling = useCallback((exportId: string) => {
-    const timer = pollTimersRef.current.get(exportId);
-    if (timer) {
-      clearInterval(timer);
-      pollTimersRef.current.delete(exportId);
-    }
-  }, []);
+  }, [fetchExportStatus, pollInterval, stopPolling]);
 
   /**
    * Stop all polling

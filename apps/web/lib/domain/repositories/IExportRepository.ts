@@ -6,21 +6,26 @@
  * @module IExportRepository
  */
 
-import type { ExportRecord } from '@/lib/types';
+import type { ExportRecord, ExportStatus } from '@/lib/types';
 
 export interface CreateExportData {
   projectId: string;
-  clipId?: string | null;
+  clipIds: string[];
   preset: string;
-  status?: 'pending' | 'processing' | 'completed' | 'failed';
+  includeCaptions?: boolean;
+  status?: ExportStatus;
+  outputPath?: string;
+  storagePath?: string;
+  error?: string | null;
 }
 
 export interface UpdateExportData {
-  status?: 'pending' | 'processing' | 'completed' | 'failed';
-  progress?: number;
-  downloadUrl?: string | null;
+  status?: ExportStatus;
+  clipIds?: string[];
+  includeCaptions?: boolean;
+  outputPath?: string;
+  storagePath?: string;
   error?: string | null;
-  completedAt?: string | null;
 }
 
 export interface IExportRepository {
@@ -43,7 +48,7 @@ export interface IExportRepository {
    * @param status - Export status
    * @returns Array of export records
    */
-  findByStatus(status: 'pending' | 'processing' | 'completed' | 'failed'): Promise<ExportRecord[]>;
+  findByStatus(status: ExportStatus): Promise<ExportRecord[]>;
 
   /**
    * Find pending or processing exports (for polling)

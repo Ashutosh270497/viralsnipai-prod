@@ -124,7 +124,7 @@ export class CreateCompositeClipUseCase {
         }
 
         const asset = assetMap.get(clip.assetId);
-        if (!asset || !asset.filePath) {
+        if (!asset || !asset.storagePath) {
           throw AppError.notFound(`Asset for clip ${segment.clipId} not found or has no file`);
         }
 
@@ -133,7 +133,7 @@ export class CreateCompositeClipUseCase {
         const absoluteEndMs = clip.startMs + segment.endMs;
 
         return {
-          sourcePath: asset.filePath,
+          sourcePath: asset.storagePath,
           startMs: absoluteStartMs,
           endMs: absoluteEndMs,
           clipId: segment.clipId,
@@ -142,7 +142,8 @@ export class CreateCompositeClipUseCase {
 
     // Step 5: Generate output path
     const outputFileName = `composite-${Date.now()}-${projectId}.mp4`;
-    const outputPath = this.storageService.getClipPath(projectId, outputFileName);
+    const uploadDir = this.storageService.getUploadDirectory();
+    const outputPath = path.join(uploadDir, 'projects', projectId, 'clips', outputFileName);
 
     // Step 6: Stitch the video segments
     logger.info('Starting video stitching', {
@@ -175,13 +176,19 @@ export class CreateCompositeClipUseCase {
       endMs: stitchingResult.durationMs,
       title: definition.title,
       summary: definition.description || `Composite clip with ${validation.segmentCount} segments`,
-      order: await this.getNextClipOrder(projectId),
-      filePath: stitchingResult.outputPath,
-      // Mark as composite for future reference
-      metadata: {
-        isComposite: true,
-        segmentCount: validation.segmentCount,
-        sourceClipIds: clipIds,
+      // Store composite metadata while keeping virality shape contract intact.
+      viralityFactors: {
+        hookStrength: 0,
+        emotionalPeak: 0,
+        storyArc: 0,
+        pacing: 0,
+        transcriptQuality: 0,
+        metadata: {
+          isComposite: true,
+          segmentCount: validation.segmentCount,
+          sourceClipIds: clipIds,
+          previewPath: stitchingResult.outputPath,
+        },
       },
     });
 
@@ -208,7 +215,7 @@ export class CreateCompositeClipUseCase {
     if (clips.length === 0) {
       return 0;
     }
-    const maxOrder = Math.max(...clips.map((c) => c.order || 0));
+    const maxOrder = Math.max(...clips.map((c) => c.order ?? 0));
     return maxOrder + 1;
   }
 

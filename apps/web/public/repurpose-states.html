@@ -1,0 +1,1514 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Repurpose OS — All Screen States</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#07071a;--surface:rgba(255,255,255,0.03);--surface2:rgba(255,255,255,0.06);
+  --border:rgba(255,255,255,0.08);--border2:rgba(255,255,255,0.14);
+  --text:#f1f5f9;--muted:#64748b;--dim:#374151;
+  --purple:#7c3aed;--purple-l:#a78bfa;--pink:#db2777;
+  --emerald:#059669;--em-l:#6ee7b7;--em-bg:rgba(5,150,105,0.12);--em-br:rgba(6,236,133,0.25);
+  --amber:#d97706;--am-l:#fcd34d;--am-bg:rgba(217,119,6,0.1);--am-br:rgba(217,119,6,0.3);
+  --red:#dc2626;--red-l:#fca5a5;--red-bg:rgba(220,38,38,0.1);--red-br:rgba(220,38,38,0.3);
+  --blue:#2563eb;--blue-l:#93c5fd;--blue-bg:rgba(37,99,235,0.1);--blue-br:rgba(37,99,235,0.3);
+  --grad:linear-gradient(135deg,#7c3aed,#db2777);
+}
+body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:13px;line-height:1.5;padding:40px 32px}
+/* ---- PAGE HEADER ---- */
+.ph{text-align:center;margin-bottom:56px}
+.ph h1{font-size:26px;font-weight:700;background:var(--grad);-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:6px}
+.ph p{color:var(--muted);font-size:13px}
+/* ---- SECTION ---- */
+.sec{margin-bottom:60px}
+.sec-hd{display:flex;align-items:center;gap:12px;margin-bottom:4px}
+.sec-hd h2{font-size:16px;font-weight:600;white-space:nowrap}
+.sec-hd::after{content:'';flex:1;height:1px;background:var(--border)}
+.sec-sub{color:var(--muted);font-size:12px;margin-bottom:20px}
+/* ---- GRID ---- */
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:20px}
+.grid-wide{display:grid;grid-template-columns:repeat(auto-fill,minmax(480px,1fr));gap:20px}
+/* ---- SCREEN CARD ---- */
+.sw{display:flex;flex-direction:column;gap:6px}
+.sl{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);padding:0 2px}
+.sn{font-size:12px;font-weight:500;color:var(--text);padding:0 2px;margin-bottom:2px}
+.screen{border-radius:12px;border:1px solid var(--border);background:#0c0c22;overflow:hidden}
+/* ---- WIZARD NAV ---- */
+.wnav{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid var(--border);background:rgba(255,255,255,0.015)}
+.wsteps{display:flex;align-items:center;gap:3px}
+.wbtn{display:flex;align-items:center;gap:5px;padding:5px 11px;border-radius:20px;font-size:11px;font-weight:500}
+.wbtn.active{background:var(--grad);color:#fff}
+.wbtn.done{background:var(--em-bg);border:1px solid var(--em-br);color:var(--em-l)}
+.wbtn.idle{background:rgba(255,255,255,0.04);color:var(--muted)}
+.wbtn.off{background:rgba(255,255,255,0.02);color:var(--dim);opacity:.4}
+.wdot{width:16px;height:1px;background:var(--border)}
+.wpj{font-size:10px;color:var(--muted);background:rgba(255,255,255,0.04);border:1px solid var(--border);padding:3px 8px;border-radius:5px}
+/* ---- CONTENT ---- */
+.sc{padding:14px;min-height:220px}
+/* ---- GLASS CARD ---- */
+.gc{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px}
+.gc2{background:var(--surface2);border:1px solid var(--border2);border-radius:10px;padding:14px}
+/* ---- CENTERED STATE ---- */
+.ctr{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:200px;text-align:center;gap:10px}
+.ico{font-size:28px;margin-bottom:2px}
+.ct{font-size:14px;font-weight:600}
+.cd{font-size:11px;color:var(--muted);max-width:200px}
+/* ---- DASHED BOX ---- */
+.db{border:1.5px dashed rgba(255,255,255,0.12);border-radius:10px;padding:20px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;text-align:center;color:var(--muted);font-size:11px}
+/* ---- INPUTS ---- */
+.inp{width:100%;background:rgba(255,255,255,0.04);border:1px solid var(--border2);border-radius:7px;padding:8px 11px;color:var(--text);font-size:12px}
+.inp::placeholder{color:var(--muted)}
+.inp:disabled{opacity:.35}
+.sel{background:rgba(255,255,255,0.04);border:1px solid var(--border2);border-radius:7px;padding:7px 10px;color:var(--text);font-size:12px;width:100%}
+.ta{width:100%;background:rgba(255,255,255,0.04);border:1px solid var(--border2);border-radius:7px;padding:8px 10px;color:var(--text);font-size:11px;resize:none}
+/* ---- BUTTONS ---- */
+.btn{display:inline-flex;align-items:center;gap:5px;padding:7px 13px;border-radius:7px;font-size:12px;font-weight:500;cursor:pointer;border:none;white-space:nowrap}
+.btn-p{background:var(--grad);color:#fff}
+.btn-o{background:transparent;border:1px solid var(--border2);color:var(--text)}
+.btn-g{background:rgba(255,255,255,0.04);color:var(--muted)}
+.btn-em{background:var(--em-bg);border:1px solid var(--em-br);color:var(--em-l)}
+.btn-am{background:var(--am-bg);border:1px solid var(--am-br);color:var(--am-l)}
+.btn-re{background:var(--red-bg);border:1px solid var(--red-br);color:var(--red-l)}
+.btn-sm{padding:5px 10px;font-size:11px}
+.btn:disabled{opacity:.35}
+/* ---- LABELS ---- */
+.lbl{font-size:10px;font-weight:500;color:var(--muted);margin-bottom:5px;text-transform:uppercase;letter-spacing:.04em}
+/* ---- PROGRESS ---- */
+.pt{height:3px;background:rgba(255,255,255,0.07);border-radius:2px;overflow:hidden;margin:4px 0}
+.pf{height:100%;background:var(--grad);border-radius:2px}
+.spin{display:inline-block;width:14px;height:14px;border:2px solid rgba(124,58,237,0.25);border-top-color:var(--purple);border-radius:50%;animation:spin 1s linear infinite}
+.spin-lg{width:22px;height:22px}
+@keyframes spin{to{transform:rotate(360deg)}}
+/* ---- BADGES ---- */
+.bdg{display:inline-flex;align-items:center;gap:4px;padding:2px 7px;border-radius:20px;font-size:10px;font-weight:600}
+.bdg-em{background:var(--em-bg);color:var(--em-l)}
+.bdg-am{background:var(--am-bg);color:var(--am-l)}
+.bdg-re{background:var(--red-bg);color:var(--red-l)}
+.bdg-pu{background:rgba(124,58,237,0.2);color:var(--purple-l)}
+.bdg-bl{background:var(--blue-bg);color:var(--blue-l)}
+.bdg-gy{background:rgba(255,255,255,0.07);color:var(--muted)}
+/* ---- ALERTS ---- */
+.alt{border-radius:8px;padding:9px 11px;font-size:11px;display:flex;align-items:flex-start;gap:7px}
+.alt-am{background:var(--am-bg);border:1px solid var(--am-br);color:var(--am-l)}
+.alt-re{background:var(--red-bg);border:1px solid var(--red-br);color:var(--red-l)}
+.alt-em{background:var(--em-bg);border:1px solid var(--em-br);color:var(--em-l)}
+.alt-bl{background:var(--blue-bg);border:1px solid var(--blue-br);color:var(--blue-l)}
+/* ---- LAYOUT HELPERS ---- */
+.row{display:flex;align-items:center;gap:8px}
+.row-b{display:flex;align-items:center;justify-content:space-between}
+.col{display:flex;flex-direction:column;gap:8px}
+.sep{height:1px;background:var(--border);margin:10px 0}
+.gap4{gap:4px}.gap6{gap:6px}.gap10{gap:10px}.gap12{gap:12px}.gap14{gap:14px}
+/* ---- PAGE TITLE ---- */
+.ptitle{font-size:15px;font-weight:700;display:flex;align-items:center;gap:8px;margin-bottom:12px}
+.tiico{width:26px;height:26px;border-radius:7px;background:var(--grad);display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0}
+/* ---- CLIP ROW ---- */
+.cpr{display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:8px;background:rgba(255,255,255,0.025);border:1px solid rgba(255,255,255,0.055)}
+.cpth{width:34px;height:34px;border-radius:6px;background:rgba(124,58,237,0.15);display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0}
+.cpin{flex:1;min-width:0}
+.cptitle{font-size:12px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cpmeta{font-size:10px;color:var(--muted)}
+/* ---- SIDEBAR CLIP ---- */
+.sbc{padding:8px 9px;border-radius:8px;font-size:11px;cursor:pointer}
+.sbc.sel{background:linear-gradient(135deg,rgba(124,58,237,0.18),rgba(219,39,119,0.18));border:1px solid rgba(124,58,237,0.3);color:var(--text)}
+.sbc.def{background:rgba(255,255,255,0.025);border:1px solid rgba(255,255,255,0.055);color:var(--muted)}
+/* ---- TRANSCRIPT LINES ---- */
+.trl{display:flex;gap:7px;padding:3px 0}
+.trts{font-size:9px;color:var(--muted);flex-shrink:0;font-family:monospace;padding-top:2px}
+.trtx{font-size:11px;color:rgba(255,255,255,0.78);line-height:1.45}
+/* ---- SKELETON ---- */
+.sk{background:linear-gradient(90deg,rgba(255,255,255,0.04) 25%,rgba(255,255,255,0.08) 50%,rgba(255,255,255,0.04) 75%);background-size:200% 100%;animation:shimmer 1.5s infinite;border-radius:5px}
+@keyframes shimmer{to{background-position:-200% 0}}
+/* ---- DIALOG ---- */
+.dov{background:rgba(0,0,0,0.55);border-radius:12px;padding:10px;display:flex;align-items:center;justify-content:center;min-height:220px}
+.dlg{background:#12122a;border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:18px;width:100%}
+.dlgt{font-size:14px;font-weight:600;margin-bottom:6px}
+.dlgd{font-size:11px;color:var(--muted);margin-bottom:14px}
+/* ---- FORMAT OPTION ---- */
+.fmo{border-radius:9px;padding:10px 12px;display:flex;align-items:center;gap:10px}
+.fmo.on{border:1px solid rgba(124,58,237,0.45);background:rgba(124,58,237,0.1)}
+.fmo.off{border:1px solid var(--border);background:var(--surface)}
+.fmth{border-radius:5px;background:rgba(255,255,255,0.06);display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:var(--muted)}
+/* ---- SWITCH ---- */
+.sw2{width:32px;height:18px;border-radius:9px;background:rgba(255,255,255,0.1);position:relative;flex-shrink:0}
+.sw2.on{background:var(--purple)}
+.sw2::after{content:'';position:absolute;width:12px;height:12px;border-radius:50%;background:#fff;top:3px;left:3px}
+.sw2.on::after{left:17px}
+/* ---- STAT CARD ---- */
+.stat{background:var(--surface);border:1px solid var(--border);border-radius:9px;padding:10px 14px;text-align:center}
+.stat-n{font-size:20px;font-weight:700}
+.stat-l{font-size:10px;color:var(--muted);margin-top:1px}
+/* ---- VT ITEM ---- */
+.vti{display:flex;align-items:center;gap:10px;padding:9px 11px;border-radius:8px;border:1px solid var(--border);background:var(--surface)}
+/* ---- EXPORT STATUS ---- */
+.exst{border-radius:10px;padding:12px;border:1px solid}
+.exst-q{background:rgba(217,119,6,0.06);border-color:rgba(217,119,6,0.22)}
+.exst-r{background:rgba(124,58,237,0.06);border-color:rgba(124,58,237,0.22)}
+.exst-d{background:rgba(5,150,105,0.06);border-color:rgba(5,150,105,0.22)}
+.exst-f{background:rgba(220,38,38,0.06);border-color:rgba(220,38,38,0.22)}
+/* ---- STEP BADGE CHIPS ---- */
+.chip{display:inline-flex;align-items:center;padding:2px 9px;border-radius:5px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em}
+.chip-1{background:rgba(124,58,237,0.18);color:var(--purple-l)}
+.chip-2{background:rgba(67,56,202,0.18);color:#818cf8}
+.chip-3{background:rgba(8,145,178,0.18);color:#67e8f9}
+.chip-lay{background:rgba(255,255,255,0.07);color:var(--muted)}
+/* ---- MISC ---- */
+.txt-sm{font-size:11px}.txt-xs{font-size:10px}
+.c-muted{color:var(--muted)}.c-em{color:var(--em-l)}.c-am{color:var(--am-l)}.c-re{color:var(--red-l)}.c-bl{color:var(--blue-l)}.c-pu{color:var(--purple-l)}
+.fw6{font-weight:600}.fw5{font-weight:500}
+.mt4{margin-top:4px}.mt6{margin-top:6px}.mt8{margin-top:8px}.mt10{margin-top:10px}.mt12{margin-top:12px}
+.mb4{margin-bottom:4px}.mb6{margin-bottom:6px}.mb8{margin-bottom:8px}.mb10{margin-bottom:10px}
+.w100{width:100%}
+/* ---- CHECKMARK ---- */
+.ck{width:14px;height:14px;border-radius:3px;background:var(--purple);display:flex;align-items:center;justify-content:center;font-size:9px;color:#fff;flex-shrink:0}
+.ck-em{background:var(--emerald)}
+</style>
+</head>
+<body>
+
+<div class="ph">
+  <h1>✦ Repurpose OS — All Screen States</h1>
+  <p>38 screen states across 3 steps &nbsp;·&nbsp; Wizard Chrome + Step 1 + Step 2 + Step 3 &nbsp;·&nbsp; Design &amp; Engineering Reference</p>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════
+     SECTION 0 — WIZARD CHROME
+═══════════════════════════════════════════════════════ -->
+<section class="sec">
+  <div class="sec-hd"><span class="chip chip-lay">Layout</span><h2>Wizard Navigation Chrome</h2></div>
+  <p class="sec-sub">Persistent header across all 3 steps. Purple gradient = active step. Emerald = completed. Disabled steps can't be clicked.</p>
+  <div class="grid">
+
+    <!-- Chrome: Step 1 Active -->
+    <div class="sw">
+      <div class="sl">Layout Chrome</div>
+      <div class="sn">Step 1 Active — no project yet</div>
+      <div class="screen">
+        <div class="wnav">
+          <div class="wsteps">
+            <div class="wbtn active">⬆ Ingest &amp; Detect</div>
+            <div class="wdot"></div>
+            <div class="wbtn off">✦ Edit &amp; Enhance</div>
+            <div class="wdot"></div>
+            <div class="wbtn off">⬇ Export &amp; Translate</div>
+          </div>
+          <div class="wpj">No project selected</div>
+        </div>
+        <div class="sc">
+          <div class="db" style="min-height:200px">
+            <span style="font-size:28px">📂</span>
+            <div style="font-size:13px;font-weight:600;color:var(--text)">Select or create a project</div>
+            <div>Use the project selector to get started</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Chrome: Step 2 Active -->
+    <div class="sw">
+      <div class="sl">Layout Chrome</div>
+      <div class="sn">Step 2 Active — asset ingested</div>
+      <div class="screen">
+        <div class="wnav">
+          <div class="wsteps">
+            <div class="wbtn done">✓ Ingest &amp; Detect</div>
+            <div class="wdot"></div>
+            <div class="wbtn active">✦ Edit &amp; Enhance</div>
+            <div class="wdot"></div>
+            <div class="wbtn off">⬇ Export &amp; Translate</div>
+          </div>
+          <div class="wpj">My Podcast · Episode 12</div>
+        </div>
+        <div class="sc">
+          <div class="db" style="min-height:200px">
+            <span style="font-size:28px">✂️</span>
+            <div style="font-size:13px;font-weight:600;color:var(--text)">Step 2 content loads here</div>
+            <div>Asset ingested — clips detectable</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Chrome: Step 3 Active -->
+    <div class="sw">
+      <div class="sl">Layout Chrome</div>
+      <div class="sn">Step 3 Active — clips detected</div>
+      <div class="screen">
+        <div class="wnav">
+          <div class="wsteps">
+            <div class="wbtn done">✓ Ingest &amp; Detect</div>
+            <div class="wdot"></div>
+            <div class="wbtn done">✓ Edit &amp; Enhance</div>
+            <div class="wdot"></div>
+            <div class="wbtn active">⬇ Export &amp; Translate</div>
+          </div>
+          <div class="wpj">My Podcast · Episode 12</div>
+        </div>
+        <div class="sc">
+          <div class="db" style="min-height:200px">
+            <span style="font-size:28px">📦</span>
+            <div style="font-size:13px;font-weight:600;color:var(--text)">Step 3 content loads here</div>
+            <div>All steps complete — ready to export</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════
+     SECTION 1 — STEP 1: INGEST & DETECT
+═══════════════════════════════════════════════════════ -->
+<section class="sec">
+  <div class="sec-hd"><span class="chip chip-1">Step 1</span><h2>Ingest &amp; Detect</h2></div>
+  <p class="sec-sub">11 states: Empty → Project select → YouTube fetch phases → Asset ready → AI prompts → Highlight detection → Clips table → Error</p>
+  <div class="grid">
+
+    <!-- 1.1 Empty -->
+    <div class="sw">
+      <div class="sl">Step 1 · State 1/11</div>
+      <div class="sn">Empty — No projects exist</div>
+      <div class="screen">
+        <div class="wnav">
+          <div class="wsteps">
+            <div class="wbtn active">⬆ Ingest &amp; Detect</div>
+            <div class="wdot"></div><div class="wbtn off">✦ Edit</div>
+            <div class="wdot"></div><div class="wbtn off">⬇ Export</div>
+          </div>
+          <div class="wpj">No projects</div>
+        </div>
+        <div class="sc">
+          <div class="ctr">
+            <div class="ico">📁</div>
+            <div class="ct">Create a project to start</div>
+            <div class="cd">You don't have any projects yet. Create one from the dashboard to begin repurposing content.</div>
+            <button class="btn btn-p btn-sm mt4">→ Go to Dashboard</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 1.2 No Project Selected -->
+    <div class="sw">
+      <div class="sl">Step 1 · State 2/11</div>
+      <div class="sn">Idle — Project selector, nothing chosen</div>
+      <div class="screen">
+        <div class="wnav">
+          <div class="wsteps">
+            <div class="wbtn active">⬆ Ingest &amp; Detect</div>
+            <div class="wdot"></div><div class="wbtn off">✦ Edit</div>
+            <div class="wdot"></div><div class="wbtn off">⬇ Export</div>
+          </div>
+        </div>
+        <div class="sc">
+          <div class="ptitle"><div class="tiico">⬆</div>Repurpose OS</div>
+          <div class="col gap10">
+            <div>
+              <div class="lbl">Project</div>
+              <select class="sel"><option>Select a project…</option></select>
+            </div>
+            <div class="db" style="min-height:140px">
+              <span style="font-size:22px;opacity:.4">✦</span>
+              <div>Select a project to start repurposing</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 1.3 Ready -->
+    <div class="sw">
+      <div class="sl">Step 1 · State 3/11</div>
+      <div class="sn">Ready — Project selected, awaiting URL</div>
+      <div class="screen">
+        <div class="wnav">
+          <div class="wsteps">
+            <div class="wbtn active">⬆ Ingest &amp; Detect</div>
+            <div class="wdot"></div><div class="wbtn off">✦ Edit</div>
+            <div class="wdot"></div><div class="wbtn off">⬇ Export</div>
+          </div>
+          <div class="wpj">My Podcast</div>
+        </div>
+        <div class="sc">
+          <div class="ptitle"><div class="tiico">⬆</div>Repurpose OS</div>
+          <div class="col gap10">
+            <div>
+              <div class="lbl">Project</div>
+              <select class="sel"><option>My Podcast · Episode 12</option></select>
+            </div>
+            <div class="gc">
+              <div class="lbl">YouTube URL</div>
+              <div class="row gap6 mt4">
+                <input class="inp" placeholder="https://youtube.com/watch?v=..." style="flex:1">
+                <button class="btn btn-p btn-sm">🔗 Fetch</button>
+              </div>
+              <div class="sep"></div>
+              <div class="row gap6">
+                <div style="flex:1">
+                  <div class="lbl">Detection Model</div>
+                  <select class="sel"><option>Gemini 3 Flash (default)</option></select>
+                </div>
+              </div>
+            </div>
+            <div class="db" style="padding:14px">
+              <div class="txt-xs c-muted">No asset yet — upload a file or fetch from YouTube</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 1.4 Ingesting: Queuing 8% -->
+    <div class="sw">
+      <div class="sl">Step 1 · State 4/11</div>
+      <div class="sn">Ingesting — Queuing (8%)</div>
+      <div class="screen">
+        <div class="wnav">
+          <div class="wsteps">
+            <div class="wbtn active">⬆ Ingest &amp; Detect</div>
+            <div class="wdot"></div><div class="wbtn off">✦ Edit</div>
+            <div class="wdot"></div><div class="wbtn off">⬇ Export</div>
+          </div>
+          <div class="wpj">My Podcast</div>
+        </div>
+        <div class="sc">
+          <div class="ptitle"><div class="tiico">⬆</div>Repurpose OS</div>
+          <div class="gc">
+            <div class="lbl">YouTube URL</div>
+            <div class="row gap6 mt4">
+              <input class="inp" value="https://youtube.com/watch?v=dQw4w9WgXcQ" style="flex:1" disabled>
+              <button class="btn btn-p btn-sm" disabled><span class="spin"></span> Queuing</button>
+            </div>
+            <div class="mt8">
+              <div class="row-b mb4">
+                <span class="txt-xs c-muted">Queuing job…</span>
+                <span class="txt-xs c-pu fw6">8%</span>
+              </div>
+              <div class="pt"><div class="pf" style="width:8%"></div></div>
+            </div>
+          </div>
+          <div class="db mt8" style="padding:14px">
+            <span class="spin spin-lg c-pu"></span>
+            <div class="txt-xs c-muted mt4">Submitting to processing queue…</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 1.5 Ingesting: Processing 70% -->
+    <div class="sw">
+      <div class="sl">Step 1 · State 5/11</div>
+      <div class="sn">Ingesting — Processing (70%)</div>
+      <div class="screen">
+        <div class="wnav">
+          <div class="wsteps">
+            <div class="wbtn active">⬆ Ingest &amp; Detect</div>
+            <div class="wdot"></div><div class="wbtn off">✦ Edit</div>
+            <div class="wdot"></div><div class="wbtn off">⬇ Export</div>
+          </div>
+          <div class="wpj">My Podcast</div>
+        </div>
+        <div class="sc">
+          <div class="ptitle"><div class="tiico">⬆</div>Repurpose OS</div>
+          <div class="gc">
+            <div class="lbl">YouTube URL</div>
+            <div class="row gap6 mt4">
+              <input class="inp" value="https://youtube.com/watch?v=dQw4w9WgXcQ" style="flex:1" disabled>
+              <button class="btn btn-p btn-sm" disabled><span class="spin"></span> Processing</button>
+            </div>
+            <div class="mt8">
+              <div class="row-b mb4">
+                <span class="txt-xs c-muted">Downloading &amp; transcribing…</span>
+                <span class="txt-xs c-pu fw6">70%</span>
+              </div>
+              <div class="pt"><div class="pf" style="width:70%"></div></div>
+            </div>
+          </div>
+          <div class="alt alt-bl mt8">
+            <span>ℹ</span>
+            <div>Processing video — this may take 2–5 minutes for longer content.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 1.6 Asset Ready -->
+    <div class="sw">
+      <div class="sl">Step 1 · State 6/11</div>
+      <div class="sn">Asset Ready — transcript available</div>
+      <div class="screen">
+        <div class="wnav">
+          <div class="wsteps">
+            <div class="wbtn active">⬆ Ingest &amp; Detect</div>
+            <div class="wdot"></div><div class="wbtn idle">✦ Edit</div>
+            <div class="wdot"></div><div class="wbtn off">⬇ Export</div>
+          </div>
+          <div class="wpj">My Podcast</div>
+        </div>
+        <div class="sc">
+          <div class="ptitle"><div class="tiico">⬆</div>Repurpose OS</div>
+          <div class="row-b mb8">
+            <div class="txt-sm fw6">episode-12.mp4</div>
+            <div class="bdg bdg-em">✓ Transcribed</div>
+          </div>
+          <div class="gc" style="max-height:110px;overflow:hidden;position:relative">
+            <div class="trl"><span class="trts">00:00</span><span class="trtx">Welcome back to the podcast. Today we're diving deep into content strategy for creators who want to grow their audience on short-form platforms.</span></div>
+            <div class="trl"><span class="trts">00:14</span><span class="trtx">The biggest mistake I see is people repurposing long videos without considering the hook. Every clip needs to start with tension.</span></div>
+            <div style="position:absolute;bottom:0;left:0;right:0;height:30px;background:linear-gradient(transparent,#0c0c22)"></div>
+          </div>
+          <div class="gc mt8">
+            <div class="row-b">
+              <div class="txt-xs c-muted">Highlight brief</div>
+              <button class="btn btn-g btn-sm">✦ AI Generate</button>
+            </div>
+            <textarea class="ta mt6" rows="2" placeholder="What core message should clips amplify?"></textarea>
+          </div>
+          <div class="row mt8" style="justify-content:flex-end">
+            <button class="btn btn-p btn-sm">✦ Auto-detect highlights</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 1.7 AI Prompts: Loading -->
+    <div class="sw">
+      <div class="sl">Step 1 · State 7/11</div>
+      <div class="sn">AI Prompt Generator — analyzing transcript</div>
+      <div class="screen">
+        <div class="wnav">
+          <div class="wsteps">
+            <div class="wbtn active">⬆ Ingest &amp; Detect</div>
+            <div class="wdot"></div><div class="wbtn idle">✦ Edit</div>
+            <div class="wdot"></div><div class="wbtn off">⬇ Export</div>
+          </div>
+          <div class="wpj">My Podcast</div>
+        </div>
+        <div class="sc dov" style="padding:0">
+          <div class="dlg">
+            <div class="dlgt">✦ AI Prompt Generator</div>
+            <div class="dlgd">Analyzing your transcript to craft detection prompts…</div>
+            <div class="ctr" style="min-height:100px;gap:10px">
+              <span class="spin spin-lg"></span>
+              <div class="txt-xs c-muted">Reading 4,200 words · Identifying viral patterns</div>
+            </div>
+            <div class="pt mt8"><div class="pf" style="width:55%"></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 1.8 AI Prompts: Results -->
+    <div class="sw">
+      <div class="sl">Step 1 · State 8/11</div>
+      <div class="sn">AI Prompt Generator — results ready</div>
+      <div class="screen">
+        <div class="wnav">
+          <div class="wsteps">
+            <div class="wbtn active">⬆ Ingest &amp; Detect</div>
+            <div class="wdot"></div><div class="wbtn idle">✦ Edit</div>
+            <div class="wdot"></div><div class="wbtn off">⬇ Export</div>
+          </div>
+          <div class="wpj">My Podcast</div>
+        </div>
+        <div class="sc dov" style="padding:0">
+          <div class="dlg">
+            <div class="dlgt">✦ AI Prompt Generator</div>
+            <div class="col gap6 mb10">
+              <div class="gc2"><div class="lbl mb4">Brief</div><div class="txt-xs">Clips that teach creators about hook-first content strategy</div></div>
+              <div class="row gap6">
+                <div class="gc2" style="flex:1"><div class="lbl mb4">Audience</div><div class="txt-xs">Growth-focused creators</div></div>
+                <div class="gc2" style="flex:1"><div class="lbl mb4">Tone</div><div class="txt-xs">High energy · tension → payoff</div></div>
+              </div>
+              <div class="gc2"><div class="lbl mb4">Call to Action</div><div class="txt-xs">Subscribe or click through to full episode</div></div>
+            </div>
+            <div class="row" style="gap:6px;justify-content:flex-end">
+              <button class="btn btn-o btn-sm">Dismiss</button>
+              <button class="btn btn-p btn-sm">✓ Apply All</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 1.9 Detecting Highlights -->
+    <div class="sw">
+      <div class="sl">Step 1 · State 9/11</div>
+      <div class="sn">Auto-detecting highlights</div>
+      <div class="screen">
+        <div class="wnav">
+          <div class="wsteps">
+            <div class="wbtn active">⬆ Ingest &amp; Detect</div>
+            <div class="wdot"></div><div class="wbtn idle">✦ Edit</div>
+            <div class="wdot"></div><div class="wbtn off">⬇ Export</div>
+          </div>
+          <div class="wpj">My Podcast</div>
+        </div>
+        <div class="sc">
+          <div class="ptitle"><div class="tiico">⬆</div>Repurpose OS</div>
+          <div class="gc">
+            <div class="row gap6 mb8">
+              <div class="txt-sm fw6">episode-12.mp4</div>
+              <div class="bdg bdg-em">✓ Transcribed</div>
+            </div>
+            <div class="row-b">
+              <div class="col gap4">
+                <div class="txt-xs c-muted">Analyzing transcript…</div>
+                <div class="pt" style="width:180px"><div class="pf" style="width:40%"></div></div>
+              </div>
+              <button class="btn btn-p btn-sm" disabled><span class="spin"></span> Detecting…</button>
+            </div>
+          </div>
+          <div class="ctr mt8" style="min-height:100px">
+            <span class="spin spin-lg"></span>
+            <div class="txt-xs c-muted">AI scanning for high-virality moments…</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 1.10 Clips Detected -->
+    <div class="sw">
+      <div class="sl">Step 1 · State 10/11</div>
+      <div class="sn">Clips Detected — highlights table</div>
+      <div class="screen">
+        <div class="wnav">
+          <div class="wsteps">
+            <div class="wbtn active">⬆ Ingest &amp; Detect</div>
+            <div class="wdot"></div><div class="wbtn idle">✦ Edit</div>
+            <div class="wdot"></div><div class="wbtn off">⬇ Export</div>
+          </div>
+          <div class="wpj">My Podcast</div>
+        </div>
+        <div class="sc">
+          <div class="row-b mb10">
+            <div class="row gap6"><div class="txt-sm fw6">Detected Highlights</div><div class="bdg bdg-pu">5 clips</div></div>
+            <div class="row gap6">
+              <button class="btn btn-o btn-sm">✦ Edit All</button>
+              <button class="btn btn-p btn-sm">⬇ Export All</button>
+            </div>
+          </div>
+          <div class="col gap6">
+            <div class="cpr">
+              <div class="cpth">🎬</div>
+              <div class="cpin">
+                <div class="cptitle">Hook-first content strategy reveal</div>
+                <div class="cpmeta">0:14 → 1:32 · 1m 18s</div>
+              </div>
+              <div class="virality virality-high">92</div>
+            </div>
+            <div class="cpr">
+              <div class="cpth">🎬</div>
+              <div class="cpin">
+                <div class="cptitle">The 3-second rule explained</div>
+                <div class="cpmeta">4:05 → 5:10 · 1m 05s</div>
+              </div>
+              <div class="virality virality-mid">74</div>
+            </div>
+            <div class="cpr">
+              <div class="cpth">🎬</div>
+              <div class="cpin">
+                <div class="cptitle">Algorithm vs audience debate</div>
+                <div class="cpmeta">11:40 → 12:55 · 1m 15s</div>
+              </div>
+              <div class="virality virality-low" style="color:#fb923c">58</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 1.11 Ingest Failed -->
+    <div class="sw">
+      <div class="sl">Step 1 · State 11/11</div>
+      <div class="sn">Ingest Failed — error state</div>
+      <div class="screen">
+        <div class="wnav">
+          <div class="wsteps">
+            <div class="wbtn active">⬆ Ingest &amp; Detect</div>
+            <div class="wdot"></div><div class="wbtn off">✦ Edit</div>
+            <div class="wdot"></div><div class="wbtn off">⬇ Export</div>
+          </div>
+          <div class="wpj">My Podcast</div>
+        </div>
+        <div class="sc">
+          <div class="ptitle"><div class="tiico">⬆</div>Repurpose OS</div>
+          <div class="gc">
+            <div class="lbl">YouTube URL</div>
+            <div class="row gap6 mt4">
+              <input class="inp" value="https://youtube.com/watch?v=..." style="flex:1">
+              <button class="btn btn-p btn-sm">↺ Retry</button>
+            </div>
+          </div>
+          <div class="alt alt-re mt8">
+            <span>⚠</span>
+            <div>
+              <div class="fw6 mb4">Ingestion failed</div>
+              <div>Unable to process video: Private or unavailable video. Check the URL and try again.</div>
+            </div>
+          </div>
+          <div class="db mt8" style="padding:14px">
+            <div class="txt-xs c-muted">No transcript — fix the error above and retry</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════
+     SECTION 2 — STEP 2: EDIT & ENHANCE
+═══════════════════════════════════════════════════════ -->
+<section class="sec">
+  <div class="sec-hd"><span class="chip chip-2">Step 2</span><h2>Edit &amp; Enhance</h2></div>
+  <p class="sec-sub">12 states: 6 guard states + Editor ready + 4 caption quality states + Delete dialog</p>
+  <div class="grid">
+
+    <!-- 2.1 Guard: No Projects -->
+    <div class="sw">
+      <div class="sl">Step 2 · Guard 1/6</div>
+      <div class="sn">Guard — No projects exist</div>
+      <div class="screen">
+        <div class="wnav">
+          <div class="wsteps">
+            <div class="wbtn done">✓ Ingest</div><div class="wdot"></div>
+            <div class="wbtn active">✦ Edit &amp; Enhance</div>
+            <div class="wdot"></div><div class="wbtn off">⬇ Export</div>
+          </div>
+        </div>
+        <div class="sc"><div class="ctr">
+          <div class="ico">📁</div>
+          <div class="ct">No projects yet</div>
+          <div class="cd">Create a project from the dashboard to use the editor.</div>
+          <button class="btn btn-p btn-sm mt4">→ Dashboard</button>
+        </div></div>
+      </div>
+    </div>
+
+    <!-- 2.2 Guard: No Project Selected -->
+    <div class="sw">
+      <div class="sl">Step 2 · Guard 2/6</div>
+      <div class="sn">Guard — No project in URL</div>
+      <div class="screen">
+        <div class="wnav">
+          <div class="wsteps">
+            <div class="wbtn done">✓ Ingest</div><div class="wdot"></div>
+            <div class="wbtn active">✦ Edit &amp; Enhance</div>
+            <div class="wdot"></div><div class="wbtn off">⬇ Export</div>
+          </div>
+        </div>
+        <div class="sc"><div class="ctr">
+          <div class="gc" style="width:100%;max-width:260px;text-align:left">
+            <div class="txt-sm fw6 mb6">Select a project</div>
+            <div class="txt-xs c-muted mb10">Choose a project from the selector above to open the editor.</div>
+            <select class="sel"><option>Choose a project…</option></select>
+          </div>
+        </div></div>
+      </div>
+    </div>
+
+    <!-- 2.3 Guard: Loading -->
+    <div class="sw">
+      <div class="sl">Step 2 · Guard 3/6</div>
+      <div class="sn">Guard — Loading project data</div>
+      <div class="screen">
+        <div class="wnav">
+          <div class="wsteps">
+            <div class="wbtn done">✓ Ingest</div><div class="wdot"></div>
+            <div class="wbtn active">✦ Edit &amp; Enhance</div>
+            <div class="wdot"></div><div class="wbtn off">⬇ Export</div>
+          </div>
+          <div class="wpj">My Podcast</div>
+        </div>
+        <div class="sc"><div class="ctr">
+          <div class="gc" style="width:100%;max-width:260px;text-align:center">
+            <span class="spin spin-lg mb8" style="display:block;margin:0 auto 10px"></span>
+            <div class="txt-sm fw6">Loading editor…</div>
+            <div class="txt-xs c-muted mt4">Fetching clips and captions</div>
+          </div>
+        </div></div>
+      </div>
+    </div>
+
+    <!-- 2.4 Guard: Project Unavailable -->
+    <div class="sw">
+      <div class="sl">Step 2 · Guard 4/6</div>
+      <div class="sn">Guard — Project not found / deleted</div>
+      <div class="screen">
+        <div class="wnav">
+          <div class="wsteps">
+            <div class="wbtn done">✓ Ingest</div><div class="wdot"></div>
+            <div class="wbtn active">✦ Edit &amp; Enhance</div>
+            <div class="wdot"></div><div class="wbtn off">⬇ Export</div>
+          </div>
+        </div>
+        <div class="sc"><div class="ctr">
+          <div class="ico">⚠️</div>
+          <div class="ct">Project unavailable</div>
+          <div class="cd">This project could not be found. It may have been deleted.</div>
+          <button class="btn btn-o btn-sm mt4">← Back to Ingest &amp; Detect</button>
+        </div></div>
+      </div>
+    </div>
+
+    <!-- 2.5 Guard: No Media -->
+    <div class="sw">
+      <div class="sl">Step 2 · Guard 5/6</div>
+      <div class="sn">Guard — No assets uploaded yet</div>
+      <div class="screen">
+        <div class="wnav">
+          <div class="wsteps">
+            <div class="wbtn done">✓ Ingest</div><div class="wdot"></div>
+            <div class="wbtn active">✦ Edit &amp; Enhance</div>
+            <div class="wdot"></div><div class="wbtn off">⬇ Export</div>
+          </div>
+          <div class="wpj">My Podcast</div>
+        </div>
+        <div class="sc"><div class="ctr">
+          <div class="ico">🎞️</div>
+          <div class="ct">No media found</div>
+          <div class="cd">This project has no uploaded video or audio. Go to Ingest &amp; Detect to add content.</div>
+          <a href="#" class="btn btn-o btn-sm mt4">→ Go to Ingest &amp; Detect</a>
+        </div></div>
+      </div>
+    </div>
+
+    <!-- 2.6 Guard: No Clips -->
+    <div class="sw">
+      <div class="sl">Step 2 · Guard 6/6</div>
+      <div class="sn">Guard — No clips detected yet</div>
+      <div class="screen">
+        <div class="wnav">
+          <div class="wsteps">
+            <div class="wbtn done">✓ Ingest</div><div class="wdot"></div>
+            <div class="wbtn active">✦ Edit &amp; Enhance</div>
+            <div class="wdot"></div><div class="wbtn off">⬇ Export</div>
+          </div>
+          <div class="wpj">My Podcast</div>
+        </div>
+        <div class="sc"><div class="ctr">
+          <div class="ico">✂️</div>
+          <div class="ct">No clips detected yet</div>
+          <div class="cd">Run Auto-detect highlights on the Ingest &amp; Detect page first.</div>
+          <a href="#" class="btn btn-p btn-sm mt4">← Back to Ingest &amp; Detect</a>
+        </div></div>
+      </div>
+    </div>
+
+    <!-- 2.7 Editor Ready (no clip selected) -->
+    <div class="sw">
+      <div class="sl">Step 2 · Editor</div>
+      <div class="sn">Editor Ready — no clip selected</div>
+      <div class="screen">
+        <div class="wnav">
+          <div class="wsteps">
+            <div class="wbtn done">✓ Ingest</div><div class="wdot"></div>
+            <div class="wbtn active">✦ Edit &amp; Enhance</div>
+            <div class="wdot"></div><div class="wbtn off">⬇ Export</div>
+          </div>
+          <div class="wpj">My Podcast</div>
+        </div>
+        <div class="sc" style="padding:10px">
+          <div style="display:grid;grid-template-columns:130px 1fr;gap:10px;height:220px">
+            <div class="col gap4">
+              <div class="row-b" style="padding:0 4px"><span class="txt-xs fw6">Clips</span><span class="txt-xs c-muted">0/5</span></div>
+              <div class="sbc def">Hook-first strategy<div class="cpmeta mt4">1m 18s · 92</div></div>
+              <div class="sbc def">3-second rule<div class="cpmeta mt4">1m 05s · 74</div></div>
+              <div class="sbc def">Algorithm debate<div class="cpmeta mt4">1m 15s · 58</div></div>
+            </div>
+            <div class="db" style="height:100%">
+              <span style="font-size:22px;opacity:.4">✂️</span>
+              <div class="txt-xs c-muted">Select a clip to edit</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 2.8 Clip: No Captions -->
+    <div class="sw">
+      <div class="sl">Step 2 · Caption State 1/4</div>
+      <div class="sn">Clip Active — No captions generated</div>
+      <div class="screen">
+        <div class="wnav">
+          <div class="wsteps">
+            <div class="wbtn done">✓ Ingest</div><div class="wdot"></div>
+            <div class="wbtn active">✦ Edit &amp; Enhance</div>
+            <div class="wdot"></div><div class="wbtn off">⬇ Export</div>
+          </div>
+          <div class="wpj">My Podcast</div>
+        </div>
+        <div class="sc" style="padding:10px">
+          <div style="display:grid;grid-template-columns:130px 1fr;gap:10px;height:220px">
+            <div class="col gap4">
+              <div class="sbc sel">Hook-first strategy<div class="cpmeta mt4">1m 18s · <span class="c-em">92</span></div></div>
+              <div class="sbc def">3-second rule<div class="cpmeta mt4">1m 05s · 74</div></div>
+            </div>
+            <div class="col gap8" style="overflow:hidden">
+              <div class="row-b">
+                <div class="txt-sm fw6">Hook-first strategy</div>
+                <button class="btn btn-p btn-sm">⊕ Select for export</button>
+              </div>
+              <div class="db" style="flex:1">
+                <span style="font-size:20px;opacity:.4">T</span>
+                <div class="txt-xs c-muted">No captions yet</div>
+                <button class="btn btn-g btn-sm mt4">↺ Generate Captions</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 2.9 Clip: Low Quality -->
+    <div class="sw">
+      <div class="sl">Step 2 · Caption State 2/4</div>
+      <div class="sn">Clip Active — Low quality captions</div>
+      <div class="screen">
+        <div class="wnav">
+          <div class="wsteps">
+            <div class="wbtn done">✓ Ingest</div><div class="wdot"></div>
+            <div class="wbtn active">✦ Edit &amp; Enhance</div>
+            <div class="wdot"></div><div class="wbtn off">⬇ Export</div>
+          </div>
+          <div class="wpj">My Podcast</div>
+        </div>
+        <div class="sc" style="padding:10px">
+          <div style="display:grid;grid-template-columns:130px 1fr;gap:10px;height:220px">
+            <div class="col gap4">
+              <div class="sbc sel">Hook-first strategy<div class="cpmeta mt4"><span class="c-am">⚠ Low quality</span></div></div>
+              <div class="sbc def">3-second rule</div>
+            </div>
+            <div class="col gap8" style="overflow:hidden">
+              <div class="gc2" style="border:1px solid var(--am-br);background:var(--am-bg);padding:10px">
+                <div class="row gap6 mb6">
+                  <span class="c-am">⚠</span>
+                  <div class="txt-xs c-am fw6">Low quality captions detected</div>
+                </div>
+                <div class="txt-xs c-am mb8">Transcript may be inaccurate. Regenerate for better results.</div>
+                <button class="btn btn-am btn-sm">↺ Regenerate Captions</button>
+              </div>
+              <div class="gc" style="flex:1;overflow:hidden">
+                <div class="trl"><span class="trts">00:00</span><span class="trtx" style="opacity:.5">wlcm bck to th podcast 2day were</span></div>
+                <div class="trl"><span class="trts">00:04</span><span class="trtx" style="opacity:.5">divng depe intoo content strtgy 4…</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 2.10 Clip: Needs Cleanup -->
+    <div class="sw">
+      <div class="sl">Step 2 · Caption State 3/4</div>
+      <div class="sn">Clip Active — Needs cleanup</div>
+      <div class="screen">
+        <div class="wnav">
+          <div class="wsteps">
+            <div class="wbtn done">✓ Ingest</div><div class="wdot"></div>
+            <div class="wbtn active">✦ Edit &amp; Enhance</div>
+            <div class="wdot"></div><div class="wbtn off">⬇ Export</div>
+          </div>
+          <div class="wpj">My Podcast</div>
+        </div>
+        <div class="sc" style="padding:10px">
+          <div style="display:grid;grid-template-columns:130px 1fr;gap:10px;height:220px">
+            <div class="col gap4">
+              <div class="sbc sel">Hook-first strategy<div class="cpmeta mt4"><span class="c-am">⚠ Cleanup</span></div></div>
+              <div class="sbc def">3-second rule</div>
+            </div>
+            <div class="col gap6" style="overflow:hidden">
+              <div class="alt alt-am" style="padding:7px 9px">
+                <span>⚠</span><div class="txt-xs">Some entries may need manual cleanup</div>
+              </div>
+              <div class="gc" style="flex:1;overflow:hidden">
+                <div class="row-b mb6">
+                  <span class="txt-xs fw6">Transcript</span>
+                  <div class="row gap4">
+                    <button class="btn btn-g btn-sm">↺</button>
+                    <button class="btn btn-p btn-sm">Save</button>
+                  </div>
+                </div>
+                <div class="trl"><span class="trts">00:00</span><span class="trtx" contenteditable="true">Welcome back to the podcast. Today we're diving</span></div>
+                <div class="trl"><span class="trts">00:08</span><span class="trtx" contenteditable="true">deep into content strategy for creators who want</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 2.11 Clip: Transcript Ready -->
+    <div class="sw">
+      <div class="sl">Step 2 · Caption State 4/4</div>
+      <div class="sn">Clip Active — Transcript ready (editable)</div>
+      <div class="screen">
+        <div class="wnav">
+          <div class="wsteps">
+            <div class="wbtn done">✓ Ingest</div><div class="wdot"></div>
+            <div class="wbtn active">✦ Edit &amp; Enhance</div>
+            <div class="wdot"></div><div class="wbtn idle">⬇ Export</div>
+          </div>
+          <div class="wpj">My Podcast</div>
+        </div>
+        <div class="sc" style="padding:10px">
+          <div style="display:grid;grid-template-columns:130px 1fr;gap:10px;height:220px">
+            <div class="col gap4">
+              <div class="sbc sel">Hook-first strategy<div class="cpmeta mt4"><span class="c-em">✓ Transcript ready</span></div></div>
+              <div class="sbc def">3-second rule<div class="cpmeta mt4"><span class="c-em">✓ Ready</span></div></div>
+            </div>
+            <div class="col gap6" style="overflow:hidden">
+              <div class="row-b">
+                <div class="row gap5"><span class="txt-xs fw6">Transcript</span><span class="bdg bdg-em">6 segments</span></div>
+                <div class="row gap4">
+                  <button class="btn btn-g btn-sm">↺ Undo</button>
+                  <button class="btn btn-p btn-sm">✓ Save</button>
+                </div>
+              </div>
+              <div class="gc" style="flex:1;overflow:hidden">
+                <div class="trl"><span class="trts">00:00</span><span class="trtx">Welcome back to the podcast. Today we're diving</span></div>
+                <div class="trl"><span class="trts">00:08</span><span class="trtx">deep into content strategy for creators who</span></div>
+                <div class="trl"><span class="trts">00:14</span><span class="trtx">want to grow their audience on short-form platforms.</span></div>
+              </div>
+              <button class="btn btn-p btn-sm" style="align-self:flex-end">⊕ Select for Export →</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 2.12 Delete Dialog -->
+    <div class="sw">
+      <div class="sl">Step 2 · Dialog</div>
+      <div class="sn">Delete Clip — confirmation dialog</div>
+      <div class="screen">
+        <div class="wnav">
+          <div class="wsteps">
+            <div class="wbtn done">✓ Ingest</div><div class="wdot"></div>
+            <div class="wbtn active">✦ Edit &amp; Enhance</div>
+            <div class="wdot"></div><div class="wbtn off">⬇ Export</div>
+          </div>
+          <div class="wpj">My Podcast</div>
+        </div>
+        <div class="sc dov" style="padding:0">
+          <div class="dlg">
+            <div class="dlgt">Delete clip?</div>
+            <div class="dlgd">This will permanently delete "Hook-first strategy reveal" and its captions. This action cannot be undone.</div>
+            <div class="row" style="gap:8px;justify-content:flex-end">
+              <button class="btn btn-o btn-sm">Cancel</button>
+              <button class="btn btn-re btn-sm">🗑 Delete clip</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════
+     SECTION 3 — STEP 3: EXPORT & TRANSLATE
+═══════════════════════════════════════════════════════ -->
+<section class="sec">
+  <div class="sec-hd"><span class="chip chip-3">Step 3</span><h2>Export &amp; Translate</h2></div>
+  <p class="sec-sub">14 states: 2 guard states + No clips nudge + Export lifecycle (4 states) + Format picker + Translation: no transcript, text translation, voice translation (4 job statuses)</p>
+  <div class="grid">
+
+    <!-- 3.1 Guard: No Project -->
+    <div class="sw">
+      <div class="sl">Step 3 · Guard 1/2</div>
+      <div class="sn">Guard — No project selected</div>
+      <div class="screen">
+        <div class="wnav">
+          <div class="wsteps">
+            <div class="wbtn done">✓ Ingest</div><div class="wdot"></div>
+            <div class="wbtn done">✓ Edit</div><div class="wdot"></div>
+            <div class="wbtn active">⬇ Export &amp; Translate</div>
+          </div>
+        </div>
+        <div class="sc"><div class="ctr">
+          <div class="gc" style="width:100%;max-width:260px;text-align:left">
+            <div class="txt-sm fw6 mb6">Select a project</div>
+            <div class="txt-xs c-muted mb10">Choose a project to view export options.</div>
+            <select class="sel"><option>Choose a project…</option></select>
+          </div>
+        </div></div>
+      </div>
+    </div>
+
+    <!-- 3.2 Guard: Loading -->
+    <div class="sw">
+      <div class="sl">Step 3 · Guard 2/2</div>
+      <div class="sn">Guard — Loading export data</div>
+      <div class="screen">
+        <div class="wnav">
+          <div class="wsteps">
+            <div class="wbtn done">✓ Ingest</div><div class="wdot"></div>
+            <div class="wbtn done">✓ Edit</div><div class="wdot"></div>
+            <div class="wbtn active">⬇ Export &amp; Translate</div>
+          </div>
+          <div class="wpj">My Podcast</div>
+        </div>
+        <div class="sc"><div class="ctr">
+          <span class="spin spin-lg" style="display:block;margin:0 auto 10px"></span>
+          <div class="txt-sm fw6">Loading export data…</div>
+          <div class="txt-xs c-muted mt4">Fetching clips and export history</div>
+        </div></div>
+      </div>
+    </div>
+
+    <!-- 3.3 No Clips Nudge -->
+    <div class="sw">
+      <div class="sl">Step 3 · Export</div>
+      <div class="sn">No Clips Selected — amber nudge</div>
+      <div class="screen">
+        <div class="wnav">
+          <div class="wsteps">
+            <div class="wbtn done">✓ Ingest</div><div class="wdot"></div>
+            <div class="wbtn done">✓ Edit</div><div class="wdot"></div>
+            <div class="wbtn active">⬇ Export &amp; Translate</div>
+          </div>
+          <div class="wpj">My Podcast</div>
+        </div>
+        <div class="sc">
+          <div class="row gap8 mb10">
+            <div class="stat" style="flex:1"><div class="stat-n">5</div><div class="stat-l">Total Clips</div></div>
+            <div class="stat" style="flex:1"><div class="stat-n c-am">0</div><div class="stat-l">Selected</div></div>
+            <div class="stat" style="flex:1"><div class="stat-n c-em">3</div><div class="stat-l">Exported</div></div>
+          </div>
+          <div class="alt alt-am">
+            <span>⚠</span>
+            <div style="flex:1">
+              <div class="fw6 mb4">No clips selected for export</div>
+              <div class="txt-xs mb8">Go to the Editor to select clips, or select all here.</div>
+              <div class="row gap6">
+                <button class="btn btn-am btn-sm">✓ Select All (5)</button>
+                <a href="#" class="btn btn-o btn-sm">→ Go to Editor</a>
+              </div>
+            </div>
+          </div>
+          <div class="gc mt8" style="opacity:.4">
+            <div class="row-b">
+              <div class="lbl">Output Format</div>
+              <div class="row gap6"><div class="lbl">Burn captions</div><div class="sw2"></div></div>
+            </div>
+            <button class="btn btn-g w100 mt8" disabled>⬇ Export 0 clips</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 3.4 Export Ready -->
+    <div class="sw">
+      <div class="sl">Step 3 · Export State 1/4</div>
+      <div class="sn">Export Ready — clips selected</div>
+      <div class="screen">
+        <div class="wnav">
+          <div class="wsteps">
+            <div class="wbtn done">✓ Ingest</div><div class="wdot"></div>
+            <div class="wbtn done">✓ Edit</div><div class="wdot"></div>
+            <div class="wbtn active">⬇ Export &amp; Translate</div>
+          </div>
+          <div class="wpj">My Podcast</div>
+        </div>
+        <div class="sc">
+          <div class="row gap8 mb10">
+            <div class="stat" style="flex:1"><div class="stat-n">5</div><div class="stat-l">Total Clips</div></div>
+            <div class="stat" style="flex:1"><div class="stat-n c-pu">3</div><div class="stat-l">Selected</div></div>
+            <div class="stat" style="flex:1"><div class="stat-n c-em">2</div><div class="stat-l">Exported</div></div>
+          </div>
+          <div class="gc">
+            <div class="row-b mb8">
+              <div>
+                <div class="lbl">Output Format</div>
+                <select class="sel mt4" style="width:160px"><option>Vertical · Shorts 9:16</option></select>
+              </div>
+              <div class="row gap6">
+                <div class="lbl">Burn captions</div>
+                <div class="sw2 on"></div>
+              </div>
+            </div>
+            <button class="btn btn-p w100">⬇ Export 3 clips</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 3.5 Export Queued -->
+    <div class="sw">
+      <div class="sl">Step 3 · Export State 2/4</div>
+      <div class="sn">Export Queued — waiting for worker</div>
+      <div class="screen">
+        <div class="wnav">
+          <div class="wsteps">
+            <div class="wbtn done">✓ Ingest</div><div class="wdot"></div>
+            <div class="wbtn done">✓ Edit</div><div class="wdot"></div>
+            <div class="wbtn active">⬇ Export &amp; Translate</div>
+          </div>
+          <div class="wpj">My Podcast</div>
+        </div>
+        <div class="sc">
+          <div class="exst exst-q mb8">
+            <div class="row-b mb6">
+              <div class="txt-sm fw6 c-am">⏳ Queued for rendering</div>
+              <div class="spin" style="border-color:rgba(217,119,6,.25);border-top-color:var(--amber)"></div>
+            </div>
+            <div class="txt-xs c-am">Worker is picking up your render job. This usually takes under a minute.</div>
+          </div>
+          <div class="gc" style="opacity:.6">
+            <button class="btn btn-g w100" disabled><span class="spin btn-sm"></span> Queued…</button>
+          </div>
+          <div class="alt alt-bl mt8">
+            <span>ℹ</span>
+            <div class="txt-xs">Polling for status every 2 seconds…</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 3.6 Export Rendering -->
+    <div class="sw">
+      <div class="sl">Step 3 · Export State 3/4</div>
+      <div class="sn">Export Rendering — in progress</div>
+      <div class="screen">
+        <div class="wnav">
+          <div class="wsteps">
+            <div class="wbtn done">✓ Ingest</div><div class="wdot"></div>
+            <div class="wbtn done">✓ Edit</div><div class="wdot"></div>
+            <div class="wbtn active">⬇ Export &amp; Translate</div>
+          </div>
+          <div class="wpj">My Podcast</div>
+        </div>
+        <div class="sc">
+          <div class="exst exst-r mb8">
+            <div class="row-b mb6">
+              <div class="txt-sm fw6 c-pu">⚙ Rendering in progress</div>
+              <div style="width:24px;height:24px;border-radius:50%;border:3px solid rgba(124,58,237,.2);border-top-color:var(--purple);animation:spin 1s linear infinite"></div>
+            </div>
+            <div class="txt-xs c-pu mb6">Encoding 3 clips with captions burned in…</div>
+            <div class="pt"><div class="pf" style="width:62%"></div></div>
+          </div>
+          <div class="gc" style="opacity:.6">
+            <button class="btn btn-g w100" disabled><span class="spin"></span> Rendering…</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 3.7 Export Done -->
+    <div class="sw">
+      <div class="sl">Step 3 · Export State 4a/4</div>
+      <div class="sn">Export Done — download available</div>
+      <div class="screen">
+        <div class="wnav">
+          <div class="wsteps">
+            <div class="wbtn done">✓ Ingest</div><div class="wdot"></div>
+            <div class="wbtn done">✓ Edit</div><div class="wdot"></div>
+            <div class="wbtn active">⬇ Export &amp; Translate</div>
+          </div>
+          <div class="wpj">My Podcast</div>
+        </div>
+        <div class="sc">
+          <div class="exst exst-d mb8">
+            <div class="row-b mb6">
+              <div class="txt-sm fw6 c-em">✓ Export completed</div>
+              <div class="bdg bdg-em">Done</div>
+            </div>
+            <div class="txt-xs c-em mb8">3 clips rendered · Vertical 9:16 · Captions burned</div>
+            <div class="row gap6">
+              <button class="btn btn-em btn-sm">⬇ Download</button>
+              <button class="btn btn-o btn-sm">▶ Preview</button>
+            </div>
+          </div>
+          <div class="gc mt8">
+            <div class="lbl mb6">Recent Exports</div>
+            <div class="cpr" style="gap:8px">
+              <div class="bdg bdg-em" style="flex-shrink:0">Done</div>
+              <div style="flex:1;font-size:11px">Vertical 9:16 · Captions on · 3 clips</div>
+              <div class="txt-xs c-muted">2m ago</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 3.8 Export Failed -->
+    <div class="sw">
+      <div class="sl">Step 3 · Export State 4b/4</div>
+      <div class="sn">Export Failed — error state</div>
+      <div class="screen">
+        <div class="wnav">
+          <div class="wsteps">
+            <div class="wbtn done">✓ Ingest</div><div class="wdot"></div>
+            <div class="wbtn done">✓ Edit</div><div class="wdot"></div>
+            <div class="wbtn active">⬇ Export &amp; Translate</div>
+          </div>
+          <div class="wpj">My Podcast</div>
+        </div>
+        <div class="sc">
+          <div class="exst exst-f mb8">
+            <div class="row-b mb6">
+              <div class="txt-sm fw6 c-re">✕ Export failed</div>
+              <div class="bdg bdg-re">Failed</div>
+            </div>
+            <div class="txt-xs c-re mb8">FFmpeg error: Unable to read source file. The asset may have been deleted.</div>
+            <button class="btn btn-re btn-sm">↺ Retry Export</button>
+          </div>
+          <div class="gc mt8">
+            <div class="lbl mb6">Recent Exports</div>
+            <div class="cpr" style="gap:8px">
+              <div class="bdg bdg-re" style="flex-shrink:0">Failed</div>
+              <div style="flex:1;font-size:11px">Vertical 9:16 · 3 clips</div>
+              <div class="txt-xs c-muted">1m ago</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 3.9 Format Picker -->
+    <div class="sw">
+      <div class="sl">Step 3 · Format Picker</div>
+      <div class="sn">Format Selection — radio options</div>
+      <div class="screen">
+        <div class="wnav">
+          <div class="wsteps">
+            <div class="wbtn done">✓ Ingest</div><div class="wdot"></div>
+            <div class="wbtn done">✓ Edit</div><div class="wdot"></div>
+            <div class="wbtn active">⬇ Export &amp; Translate</div>
+          </div>
+          <div class="wpj">My Podcast</div>
+        </div>
+        <div class="sc">
+          <div class="lbl mb8">Output Format</div>
+          <div class="col gap6">
+            <div class="fmo on">
+              <div class="fmth" style="width:24px;height:34px">9:16</div>
+              <div style="flex:1">
+                <div class="txt-sm fw6">Vertical / Shorts / TikTok</div>
+                <div class="txt-xs c-muted">1080×1920 · Best for YouTube Shorts &amp; TikTok</div>
+              </div>
+              <div class="ck-em" style="width:16px;height:16px;border-radius:50%;background:var(--emerald);display:flex;align-items:center;justify-content:center;font-size:9px;color:#fff">✓</div>
+            </div>
+            <div class="fmo off">
+              <div class="fmth" style="width:30px;height:30px">1:1</div>
+              <div style="flex:1">
+                <div class="txt-sm fw6">Square / Instagram</div>
+                <div class="txt-xs c-muted">1080×1080</div>
+              </div>
+            </div>
+            <div class="fmo off">
+              <div class="fmth" style="width:40px;height:24px">16:9</div>
+              <div style="flex:1">
+                <div class="txt-sm fw6">Horizontal / YouTube</div>
+                <div class="txt-xs c-muted">1920×1080</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 3.10 Translation: No Transcript -->
+    <div class="sw">
+      <div class="sl">Step 3 · Translation</div>
+      <div class="sn">Translation Card — no transcript yet</div>
+      <div class="screen">
+        <div class="wnav">
+          <div class="wsteps">
+            <div class="wbtn done">✓ Ingest</div><div class="wdot"></div>
+            <div class="wbtn done">✓ Edit</div><div class="wdot"></div>
+            <div class="wbtn active">⬇ Export &amp; Translate</div>
+          </div>
+          <div class="wpj">My Podcast</div>
+        </div>
+        <div class="sc">
+          <div class="lbl mb8">Translation</div>
+          <div class="db" style="min-height:180px">
+            <span style="font-size:24px;opacity:.4">🌐</span>
+            <div class="txt-sm fw6 c-muted">Transcript required</div>
+            <div class="txt-xs c-muted" style="max-width:200px">Ingest a video and generate a transcript before translating.</div>
+            <a href="#" class="btn btn-o btn-sm mt4">← Go to Ingest</a>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 3.11 Translation: Ready -->
+    <div class="sw">
+      <div class="sl">Step 3 · Translation</div>
+      <div class="sn">Translation Card — ready, options shown</div>
+      <div class="screen">
+        <div class="wnav">
+          <div class="wsteps">
+            <div class="wbtn done">✓ Ingest</div><div class="wdot"></div>
+            <div class="wbtn done">✓ Edit</div><div class="wdot"></div>
+            <div class="wbtn active">⬇ Export &amp; Translate</div>
+          </div>
+          <div class="wpj">My Podcast</div>
+        </div>
+        <div class="sc">
+          <div class="lbl mb8">Translation</div>
+          <div class="col gap8">
+            <div class="gc">
+              <button class="btn btn-o w100" style="justify-content:center">🌐 Translate Transcript <span class="bdg bdg-gy" style="margin-left:4px">up to 6 languages</span></button>
+            </div>
+            <div class="gc">
+              <button class="btn btn-o w100" style="justify-content:center">🎙 Translate Voice (Dub) <span class="bdg bdg-gy" style="margin-left:4px">up to 3 languages</span></button>
+            </div>
+            <div class="alt alt-bl">
+              <span>ℹ</span>
+              <div class="txt-xs">Translated SRT files can be downloaded separately. Voice dubs are rendered as new video files.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 3.12 Voice Translation: All 4 Statuses -->
+    <div class="sw">
+      <div class="sl">Step 3 · Voice Translation</div>
+      <div class="sn">Voice Jobs — all 4 status states</div>
+      <div class="screen">
+        <div class="wnav">
+          <div class="wsteps">
+            <div class="wbtn done">✓ Ingest</div><div class="wdot"></div>
+            <div class="wbtn done">✓ Edit</div><div class="wdot"></div>
+            <div class="wbtn active">⬇ Export &amp; Translate</div>
+          </div>
+          <div class="wpj">My Podcast</div>
+        </div>
+        <div class="sc">
+          <div class="lbl mb8">Voice Translations</div>
+          <div class="col gap6">
+            <!-- Queued -->
+            <div class="vti" style="border-color:rgba(217,119,6,.25)">
+              <span style="font-size:18px">🕐</span>
+              <div style="flex:1">
+                <div class="row-b"><div class="txt-sm fw6">Spanish (ES)</div><div class="bdg bdg-am">Queued</div></div>
+                <div class="txt-xs c-am mt4">Waiting in queue — processing starts shortly</div>
+              </div>
+            </div>
+            <!-- Processing -->
+            <div class="vti" style="border-color:rgba(37,99,235,.25)">
+              <span class="spin" style="border-color:rgba(37,99,235,.25);border-top-color:var(--blue)"></span>
+              <div style="flex:1">
+                <div class="row-b"><div class="txt-sm fw6">French (FR)</div><div class="bdg bdg-bl">Processing</div></div>
+                <div class="txt-xs c-bl mt4">Processing voice translation — 2-5 minutes</div>
+              </div>
+            </div>
+            <!-- Completed -->
+            <div class="vti" style="border-color:rgba(5,150,105,.25)">
+              <span style="font-size:18px">✅</span>
+              <div style="flex:1">
+                <div class="row-b"><div class="txt-sm fw6">Japanese (JP)</div><div class="bdg bdg-em">Completed</div></div>
+                <div class="row gap6 mt4">
+                  <button class="btn btn-em btn-sm">⬇ Download</button>
+                  <span class="txt-xs c-muted">Processed in 3m 42s</span>
+                </div>
+              </div>
+            </div>
+            <!-- Failed -->
+            <div class="vti" style="border-color:rgba(220,38,38,.25)">
+              <span style="font-size:18px">❌</span>
+              <div style="flex:1">
+                <div class="row-b"><div class="txt-sm fw6">German (DE)</div><div class="bdg bdg-re">Failed</div></div>
+                <div class="txt-xs c-re mt4">ElevenLabs error: Voice model unavailable for this language</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 3.13 Text Translation: In Progress -->
+    <div class="sw">
+      <div class="sl">Step 3 · Text Translation</div>
+      <div class="sn">Translate Transcript Dialog — loading</div>
+      <div class="screen">
+        <div class="wnav">
+          <div class="wsteps">
+            <div class="wbtn done">✓ Ingest</div><div class="wdot"></div>
+            <div class="wbtn done">✓ Edit</div><div class="wdot"></div>
+            <div class="wbtn active">⬇ Export &amp; Translate</div>
+          </div>
+          <div class="wpj">My Podcast</div>
+        </div>
+        <div class="sc dov" style="padding:0">
+          <div class="dlg">
+            <div class="dlgt">🌐 Translate Transcript</div>
+            <div class="dlgd">Translating into 3 languages…</div>
+            <div class="col gap6 mb12">
+              <div class="row gap6"><div class="bdg bdg-bl">Spanish</div><div class="pt" style="flex:1"><div class="pf" style="width:78%"></div></div><span class="txt-xs c-bl">78%</span></div>
+              <div class="row gap6"><div class="bdg bdg-am">French</div><div class="pt" style="flex:1"><div class="pf" style="width:25%"></div></div><span class="txt-xs c-am">25%</span></div>
+              <div class="row gap6"><div class="bdg bdg-gy">Japanese</div><div class="pt" style="flex:1"><div class="pf" style="width:0%"></div></div><span class="txt-xs c-muted">—</span></div>
+            </div>
+            <div class="alt alt-bl">
+              <span class="spin" style="flex-shrink:0"></span>
+              <div class="txt-xs">Translating transcript… Please do not close this tab.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 3.14 Text Translation: Done -->
+    <div class="sw">
+      <div class="sl">Step 3 · Text Translation</div>
+      <div class="sn">Translations List — completed SRT files</div>
+      <div class="screen">
+        <div class="wnav">
+          <div class="wsteps">
+            <div class="wbtn done">✓ Ingest</div><div class="wdot"></div>
+            <div class="wbtn done">✓ Edit</div><div class="wdot"></div>
+            <div class="wbtn active">⬇ Export &amp; Translate</div>
+          </div>
+          <div class="wpj">My Podcast</div>
+        </div>
+        <div class="sc">
+          <div class="lbl mb8">Transcript Translations</div>
+          <div class="col gap6">
+            <div class="cpr">
+              <div class="bdg bdg-em">ES</div>
+              <div class="cpin">
+                <div class="cptitle">Spanish · 4,200 words</div>
+                <div class="cpmeta">Generated Feb 19 · 2m 11s</div>
+              </div>
+              <button class="btn btn-em btn-sm">⬇ SRT</button>
+            </div>
+            <div class="cpr">
+              <div class="bdg bdg-pu">FR</div>
+              <div class="cpin">
+                <div class="cptitle">French · 4,050 words</div>
+                <div class="cpmeta">Generated Feb 19 · 1m 58s</div>
+              </div>
+              <button class="btn btn-em btn-sm">⬇ SRT</button>
+            </div>
+            <div class="cpr">
+              <div class="bdg bdg-bl">JP</div>
+              <div class="cpin">
+                <div class="cptitle">Japanese · 3,890 words</div>
+                <div class="cpmeta">Generated Feb 19 · 2m 34s</div>
+              </div>
+              <button class="btn btn-em btn-sm">⬇ SRT</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<!-- Footer -->
+<div style="text-align:center;padding:40px 0 20px;color:var(--muted);font-size:11px;border-top:1px solid var(--border);margin-top:20px">
+  Repurpose OS · Screen State Reference · 38 states across Wizard Chrome + Step 1 + Step 2 + Step 3
+  <br>Generated from live codebase · apps/web/components/repurpose/ + apps/web/app/(workspace)/repurpose/
+</div>
+
+</body>
+</html>

@@ -99,7 +99,7 @@ export class ViralityService {
       return analysis;
 
     } catch (error) {
-      logger.error('Failed to analyze clip virality', error);
+      logger.error('Failed to analyze clip virality', error as Error);
 
       // Return fallback analysis
       return this.getFallbackAnalysis();
@@ -353,7 +353,7 @@ Provide your virality analysis as JSON.`;
             });
             return { id: clip.id, analysis };
           } catch (error) {
-            logger.error(`Failed to analyze clip ${clip.id}`, error);
+            logger.error(`Failed to analyze clip ${clip.id}`, error as Error);
             return { id: clip.id, analysis: this.getFallbackAnalysis() };
           }
         })

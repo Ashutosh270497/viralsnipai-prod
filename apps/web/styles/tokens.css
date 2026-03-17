@@ -1,77 +1,79 @@
 :root {
-  /* Brand colors - Imagen theme (violet/purple/fuchsia) */
-  --ui-color-primary-50: #faf5ff;
-  --ui-color-primary-100: #f3e8ff;
-  --ui-color-primary-200: #e9d5ff;
-  --ui-color-primary-300: #d8b4fe;
-  --ui-color-primary-400: #c084fc;
-  --ui-color-primary-500: #a855f7; /* core violet */
-  --ui-color-primary-600: #9333ea;
-  --ui-color-primary-700: #7e22ce;
-  --ui-color-primary-800: #6b21a8;
-  --ui-color-primary-900: #581c87;
+  /* Brand colors — Terminal Pro (emerald green) */
+  --ui-color-primary-50:  #ecfdf5;
+  --ui-color-primary-100: #d1fae5;
+  --ui-color-primary-200: #a7f3d0;
+  --ui-color-primary-300: #6ee7b7;
+  --ui-color-primary-400: #34d399;
+  --ui-color-primary-500: #10b981; /* core emerald */
+  --ui-color-primary-600: #059669;
+  --ui-color-primary-700: #047857;
+  --ui-color-primary-800: #065f46;
+  --ui-color-primary-900: #064e3b;
 
-  --ui-color-accent-100: #fae8ff;
-  --ui-color-accent-200: #f5d0fe;
-  --ui-color-accent-300: #f0abfc;
-  --ui-color-accent-400: #e879f9;
-  --ui-color-accent-500: #d946ef; /* core fuchsia */
-  --ui-color-accent-600: #c026d3;
+  /* Accent — teal (complementary to emerald) */
+  --ui-color-accent-100: #ccfbf1;
+  --ui-color-accent-200: #99f6e4;
+  --ui-color-accent-300: #5eead4;
+  --ui-color-accent-400: #2dd4bf;
+  --ui-color-accent-500: #14b8a6; /* core teal */
+  --ui-color-accent-600: #0d9488;
 
-  --ui-color-success-500: #00d27a;
-  --ui-color-warning-500: #f5a524;
-  --ui-color-error-500: #f04438;
+  --ui-color-success-500: #10b981;
+  --ui-color-warning-500: #f59e0b;
+  --ui-color-error-500:   #ef4444;
 
-  /* Neutral palette */
-  --ui-color-neutral-50: #f8fafc;
-  --ui-color-neutral-100: #f1f5f9;
-  --ui-color-neutral-200: #e2e8f0;
-  --ui-color-neutral-300: #cbd5e1;
-  --ui-color-neutral-400: #94a3b8;
-  --ui-color-neutral-500: #64748b;
-  --ui-color-neutral-600: #475569;
-  --ui-color-neutral-700: #334155;
-  --ui-color-neutral-800: #1e293b;
-  --ui-color-neutral-900: #0f172a;
+  /* Neutral palette — pure grays, no tint */
+  --ui-color-neutral-50:  #fafafa;
+  --ui-color-neutral-100: #f5f5f5;
+  --ui-color-neutral-200: #e5e5e5;
+  --ui-color-neutral-300: #d4d4d4;
+  --ui-color-neutral-400: #a3a3a3;
+  --ui-color-neutral-500: #737373;
+  --ui-color-neutral-600: #525252;
+  --ui-color-neutral-700: #404040;
+  --ui-color-neutral-800: #262626;
+  --ui-color-neutral-900: #171717;
 
   /* Typography */
   --ui-font-family-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  --ui-font-weight-regular: 400;
-  --ui-font-weight-medium: 500;
+  --ui-font-family-mono: "IBM Plex Mono", "JetBrains Mono", ui-monospace, monospace;
+  --ui-font-weight-regular:  400;
+  --ui-font-weight-medium:   500;
   --ui-font-weight-semibold: 600;
-  --ui-font-weight-bold: 700;
+  --ui-font-weight-bold:     700;
 
-  --ui-font-size-display: 48px;
-  --ui-line-height-display: 56px;
-  --ui-font-size-h1: 36px;
-  --ui-line-height-h1: 44px;
-  --ui-font-size-h2: 28px;
-  --ui-line-height-h2: 36px;
-  --ui-font-size-h3: 22px;
-  --ui-line-height-h3: 30px;
-  --ui-font-size-body: 16px;
-  --ui-line-height-body: 24px;
-  --ui-font-size-small: 13px;
-  --ui-line-height-small: 20px;
+  --ui-font-size-display:    48px;
+  --ui-line-height-display:  56px;
+  --ui-font-size-h1:         36px;
+  --ui-line-height-h1:       44px;
+  --ui-font-size-h2:         28px;
+  --ui-line-height-h2:       36px;
+  --ui-font-size-h3:         22px;
+  --ui-line-height-h3:       30px;
+  --ui-font-size-body:       16px;
+  --ui-line-height-body:     24px;
+  --ui-font-size-small:      13px;
+  --ui-line-height-small:    20px;
 
   /* Radii */
-  --ui-radius-sm: 10px;
-  --ui-radius-md: 16px;
-  --ui-radius-lg: 20px;
+  --ui-radius-sm: 8px;
+  --ui-radius-md: 12px;
+  --ui-radius-lg: 16px;
 
   /* Shadows */
-  --ui-shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.08);
-  --ui-shadow-md: 0 12px 32px rgba(15, 23, 42, 0.14);
-  --ui-shadow-lg: 0 24px 48px rgba(15, 23, 42, 0.18);
+  --ui-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.08);
+  --ui-shadow-md: 0 8px 24px rgba(0, 0, 0, 0.12);
+  --ui-shadow-lg: 0 20px 48px rgba(0, 0, 0, 0.18);
 
   /* Spacing (4pt scale) */
-  --ui-space-1: 4px;
-  --ui-space-2: 8px;
-  --ui-space-3: 12px;
-  --ui-space-4: 16px;
-  --ui-space-5: 20px;
-  --ui-space-6: 24px;
-  --ui-space-8: 32px;
+  --ui-space-1:  4px;
+  --ui-space-2:  8px;
+  --ui-space-3:  12px;
+  --ui-space-4:  16px;
+  --ui-space-5:  20px;
+  --ui-space-6:  24px;
+  --ui-space-8:  32px;
   --ui-space-10: 40px;
   --ui-space-12: 48px;
   --ui-page-gutter-min: 24px;
@@ -79,22 +81,31 @@
 }
 
 .dark {
-  --ui-color-primary-200: #c084fc;
-  --ui-color-primary-400: #a855f7;
-  --ui-color-primary-500: #9333ea;
-  --ui-color-accent-500: #d946ef;
-  --ui-color-neutral-50: #0f172a;
-  --ui-color-neutral-100: #1e293b;
-  --ui-color-neutral-200: #273248;
-  --ui-color-neutral-300: #2f3b54;
-  --ui-color-neutral-400: #4d6486;
-  --ui-color-neutral-500: #83a0c5;
-  --ui-color-neutral-600: #b6c3dc;
-  --ui-color-neutral-700: #d0d9eb;
-  --ui-color-neutral-800: #e5eaf5;
-  --ui-color-neutral-900: #f5f7fb;
+  /* Primary — emerald, brighter for dark bg legibility */
+  --ui-color-primary-200: #6ee7b7;
+  --ui-color-primary-400: #34d399;
+  --ui-color-primary-500: #10b981;  /* core emerald — unchanged */
+  --ui-color-accent-500:  #14b8a6;  /* teal accent for dark bg */
 
-  --ui-shadow-sm: 0 1px 2px rgba(8, 145, 178, 0.25);
-  --ui-shadow-md: 0 12px 32px rgba(15, 23, 42, 0.4);
-  --ui-shadow-lg: 0 24px 56px rgba(15, 23, 42, 0.55);
+  /* Neutral — pure black/gray surface scale (no color tint) */
+  --ui-color-neutral-50:  #080808;  /* base background */
+  --ui-color-neutral-100: #0f0f0f;  /* card / sidebar */
+  --ui-color-neutral-200: #161616;  /* secondary surface */
+  --ui-color-neutral-300: #242424;  /* border / divider */
+  --ui-color-neutral-400: #3a3a3a;  /* disabled / subtle */
+  --ui-color-neutral-500: #737373;  /* muted foreground */
+  --ui-color-neutral-600: #a3a3a3;  /* secondary text */
+  --ui-color-neutral-700: #d4d4d4;  /* body text */
+  --ui-color-neutral-800: #e5e5e5;  /* emphasis text */
+  --ui-color-neutral-900: #f5f5f5;  /* primary foreground */
+
+  /* Shadows — pure dark, emerald-tinted glow available as utility */
+  --ui-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.6);
+  --ui-shadow-md: 0 8px 24px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255,255,255,0.03);
+  --ui-shadow-lg: 0 20px 48px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(255,255,255,0.03);
+
+  /* Radii — slightly tighter for dense terminal feel */
+  --ui-radius-sm: 6px;
+  --ui-radius-md: 10px;
+  --ui-radius-lg: 14px;
 }

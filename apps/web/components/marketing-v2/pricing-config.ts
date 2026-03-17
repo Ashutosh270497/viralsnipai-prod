@@ -1,64 +1,162 @@
 export type SupportedCurrency = "USD" | "INR";
-export type BillingCycle = "monthly" | "yearly";
+export type MarketingPlanId = "free" | "plus" | "pro";
 
 export interface PricingPlan {
-  id: string;
+  id: MarketingPlanId;
   name: string;
   tagline: string;
-  monthly: Record<SupportedCurrency, number>;
   features: string[];
   isFeatured?: boolean;
+  priceUSD: number;
+  priceINR: number;
 }
 
-export const YEARLY_DISCOUNT = 0.3; // 30% off
+export type PricingComparisonRow = {
+  feature: string;
+  free: string;
+  plus: string;
+  pro: string;
+};
 
 export const PRICING_PLANS: PricingPlan[] = [
   {
-    id: "starter",
-    name: "Starter",
-    tagline: "Solo creators",
-    monthly: { USD: 9, INR: 699 },
-    features: ["Auto clipping up to 30 minutes", "Smart captions & hook highlights", "1 workspace & brand kit"]
+    id: "free",
+    name: "Free",
+    tagline: "Experience the viral radar and AI drafting — no card required.",
+    priceUSD: 0,
+    priceINR: 0,
+    features: [
+      "1 tracked X account",
+      "10 viral feed refreshes / month",
+      "5 AI drafts saved",
+      "5 hook generations / month",
+      "Browser extension (read-only captures)",
+    ],
   },
   {
-    id: "growth",
-    name: "Growth",
-    tagline: "Popular choice",
-    monthly: { USD: 18, INR: 1499 },
+    id: "plus",
+    name: "Plus",
+    tagline: "Full Discover, Create, and Publish for active X operators.",
+    priceUSD: 9.99,
+    priceINR: 499,
+    isFeatured: true,
     features: [
-      "Everything in Starter",
-      "Schedule 10 posts per week",
-      "3 collaborators with approvals"
+      "5 tracked accounts",
+      "Unlimited drafts and viral refreshes",
+      "Thread Builder + AI hooks and templates",
+      "Scheduling — up to 50 posts / month",
+      "Research Copilot, Variant Lab, and browser extension reply assist",
     ],
-    isFeatured: true
   },
   {
     id: "pro",
     name: "Pro",
-    tagline: "Studios & agencies",
-    monthly: { USD: 45, INR: 3599 },
+    tagline: "Maximum limits, Auto-DM, deep analytics, and developer tools.",
+    priceUSD: 29.99,
+    priceINR: 2199,
     features: [
-      "Everything in Growth",
-      "Unlimited brand kits & exports",
-      "Priority support & API access"
-    ]
-  }
+      "15 tracked accounts",
+      "Unlimited scheduling + Auto-DM automation",
+      "WinnerLoop evergreen automation",
+      "30-day analytics and AI Growth Planner",
+      "Relationships CRM and API / webhooks",
+    ],
+  },
+];
+
+export const PRICING_COMPARISON_ROWS: PricingComparisonRow[] = [
+  {
+    feature: "Tracked accounts",
+    free: "1",
+    plus: "5",
+    pro: "15",
+  },
+  {
+    feature: "Viral Radar refreshes",
+    free: "10 / month",
+    plus: "Unlimited",
+    pro: "Unlimited",
+  },
+  {
+    feature: "AI drafts saved",
+    free: "5",
+    plus: "Unlimited",
+    pro: "Unlimited",
+  },
+  {
+    feature: "Hook generations",
+    free: "5 / month",
+    plus: "Unlimited",
+    pro: "Unlimited",
+  },
+  {
+    feature: "Thread Builder",
+    free: "Not included",
+    plus: "Included",
+    pro: "Included",
+  },
+  {
+    feature: "Browser Extension",
+    free: "Read-only captures",
+    plus: "Reply assist + remix",
+    pro: "Reply assist + remix",
+  },
+  {
+    feature: "Scheduling",
+    free: "Not included",
+    plus: "50 posts / month",
+    pro: "Unlimited",
+  },
+  {
+    feature: "Auto-DM automation",
+    free: "Not included",
+    plus: "Not included",
+    pro: "Included",
+  },
+  {
+    feature: "WinnerLoop evergreen",
+    free: "Not included",
+    plus: "Not included",
+    pro: "Included",
+  },
+  {
+    feature: "Analytics window",
+    free: "Not included",
+    plus: "7 days",
+    pro: "30 days",
+  },
+  {
+    feature: "Research Copilot",
+    free: "Not included",
+    plus: "Included",
+    pro: "Included",
+  },
+  {
+    feature: "Variant Lab",
+    free: "Not included",
+    plus: "Included",
+    pro: "Included",
+  },
+  {
+    feature: "Relationships CRM",
+    free: "Not included",
+    plus: "Basic",
+    pro: "Full (follow / nurture / track)",
+  },
+  {
+    feature: "Growth Planner AI",
+    free: "Not included",
+    plus: "Not included",
+    pro: "Included",
+  },
+  {
+    feature: "API + Webhooks",
+    free: "Not included",
+    plus: "Not included",
+    pro: "Included",
+  },
 ];
 
 export function getMonthlyPrice(plan: PricingPlan, currency: SupportedCurrency) {
-  return plan.monthly[currency];
-}
-
-export function getYearlyPerMonth(plan: PricingPlan, currency: SupportedCurrency) {
-  const monthly = getMonthlyPrice(plan, currency);
-  const discounted = monthly * (1 - YEARLY_DISCOUNT);
-  const precision = currency === "USD" ? 2 : 0;
-  return Number.parseFloat(discounted.toFixed(precision));
-}
-
-export function getYearlyTotal(plan: PricingPlan, currency: SupportedCurrency) {
-  const perMonth = getYearlyPerMonth(plan, currency);
-  const total = perMonth * 12;
-  const precision = currency === "USD" ? 2 : 0;
-  return Number.parseFloat(total.toFixed(precision));
+  return currency === "USD" ? plan.priceUSD : plan.priceINR;
 }

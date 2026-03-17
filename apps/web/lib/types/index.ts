@@ -17,6 +17,11 @@ export type {
   Clip,
   ViralityFactors,
   EnhancementData,
+  ClipQualitySignals,
+  ClipReframePlan,
+  ClipOutputRatio,
+  ReframeMode,
+  VideoGeometry,
   ClipSegment,
   CompositeClip,
   CompositionStrategy,
@@ -29,6 +34,7 @@ export type {
 export type {
   Project,
   Asset,
+  ExportStatus,
   ExportRecord,
   ProjectSummary
 } from './project.types';

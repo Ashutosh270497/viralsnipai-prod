@@ -118,7 +118,7 @@ export async function POST(request: Request) {
         providerVoiceId: result.voiceId,
         samplePath: savedSample.url,
         sampleStoragePath: savedSample.storagePath,
-        metadata: result.other ?? undefined
+        metadata: (result.other as any) ?? undefined
       }
     });
 

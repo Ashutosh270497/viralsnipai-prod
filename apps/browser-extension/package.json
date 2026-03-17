@@ -1,0 +1,6 @@
+{
+  "name": "snipradar-browser-extension",
+  "private": true,
+  "version": "0.1.0",
+  "description": "SnipRadar browser extension for X capture and research inbox workflows"
+}

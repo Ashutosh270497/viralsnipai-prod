@@ -141,8 +141,15 @@ export function useAssetVoiceTranslations(assetId: string | null) {
       const data = await response.json();
 
       if (isMountedRef.current) {
-        setTranslations(data.data.translations);
-        setSourceLanguage(data.data.sourceLanguage);
+        const nextTranslations = Array.isArray(data?.data?.translations)
+          ? (data.data.translations as VoiceTranslation[])
+          : [];
+        setTranslations((prev) =>
+          areTranslationsEqual(prev, nextTranslations) ? prev : nextTranslations
+        );
+        if (typeof data?.data?.sourceLanguage === 'string' && data.data.sourceLanguage.length > 0) {
+          setSourceLanguage(data.data.sourceLanguage);
+        }
       }
     } catch (err) {
       // Ignore abort errors
@@ -164,22 +171,32 @@ export function useAssetVoiceTranslations(assetId: string | null) {
     isMountedRef.current = true;
     fetchTranslations();
 
-    // Set up polling for active translations
-    const pollInterval = setInterval(() => {
-      if (translations.some((t) => t.status === 'queued' || t.status === 'processing')) {
-        fetchTranslations();
-      }
-    }, 5000); // Poll every 5 seconds if there are active translations
-
     return () => {
       isMountedRef.current = false;
-      clearInterval(pollInterval);
       // Cancel any pending requests on unmount
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
       }
     };
-  }, [fetchTranslations, translations]);
+  }, [fetchTranslations]);
+
+  const hasActiveTranslations = translations.some(
+    (translation) => translation.status === 'queued' || translation.status === 'processing'
+  );
+
+  useEffect(() => {
+    if (!hasActiveTranslations) {
+      return;
+    }
+
+    const pollInterval = setInterval(() => {
+      fetchTranslations();
+    }, 5000);
+
+    return () => {
+      clearInterval(pollInterval);
+    };
+  }, [fetchTranslations, hasActiveTranslations]);
 
   return {
     translations,
@@ -188,4 +205,27 @@ export function useAssetVoiceTranslations(assetId: string | null) {
     error,
     refetch: fetchTranslations,
   };
+}
+
+function areTranslationsEqual(current: VoiceTranslation[], next: VoiceTranslation[]) {
+  if (current.length !== next.length) {
+    return false;
+  }
+
+  for (let index = 0; index < current.length; index += 1) {
+    const a = current[index];
+    const b = next[index];
+
+    if (
+      a.id !== b.id ||
+      a.status !== b.status ||
+      a.updatedAt !== b.updatedAt ||
+      a.error !== b.error ||
+      a.audioUrl !== b.audioUrl
+    ) {
+      return false;
+    }
+  }
+
+  return true;
 }

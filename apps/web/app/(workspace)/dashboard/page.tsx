@@ -1,120 +1,165 @@
 import { Suspense } from "react";
+import { redirect } from "next/navigation";
+import { Lightbulb, FileText, TrendingUp, Target, ArrowRight, Zap } from "lucide-react";
+import Link from "next/link";
 
-import { getCurrentUser } from "@/lib/auth";
-import { listUserProjects } from "@/lib/projects";
-import { NewProjectDialog } from "@/components/projects/new-project-dialog";
-import { ProjectCard } from "@/components/projects/project-card";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { getUnifiedActivityData } from "@/lib/activity-center";
+import { getCurrentUser, getCurrentSession } from "@/lib/auth";
+import { getDashboardData } from "@/lib/analytics/metrics";
+import { ActivityCenterPanel } from "@/components/activity/activity-center-panel";
+import { MetricCard } from "@/components/dashboard/metric-card";
+import { RecentActivityList } from "@/components/dashboard/recent-activity-list";
+import { UsageMeter } from "@/components/dashboard/usage-meter";
+import { QuickActions } from "@/components/dashboard/quick-actions";
+import { InsightsPanel } from "@/components/dashboard/insights-panel";
+import { ActivationProgressCard } from "@/components/dashboard/activation-progress-card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { isUiV2Enabled } from "@/lib/feature-flags";
-import { ProjectDashboardV2 } from "@/components/projects-v2/project-dashboard";
 
 export default async function DashboardPage() {
   const user = await getCurrentUser();
-  if (!user) {
-    return null;
+  if (!user) return null;
+
+  const session = await getCurrentSession();
+  if (session?.user && !session.user.onboardingCompleted) {
+    redirect("/onboarding");
   }
 
-  const projects = await listUserProjects(user.id);
-  const stats = {
-    clips: projects.reduce((acc, project) => acc + project.clips.length, 0),
-    exports: projects.reduce(
-      (acc, project) => acc + project.exports.filter((exp) => exp.status === "done").length,
-      0
-    )
-  };
+  const [dashboardData, activityData] = await Promise.all([
+    getDashboardData(user.id),
+    getUnifiedActivityData(user.id, { limit: 6 }),
+  ]);
+  const { metrics, recentActivity, usageStats, insights, onboarding, activation } = dashboardData;
 
-  const uiV2 = isUiV2Enabled();
-
-  if (uiV2) {
-    return (
-      <div className="space-y-8">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <h1 className="text-3xl font-semibold tracking-tight">Welcome back, {user.name ?? "Creator"}.</h1>
-            <p className="text-muted-foreground">
-              Keep your pipeline moving. Start with Hooksmith, drop a long-form video, and ship fresh clips.
-            </p>
-          </div>
-          <NewProjectDialog />
-        </div>
-        <div className="grid gap-4 md:grid-cols-3">
-          <MetricCard label="Active projects" value={projects.length} />
-          <MetricCard label="Clips ready" value={stats.clips} />
-          <MetricCard label="Exports delivered" value={stats.exports} />
-        </div>
-        <ProjectDashboardV2 projects={projects} />
-      </div>
-    );
-  }
+  const firstName = user.name?.split(" ")[0] ?? "Creator";
+  const hour = new Date().getHours();
+  const greeting =
+    hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
 
   return (
-    <div className="space-y-8">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+    <div className="space-y-6 pb-10 animate-enter">
+      {/* ── Hero header ─────────────────────────────────────────── */}
+      <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-semibold tracking-tight">Welcome back, {user.name ?? "Creator"}.</h1>
-          <p className="text-muted-foreground">
-            Keep your pipeline moving. Start with Hooksmith, drop a long-form video, and ship fresh clips.
+          <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground/50 mb-1">
+            {greeting}
+          </p>
+          <h1 className="text-2xl font-bold tracking-tight text-foreground">
+            {firstName}&apos;s Studio
+          </h1>
+          <p className="mt-1 text-sm text-muted-foreground/70">
+            Here&apos;s what&apos;s happening with your content today
           </p>
         </div>
-        <NewProjectDialog />
-      </div>
 
-      <div className="grid gap-4 md:grid-cols-3">
-        <Card className="border-border/40 bg-card/50 backdrop-blur-sm shadow-sm rounded-3xl">
-          <CardHeader>
-            <CardTitle className="text-sm font-medium text-muted-foreground">Active projects</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <span className="text-3xl font-semibold bg-gradient-to-r from-violet-600 via-purple-600 to-fuchsia-600 bg-clip-text text-transparent">{projects.length}</span>
-          </CardContent>
-        </Card>
-        <Card className="border-border/40 bg-card/50 backdrop-blur-sm shadow-sm rounded-3xl">
-          <CardHeader>
-            <CardTitle className="text-sm font-medium text-muted-foreground">Clips ready</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <span className="text-3xl font-semibold bg-gradient-to-r from-violet-600 via-purple-600 to-fuchsia-600 bg-clip-text text-transparent">{stats.clips}</span>
-          </CardContent>
-        </Card>
-        <Card className="border-border/40 bg-card/50 backdrop-blur-sm shadow-sm rounded-3xl">
-          <CardHeader>
-            <CardTitle className="text-sm font-medium text-muted-foreground">Exports delivered</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <span className="text-3xl font-semibold bg-gradient-to-r from-violet-600 via-purple-600 to-fuchsia-600 bg-clip-text text-transparent">{stats.exports}</span>
-          </CardContent>
-        </Card>
-      </div>
-
-      <Suspense
-        fallback={
-          <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
-            {Array.from({ length: 3 }).map((_, index) => (
-              <Skeleton key={index} className="h-48 w-full rounded-xl" />
-            ))}
-          </div>
-        }
-      >
-        <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
-          {projects.map((project) => (
-            <ProjectCard key={project.id} project={project} />
-          ))}
+        {/* Quick-launch CTAs */}
+        <div className="hidden items-center gap-2 md:flex">
+          <Link
+            href="/hooksmith"
+            className="inline-flex items-center gap-1.5 rounded-lg bg-primary/[0.1] px-3 py-2 text-xs font-semibold text-primary ring-1 ring-primary/20 transition-all hover:bg-primary/[0.16] hover:ring-primary/40"
+          >
+            <Zap className="h-3.5 w-3.5" />
+            New Hook
+          </Link>
+          <Link
+            href="/repurpose"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-border/60 bg-card/60 px-3 py-2 text-xs font-semibold text-foreground/80 transition-all hover:border-border hover:bg-card"
+          >
+            Repurpose Video
+            <ArrowRight className="h-3 w-3" />
+          </Link>
         </div>
-      </Suspense>
-    </div>
-  );
-}
+      </div>
 
-function MetricCard({ label, value }: { label: string; value: number }) {
-  return (
-    <Card className="border-border/40 bg-card/50 backdrop-blur-sm shadow-sm rounded-3xl">
-      <CardHeader>
-        <CardTitle className="text-sm font-medium text-muted-foreground">{label}</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <span className="text-3xl font-semibold bg-gradient-to-r from-violet-600 via-purple-600 to-fuchsia-600 bg-clip-text text-transparent">{value}</span>
-      </CardContent>
-    </Card>
+      {/* ── Key Metrics ─────────────────────────────────────────── */}
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 stagger">
+        <MetricCard
+          icon={Lightbulb}
+          label="Content Ideas"
+          value={metrics.totalIdeas}
+          change={metrics.weekOverWeekGrowth}
+          changeLabel="vs last week"
+        />
+        <MetricCard
+          icon={FileText}
+          label="Scripts Created"
+          value={metrics.scriptedIdeas}
+        />
+        <MetricCard
+          icon={TrendingUp}
+          label="Published"
+          value={metrics.publishedIdeas}
+        />
+        <MetricCard
+          icon={Target}
+          label="Avg Virality Score"
+          value={metrics.averageViralityScore}
+        />
+      </div>
+
+      {/* ── Main 2-col grid ─────────────────────────────────────── */}
+      <div className="grid gap-5 lg:grid-cols-3">
+        {/* Left column — 2/3 */}
+        <div className="space-y-5 lg:col-span-2">
+          <QuickActions />
+
+          <Suspense
+            fallback={
+              <div className="space-y-3">
+                <Skeleton className="h-40 w-full" />
+              </div>
+            }
+          >
+            <RecentActivityList activities={recentActivity} />
+          </Suspense>
+
+          <ActivityCenterPanel
+            data={activityData}
+            title="Operations & Jobs"
+            description="Background work from Creator Studio, RepurposeOS, and Transcribe"
+            maxItems={6}
+            showViewAll
+            emptyTitle="No operations yet"
+            emptyDescription="Long-running jobs and workflow activity will appear here once you start creating."
+          />
+        </div>
+
+        {/* Right column — 1/3 */}
+        <div className="space-y-4">
+          <ActivationProgressCard activation={activation} />
+          <UsageMeter usageStats={usageStats} subscriptionTier={metrics.subscriptionTier} />
+          <InsightsPanel insights={insights} onboarding={onboarding} />
+        </div>
+      </div>
+
+      {/* ── Stats footer ────────────────────────────────────────── */}
+      <div className="rounded-xl border border-border/40 bg-card/40 p-4">
+        <div className="grid gap-4 text-center md:grid-cols-3 divide-y md:divide-y-0 md:divide-x divide-border/30">
+          <div className="pb-3 md:pb-0">
+            <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/50">
+              Top Niche
+            </p>
+            <p className="mt-1.5 text-sm font-semibold text-foreground">
+              {metrics.mostPopularNiche || "—"}
+            </p>
+          </div>
+          <div className="py-3 md:py-0">
+            <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/50">
+              Top Keyword
+            </p>
+            <p className="mt-1.5 text-sm font-semibold text-foreground">
+              {metrics.topKeyword || "—"}
+            </p>
+          </div>
+          <div className="pt-3 md:pt-0">
+            <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/50">
+              Current Plan
+            </p>
+            <p className="mt-1.5 text-sm font-semibold capitalize text-primary">
+              {metrics.subscriptionTier}
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }

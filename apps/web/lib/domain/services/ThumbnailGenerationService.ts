@@ -138,10 +138,8 @@ export class ThumbnailGenerationService {
       });
 
       // Throw error so caller can handle it
-      throw AppError.internal(
-        'Thumbnail generation failed',
-        error instanceof Error ? error.message : undefined
-      );
+      const errorMessage = error instanceof Error ? `: ${error.message}` : '';
+      throw AppError.internal(`Thumbnail generation failed${errorMessage}`);
     }
   }
 

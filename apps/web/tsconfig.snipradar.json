@@ -1,0 +1,24 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true
+  },
+  "include": [
+    "app/api/snipradar/**/*.ts",
+    "app/**/snipradar/**/*.tsx",
+    "components/snipradar/**/*.tsx",
+    "lib/snipradar/**/*.ts",
+    "lib/inngest/functions.ts",
+    "lib/integrations/x-api.ts",
+    "lib/server-timing.ts",
+    "lib/prisma.ts",
+    "lib/auth.ts",
+    "lib/logger.ts",
+    "types/**/*.d.ts"
+  ],
+  "exclude": [
+    "**/*.test.ts",
+    "**/*.test.tsx",
+    "**/__tests__/**"
+  ]
+}

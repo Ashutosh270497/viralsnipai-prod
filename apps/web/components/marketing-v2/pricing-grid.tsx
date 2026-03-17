@@ -1,21 +1,18 @@
 "use client";
 
-import Link from "next/link";
 import { useMemo } from "react";
+import { useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
 import { ArrowRight, Check } from "lucide-react";
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 import {
   PRICING_PLANS,
   type SupportedCurrency,
-  type BillingCycle,
   getMonthlyPrice,
-  getYearlyPerMonth,
-  getYearlyTotal,
-  YEARLY_DISCOUNT
 } from "./pricing-config";
 
 const currencyFormatters: Record<SupportedCurrency, Intl.NumberFormat> = {
@@ -25,30 +22,34 @@ const currencyFormatters: Record<SupportedCurrency, Intl.NumberFormat> = {
 
 export interface PricingGridProps {
   currency: SupportedCurrency;
-  billingCycle: BillingCycle;
-  onSelectPlan?: (planId: string, cycle: BillingCycle) => void;
+  onSelectPlan?: (planId: string) => void;
 }
 
-export function PricingGrid({ currency, billingCycle, onSelectPlan }: PricingGridProps) {
+export function PricingGrid({ currency, onSelectPlan }: PricingGridProps) {
+  const router = useRouter();
+  const { data: session, status } = useSession();
   const formattedPlans = useMemo(
     () =>
       PRICING_PLANS.map((plan) => {
-        const monthly = getMonthlyPrice(plan, currency);
-        const yearlyPerMonth = getYearlyPerMonth(plan, currency);
-        const yearlyTotal = getYearlyTotal(plan, currency);
-        const price = billingCycle === "monthly" ? monthly : yearlyPerMonth;
-        const billedLabel = billingCycle === "monthly" ? null : `${formatPrice(yearlyTotal, currency)} billed yearly`;
-
         return {
           ...plan,
-          price,
-          billedLabel,
-          monthly,
-          yearlyPerMonth
+          price: getMonthlyPrice(plan, currency),
         };
       }),
-    [billingCycle, currency]
+    [currency]
   );
+
+  function handlePlanSelect(planId: string) {
+    onSelectPlan?.(planId);
+
+    const href = `/billing?plan=${planId}&currency=${currency}`;
+    if (status === "authenticated" && session?.user?.id) {
+      router.push(href);
+      return;
+    }
+
+    router.push(`/signin?callbackUrl=${encodeURIComponent(href)}`);
+  }
 
   return (
     <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
@@ -66,7 +67,7 @@ export function PricingGrid({ currency, billingCycle, onSelectPlan }: PricingGri
             </span>
           ) : null}
           <div className="space-y-3">
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#4C8EFF]">⚡ Save {Math.round(YEARLY_DISCOUNT * 100)}%</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#4C8EFF]">Monthly pricing</p>
             <div>
               <h3 className="text-2xl font-semibold text-[#0E172C] dark:text-white">{plan.name}</h3>
               <p className="mt-1 text-sm text-slate-500 dark:text-slate-300">{plan.tagline}</p>
@@ -74,13 +75,9 @@ export function PricingGrid({ currency, billingCycle, onSelectPlan }: PricingGri
             <div className="space-y-1">
               <div className="flex items-baseline gap-2">
                 <span className="text-4xl font-bold text-[#0E172C] dark:text-white">{formatPrice(plan.price, currency)}</span>
-                <span className="text-sm font-medium text-slate-500 dark:text-slate-300">
-                  /month{billingCycle === "yearly" ? " billed yearly" : ""}
-                </span>
+                <span className="text-sm font-medium text-slate-500 dark:text-slate-300">/month</span>
               </div>
-              {plan.billedLabel ? (
-                <p className="text-xs text-slate-400 dark:text-slate-500">{plan.billedLabel}</p>
-              ) : null}
+              <p className="text-xs text-slate-400 dark:text-slate-500">Razorpay checkout. Cancel at period end.</p>
             </div>
           </div>
           <ul className="flex flex-1 flex-col gap-2 text-sm text-slate-600 dark:text-slate-300">
@@ -93,13 +90,10 @@ export function PricingGrid({ currency, billingCycle, onSelectPlan }: PricingGri
           </ul>
           <Button
             className="w-full rounded-full bg-gradient-to-r from-[#4C8EFF] to-[#9777FF] text-white shadow-lg"
-            onClick={() => onSelectPlan?.(plan.id, billingCycle)}
-            asChild
+            onClick={() => handlePlanSelect(plan.id)}
           >
-            <Link href="/billing">
-              Choose {plan.name}
-              <ArrowRight className="ml-2 h-4 w-4" aria-hidden />
-            </Link>
+            Choose {plan.name}
+            <ArrowRight className="ml-2 h-4 w-4" aria-hidden />
           </Button>
         </Card>
       ))}

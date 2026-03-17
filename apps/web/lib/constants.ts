@@ -181,75 +181,86 @@ export const AUTH_CONFIG = {
 
 export const EMAIL_CONFIG = {
   /** Default sender email address */
-  FROM_ADDRESS: process.env.EMAIL_FROM || 'Clippers <no-reply@clippers.dev>',
+  FROM_ADDRESS: process.env.EMAIL_FROM || 'ViralSnipAI <no-reply@clippers.dev>',
   /** Reply-to address */
   REPLY_TO: process.env.EMAIL_REPLY_TO || 'support@clippers.dev',
   /** Email subject for magic links */
-  MAGIC_LINK_SUBJECT: 'Sign in to Clippers'
+  MAGIC_LINK_SUBJECT: 'Sign in to ViralSnipAI'
 } as const;
 
 // =============================================================================
 // SUBSCRIPTION PLANS
 // =============================================================================
 
+/**
+ * Deprecated source of truth.
+ * Keep this aligned for older helpers, but use `@/lib/billing/plans` for all
+ * active packaging, pricing, and entitlement decisions.
+ */
 export const PLANS = {
   FREE: {
     id: 'free',
     name: 'Free',
-    /** Max video minutes per month */
-    maxVideoMinutes: 30,
-    /** Max AI generations per month */
-    maxAIGenerations: 10,
-    /** Max exports per month */
-    maxExports: 5,
-    /** Max storage in GB */
-    maxStorageGB: 1,
-    /** Number of workspaces */
     workspaces: 1,
-    /** Number of brand kits */
-    brandKits: 1
+    brandKits: 1,
+    coreUsage: {
+      ideas: 5,
+      scripts: 3,
+      titles: 5,
+      thumbnails: 3,
+      tts: 0,
+    },
   },
   STARTER: {
     id: 'starter',
     name: 'Starter',
     priceUSD: 9,
     priceINR: 699,
-    maxVideoMinutes: 120,
-    maxAIGenerations: 50,
-    maxExports: 20,
-    maxStorageGB: 10,
     workspaces: 1,
-    brandKits: 1
+    brandKits: 1,
+    coreUsage: {
+      ideas: 50,
+      scripts: 30,
+      titles: 100,
+      thumbnails: 15,
+      tts: 10,
+    },
   },
-  GROWTH: {
-    id: 'growth',
-    name: 'Growth',
+  CREATOR: {
+    id: 'creator',
+    name: 'Creator',
     priceUSD: 18,
     priceINR: 1499,
-    maxVideoMinutes: 300,
-    maxAIGenerations: 150,
-    maxExports: 100,
-    maxStorageGB: 50,
-    workspaces: 3,
+    workspaces: 1,
     brandKits: 3,
-    collaborators: 3,
-    scheduledPosts: 10
+    scheduledPosts: 10,
+    coreUsage: {
+      ideas: -1,
+      scripts: -1,
+      titles: -1,
+      thumbnails: -1,
+      tts: -1,
+    },
   },
-  PRO: {
-    id: 'pro',
-    name: 'Pro',
+  STUDIO: {
+    id: 'studio',
+    name: 'Studio',
     priceUSD: 45,
     priceINR: 3599,
-    maxVideoMinutes: -1, // Unlimited
-    maxAIGenerations: -1, // Unlimited
-    maxExports: -1, // Unlimited
-    maxStorageGB: 200,
     workspaces: -1, // Unlimited
     brandKits: -1, // Unlimited
-    collaborators: -1, // Unlimited
     scheduledPosts: -1, // Unlimited
     apiAccess: true,
-    prioritySupport: true
+    webhookAccess: true,
+    supportLevel: "priority_support",
+    teamSeats: "admin_managed",
+    coreUsage: {
+      ideas: -1,
+      scripts: -1,
+      titles: -1,
+      thumbnails: -1,
+      tts: -1,
+    },
   }
 } as const;
 
@@ -317,7 +328,7 @@ export const S3_CONFIG = {
   /** Default ACL for uploads */
   DEFAULT_ACL: 'private',
   /** CloudFront URL format */
-  CDN_URL_FORMAT: 'https://cdn.clippers.dev'
+  CDN_URL_FORMAT: 'https://cdn.viralsnipai.com'
 } as const;
 
 // =============================================================================
@@ -326,7 +337,7 @@ export const S3_CONFIG = {
 
 export const APP_CONFIG = {
   /** Application name */
-  NAME: 'Clippers',
+  NAME: 'ViralSnipAI',
   /** Application URL */
   URL: process.env.NEXTAUTH_URL || 'http://localhost:3000',
   /** Support email */

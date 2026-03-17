@@ -240,7 +240,7 @@ function normalizeResponseImages(responseBody: any, request: ImagenRequest, kind
 
   if (kind === "generateContent") {
     const candidates: any[] = responseBody.candidates ?? [];
-    return candidates
+    const results = candidates
       .flatMap((candidate: any, candidateIndex: number) => {
         const parts: any[] = candidate.content?.parts ?? candidate.parts ?? [];
         return parts.map((part: any, partIndex: number) => {
@@ -265,7 +265,8 @@ function normalizeResponseImages(responseBody: any, request: ImagenRequest, kind
           } satisfies ImagenImage;
         });
       })
-      .filter((image): image is ImagenImage => Boolean(image));
+      .filter(Boolean) as ImagenImage[];
+    return results;
   }
 
   const candidates: any[] =
@@ -312,7 +313,7 @@ function normalizeResponseImages(responseBody: any, request: ImagenRequest, kind
         providerMetadata: candidate
       } satisfies ImagenImage;
     })
-    .filter((image): image is ImagenImage => Boolean(image));
+    .filter(Boolean) as ImagenImage[];
 }
 
 export class ImagenRequestError extends Error {
@@ -384,7 +385,7 @@ async function tryGenerateWithAttempt(
     console.error("Failed to construct Imagen endpoint URL, skipping attempt:", attempt.endpoint, error);
     throw new ImagenRequestError("Invalid Imagen endpoint configuration.", undefined, error);
   }
-  endpointUrl.searchParams.set("key", apiKey);
+  endpointUrl.searchParams.set("key", apiKey!);
 
   const response = await fetch(endpointUrl.toString(), {
     method: "POST",
@@ -449,7 +450,7 @@ async function applyWatermarkToImage(image: ImagenImage, style: WatermarkStyle):
     switch (metadata.format) {
       case "jpeg":
       case "jpg":
-        composite.jpeg({ quality: metadata.quality ?? 92 });
+        composite.jpeg({ quality: (metadata as any).quality ?? 92 });
         break;
       case "png":
         composite.png();

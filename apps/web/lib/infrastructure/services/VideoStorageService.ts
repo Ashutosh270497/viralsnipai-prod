@@ -63,10 +63,8 @@ export class VideoStorageService {
       };
     } catch (error) {
       logger.error('Failed to save video file', { projectId, error });
-      throw AppError.internal(
-        'Failed to save video file',
-        error instanceof Error ? error.message : undefined
-      );
+      const errorMessage = error instanceof Error ? `: ${error.message}` : '';
+      throw AppError.internal(`Failed to save video file${errorMessage}`);
     }
   }
 

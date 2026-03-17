@@ -6,6 +6,7 @@ import { z } from "zod";
 
 import { generateHooks } from "@/lib/openai";
 import { getCurrentUser } from "@/lib/auth";
+import { checkRateLimit, rateLimitHeaders, RATE_LIMITS } from "@/lib/rate-limiter";
 import { prisma } from "@/lib/prisma";
 
 const schema = z
@@ -50,6 +51,16 @@ export async function POST(request: Request) {
   const user = await getCurrentUser();
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401, headers: { "Cache-Control": "no-store" } });
+  }
+
+  const rateLimitResult = checkRateLimit(user.id, RATE_LIMITS.hookGenerate);
+  const rlHeaders = rateLimitHeaders(rateLimitResult, RATE_LIMITS.hookGenerate);
+
+  if (!rateLimitResult.allowed) {
+    return NextResponse.json(
+      { error: "Rate limit exceeded. Please wait before generating more.", retryAfterSec: rateLimitResult.retryAfterSec },
+      { status: 429, headers: rlHeaders }
+    );
   }
 
   const json = await request.json();

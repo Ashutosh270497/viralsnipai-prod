@@ -21,12 +21,29 @@ export async function GET() {
 
   const projects = await prisma.project.findMany({
     where: { userId: user.id },
-    include: {
-      clips: { orderBy: { createdAt: "desc" } },
-      exports: { orderBy: { createdAt: "desc" } },
-      assets: { orderBy: { createdAt: "desc" } }
+    select: {
+      id: true,
+      title: true,
+      topic: true,
+      sourceUrl: true,
+      createdAt: true,
+      updatedAt: true,
+      // Lightweight counts for the list UI — avoids fetching all rows
+      _count: { select: { clips: true, assets: true, exports: true } },
+      // Primary asset preview (latest only)
+      assets: {
+        orderBy: { createdAt: "desc" },
+        take: 1,
+        select: { id: true, type: true, path: true, durationSec: true, transcript: true, createdAt: true },
+      },
+      // Recent clips for the repurpose selector (latest 5)
+      clips: {
+        orderBy: { createdAt: "desc" },
+        take: 5,
+        select: { id: true, title: true, startMs: true, endMs: true, viralityScore: true, captionSrt: true, previewPath: true, createdAt: true },
+      },
     },
-    orderBy: { updatedAt: "desc" }
+    orderBy: { updatedAt: "desc" },
   });
 
   return NextResponse.json({ projects }, { headers: { "Cache-Control": "no-store" } });

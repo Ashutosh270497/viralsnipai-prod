@@ -1,5 +1,5 @@
-export const dynamic = 'force-dynamic';
-export const revalidate = 0;
+// Static language list — safe to cache for 24 hours
+export const revalidate = 86400;
 
 import { NextResponse } from 'next/server';
 import { getCurrentUser } from '@/lib/auth';

@@ -151,7 +151,7 @@ export class CaptionService {
       throw new Error('Invalid transcript format');
 
     } catch (error) {
-      logger.error('Failed to parse transcript', error);
+      logger.error('Failed to parse transcript', error instanceof Error ? error : { error });
       return [];
     }
   }

@@ -132,7 +132,7 @@ function Hero() {
         <Badge className="bg-[#F3F6FF] text-[#4C8EFF]">Template Marketplace</Badge>
         <h1 className="text-4xl font-semibold text-foreground sm:text-5xl">Share your templates. Inspire new clips.</h1>
         <p className="max-w-2xl text-base text-muted-foreground">
-          Submit and monetize Clippers templates, or browse designs trusted by top agencies. Safe zones, caption styles, and transitions included.
+          Submit and monetize ViralSnipAI templates, or browse designs trusted by top agencies. Safe zones, caption styles, and transitions included.
         </p>
         <div className="flex flex-wrap items-center justify-center gap-3">
           <Button asChild className="rounded-full bg-gradient-to-r from-[#4C8EFF] to-[#9777FF] text-white shadow-lg">

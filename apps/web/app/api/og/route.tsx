@@ -28,7 +28,7 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const path = searchParams.get("path") ?? "landing";
   const payload = titleMap[path] ?? {
-    title: "Clippers",
+    title: "ViralSnipAI",
     subtitle: "Hooksmith × RepurposeOS"
   };
 
@@ -57,7 +57,7 @@ export async function GET(request: NextRequest) {
                 background: `linear-gradient(135deg, ${gradients.brand[0]}, ${gradients.brand[1]})`
               }}
             />
-            <span style={{ fontWeight: 600 }}>Clippers</span>
+            <span style={{ fontWeight: 600 }}>ViralSnipAI</span>
           </div>
           <span style={{ fontSize: 20, color: "rgba(255,255,255,0.7)" }}>Hooksmith × RepurposeOS</span>
         </header>
@@ -77,7 +77,7 @@ export async function GET(request: NextRequest) {
             />
             <span style={{ color: "rgba(226,232,240,0.75)" }}>AI hooks · Captions · Templates · Exports</span>
           </div>
-          <span style={{ color: "rgba(226,232,240,0.75)" }}>clippers.app</span>
+          <span style={{ color: "rgba(226,232,240,0.75)" }}>viralsnipai.com</span>
         </footer>
       </div>
     ),

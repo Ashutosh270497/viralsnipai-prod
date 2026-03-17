@@ -12,6 +12,18 @@ export function formatDuration(ms: number) {
   return `${minutes}:${seconds.toString().padStart(2, "0")}`;
 }
 
+export function formatDurationSec(seconds: number) {
+  // Handle invalid values
+  if (!isFinite(seconds) || isNaN(seconds) || seconds < 0) {
+    return "0:00";
+  }
+
+  const totalSeconds = Math.floor(seconds);
+  const mins = Math.floor(totalSeconds / 60);
+  const secs = totalSeconds % 60;
+  return `${mins}:${secs.toString().padStart(2, "0")}`;
+}
+
 export function bytesToSize(bytes: number) {
   if (bytes === 0) return "0 B";
   const k = 1024;

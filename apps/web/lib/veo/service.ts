@@ -235,12 +235,13 @@ export class VeoService {
     response: Record<string, unknown>,
     request: VeoRequest
   ): VeoVideo | null {
+    const r = response as any;
     const generated =
-      response.generatedVideos?.[0] ??
-      response.videos?.[0] ??
-      response.video ??
-      response.predictions?.[0] ??
-      response.result ??
+      r.generatedVideos?.[0] ??
+      r.videos?.[0] ??
+      r.video ??
+      r.predictions?.[0] ??
+      r.result ??
       null;
 
     if (!generated || typeof generated !== "object") {
@@ -571,8 +572,9 @@ function decodeMaybeBase64(value: string): string {
   }
 }
 
-function base64UrlEncode(value: string): string {
-  return Buffer.from(value)
+function base64UrlEncode(value: string | Buffer): string {
+  const buf = typeof value === "string" ? Buffer.from(value) : value;
+  return buf
     .toString("base64")
     .replace(/=/g, "")
     .replace(/\+/g, "-")
