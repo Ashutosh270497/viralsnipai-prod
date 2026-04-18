@@ -12,6 +12,15 @@ export type FeatureFlags = {
   snipRadarDiscoverV2Enabled: boolean;
   snipRadarPublishV2Enabled: boolean;
   snipRadarGrowthPlanV2Enabled: boolean;
+  // SnipRadar features not yet ready for launch — set to false to hide from UI entirely
+  winnerLoopEnabled: boolean;
+  relationshipsCrmEnabled: boolean;
+  apiWebhooksEnabled: boolean;
+  autoDmEnabled: boolean;
+  // YouTube ecosystem features not yet ready
+  youtubeRepurposeOsEnabled: boolean;
+  youtubeVoicerEnabled: boolean;
+  youtubeThumbnailGeneratorEnabled: boolean;
 };
 
 export const FEATURE_FLAG_KEYS = [
@@ -28,6 +37,13 @@ export const FEATURE_FLAG_KEYS = [
   "snipRadarDiscoverV2Enabled",
   "snipRadarPublishV2Enabled",
   "snipRadarGrowthPlanV2Enabled",
+  "winnerLoopEnabled",
+  "relationshipsCrmEnabled",
+  "apiWebhooksEnabled",
+  "autoDmEnabled",
+  "youtubeRepurposeOsEnabled",
+  "youtubeVoicerEnabled",
+  "youtubeThumbnailGeneratorEnabled",
 ] as const satisfies ReadonlyArray<keyof FeatureFlags>;
 
 export type FeatureFlagKey = (typeof FEATURE_FLAG_KEYS)[number];
@@ -75,6 +91,23 @@ export function readEnvFeatureFlags(): FeatureFlags {
     process.env.NEXT_PUBLIC_SNIPRADAR_V2_GROWTH_PLAN_ENABLED ??
     "true";
   const forceVeoEnabled = parseBooleanFlag(process.env.FORCE_VEO_ENABLED);
+  // Not-ready features — default false; opt-in via env only
+  const winnerLoopValue =
+    process.env.WINNER_LOOP_ENABLED ?? process.env.NEXT_PUBLIC_WINNER_LOOP_ENABLED ?? "false";
+  const relationshipsCrmValue =
+    process.env.RELATIONSHIPS_CRM_ENABLED ?? process.env.NEXT_PUBLIC_RELATIONSHIPS_CRM_ENABLED ?? "false";
+  const apiWebhooksValue =
+    process.env.API_WEBHOOKS_ENABLED ?? process.env.NEXT_PUBLIC_API_WEBHOOKS_ENABLED ?? "false";
+  const autoDmValue =
+    process.env.AUTO_DM_ENABLED ?? process.env.NEXT_PUBLIC_AUTO_DM_ENABLED ?? "false";
+  const youtubeRepurposeOsValue =
+    process.env.YOUTUBE_REPURPOSE_OS_ENABLED ?? process.env.NEXT_PUBLIC_YOUTUBE_REPURPOSE_OS_ENABLED ?? "false";
+  const youtubeVoicerValue =
+    process.env.YOUTUBE_VOICER_ENABLED ?? process.env.NEXT_PUBLIC_YOUTUBE_VOICER_ENABLED ?? "false";
+  const youtubeThumbnailGeneratorValue =
+    process.env.YOUTUBE_THUMBNAIL_GENERATOR_ENABLED ??
+    process.env.NEXT_PUBLIC_YOUTUBE_THUMBNAIL_GENERATOR_ENABLED ??
+    "false";
   return {
     uiV2Enabled: parseBooleanFlag(envValue),
     transcribeUiEnabled: parseBooleanFlag(transcribeValue),
@@ -90,6 +123,13 @@ export function readEnvFeatureFlags(): FeatureFlags {
     snipRadarDiscoverV2Enabled: parseBooleanFlag(snipRadarDiscoverV2Value),
     snipRadarPublishV2Enabled: parseBooleanFlag(snipRadarPublishV2Value),
     snipRadarGrowthPlanV2Enabled: parseBooleanFlag(snipRadarGrowthPlanV2Value),
+    winnerLoopEnabled: parseBooleanFlag(winnerLoopValue),
+    relationshipsCrmEnabled: parseBooleanFlag(relationshipsCrmValue),
+    apiWebhooksEnabled: parseBooleanFlag(apiWebhooksValue),
+    autoDmEnabled: parseBooleanFlag(autoDmValue),
+    youtubeRepurposeOsEnabled: parseBooleanFlag(youtubeRepurposeOsValue),
+    youtubeVoicerEnabled: parseBooleanFlag(youtubeVoicerValue),
+    youtubeThumbnailGeneratorEnabled: parseBooleanFlag(youtubeThumbnailGeneratorValue),
   };
 }
 

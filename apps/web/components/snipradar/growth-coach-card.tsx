@@ -4,7 +4,10 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { SnipRadarBillingGateCard } from "@/components/snipradar/billing-gate-card";
 import { trackSnipRadarEvent } from "@/lib/snipradar/events";
+import { parseSnipRadarApiError } from "@/lib/snipradar/client-errors";
+import { getSnipRadarBillingGateDetails } from "@/lib/snipradar/billing-gates";
 import {
   Brain,
   Loader2,
@@ -34,10 +37,7 @@ export function GrowthCoachCard() {
     queryKey: ["snipradar-coach"],
     queryFn: async () => {
       const res = await fetch("/api/snipradar/coach");
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.error ?? "Failed to generate report");
-      }
+      if (!res.ok) throw await parseSnipRadarApiError(res, "Failed to generate report");
       return res.json();
     },
     staleTime: 7 * 24 * 60 * 60 * 1000,
@@ -124,9 +124,14 @@ export function GrowthCoachCard() {
         </div>
 
         {/* Error state */}
-        {error && !report && (
-          <p className="text-sm text-muted-foreground/60">{(error as Error).message}</p>
-        )}
+        {error && !report && (() => {
+          const billingGate = getSnipRadarBillingGateDetails(error);
+          return billingGate ? (
+            <SnipRadarBillingGateCard details={billingGate} compact />
+          ) : (
+            <p className="text-sm text-muted-foreground/60">{(error as Error).message}</p>
+          );
+        })()}
 
         {/* Default empty state */}
         {!report && !isWorking && !error && (

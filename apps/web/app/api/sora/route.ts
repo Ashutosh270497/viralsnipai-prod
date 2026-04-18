@@ -6,6 +6,10 @@ import { z } from "zod";
 
 import { getCurrentUser } from "@/lib/auth";
 import { generateSoraVideo } from "@/lib/sora";
+import {
+  consumeSnipRadarRateLimit,
+  buildSnipRadarRateLimitHeaders,
+} from "@/lib/snipradar/request-guards";
 
 type AcceptableFile = File;
 
@@ -19,6 +23,17 @@ export async function POST(request: Request) {
   const user = await getCurrentUser();
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401, headers: { "Cache-Control": "no-store" } });
+  }
+
+  // Rate limit: 5 video generations per hour per user (Sora is very expensive)
+  const rateLimit = consumeSnipRadarRateLimit("sora:generate", user.id, [
+    { name: "hourly", windowMs: 60 * 60 * 1000, maxHits: 5 },
+  ]);
+  if (!rateLimit.allowed) {
+    return NextResponse.json(
+      { error: "Too many video generation requests. Please wait before trying again." },
+      { status: 429, headers: { "Cache-Control": "no-store", ...buildSnipRadarRateLimitHeaders(rateLimit) } }
+    );
   }
 
   const formData = await request.formData();

@@ -448,7 +448,7 @@ export default function SnipRadarAnalyticsPage() {
         </div>
       </div>
 
-      <WinnerLoopPanel mode="analytics" />
+      {flags.winnerLoopEnabled && <WinnerLoopPanel mode="analytics" />}
 
       {/* ── System Health ────────────────────────────────────────────── */}
       {health && (

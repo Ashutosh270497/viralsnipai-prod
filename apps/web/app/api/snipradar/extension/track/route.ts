@@ -150,6 +150,6 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     console.error("[SnipRadar Extension] Track error:", error);
-    return NextResponse.json({ error: "Failed to track author" }, { status: 500 });
+    return NextResponse.json({ error: "Failed to track author", code: "INTERNAL_ERROR", retryable: true }, { status: 500 });
   }
 }

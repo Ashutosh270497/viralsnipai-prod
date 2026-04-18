@@ -60,6 +60,6 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     console.error("[SnipRadar Extension Draft] POST error:", error);
-    return NextResponse.json({ error: "Failed to save draft" }, { status: 500 });
+    return NextResponse.json({ error: "Failed to save draft", code: "INTERNAL_ERROR", retryable: true }, { status: 500 });
   }
 }

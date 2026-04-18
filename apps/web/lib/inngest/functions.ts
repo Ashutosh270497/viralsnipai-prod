@@ -148,23 +148,37 @@ export const snipRadarAnalyze = inngest.createFunction(
     }
 
     const results = await step.run("analyze-batch", async () => {
-      const resultMap = await analyzeTweetBatch(
-        unanalyzed.map((t) => ({
-          id: t.id,
-          text: t.text,
-          authorUsername: t.authorUsername,
-          likes: t.likes,
-          retweets: t.retweets,
-          replies: t.replies,
-          impressions: t.impressions,
-        }))
-      );
-      // Convert Map to array for JSON serialization (Inngest step results are serialized)
-      return Array.from(resultMap.entries());
+      try {
+        const resultMap = await analyzeTweetBatch(
+          unanalyzed.map((t) => ({
+            id: t.id,
+            text: t.text,
+            authorUsername: t.authorUsername,
+            likes: t.likes,
+            retweets: t.retweets,
+            replies: t.replies,
+            impressions: t.impressions,
+          }))
+        );
+        // Convert Map to array for JSON serialization (Inngest step results are serialized)
+        return Array.from(resultMap.entries());
+      } catch (err) {
+        logger.error("[snipradar-analyze] AI batch analysis failed", { error: err, count: unanalyzed.length });
+        return [] as Array<[string, unknown]>;
+      }
     });
 
     let analyzedCount = 0;
-    for (const [tweetId, analysis] of results) {
+    for (const [tweetId, rawAnalysis] of results) {
+      // Cast from the serialized step result — shape matches TweetAnalysisResult
+      const analysis = rawAnalysis as {
+        hookType?: string | null;
+        format?: string | null;
+        emotionalTrigger?: string | null;
+        viralScore?: number | null;
+        whyItWorked?: string | null;
+        lessonsLearned?: string[] | null;
+      };
       await step.run(`update-${tweetId}`, async () => {
         await prisma.viralTweet.update({
           where: { id: tweetId },
@@ -175,7 +189,7 @@ export const snipRadarAnalyze = inngest.createFunction(
             emotionalTrigger: analysis.emotionalTrigger,
             viralScore: analysis.viralScore,
             whyItWorked: analysis.whyItWorked,
-            lessonsLearned: analysis.lessonsLearned,
+            lessonsLearned: analysis.lessonsLearned ?? [],
             analyzedAt: new Date(),
           },
         });
@@ -211,51 +225,58 @@ export const snipRadarDailyDrafts = inngest.createFunction(
 
     for (const xAccount of activeAccounts) {
       await step.run(`generate-for-${xAccount.id}`, async () => {
-        const sevenDaysAgo = new Date();
-        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+        try {
+          const sevenDaysAgo = new Date();
+          sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
 
-        const viralPatterns = await prisma.viralTweet.findMany({
-          where: {
-            isAnalyzed: true,
-            trackedAccount: {
-              userId: xAccount.userId,
-              xAccountId: xAccount.id,
+          const viralPatterns = await prisma.viralTweet.findMany({
+            where: {
+              isAnalyzed: true,
+              trackedAccount: {
+                userId: xAccount.userId,
+                xAccountId: xAccount.id,
+              },
+              publishedAt: { gte: sevenDaysAgo },
             },
-            publishedAt: { gte: sevenDaysAgo },
-          },
-          orderBy: { viralScore: "desc" },
-          take: 10,
-        });
-
-        const niche = xAccount.user.selectedNiche ?? "general";
-
-        const generatedTweets = await generateDrafts({
-          niche,
-          followerCount: xAccount.followerCount,
-          viralPatterns: viralPatterns.map((p) => ({
-            text: p.text,
-            hookType: p.hookType ?? "unknown",
-            format: p.format ?? "unknown",
-            emotionalTrigger: p.emotionalTrigger ?? "unknown",
-            likes: p.likes,
-            whyItWorked: p.whyItWorked ?? "",
-          })),
-        });
-
-        for (const tweet of generatedTweets) {
-          await prisma.tweetDraft.create({
-            data: {
-              userId: xAccount.userId,
-              xAccountId: xAccount.id,
-              text: tweet.text,
-              hookType: tweet.hookType,
-              format: tweet.format,
-              emotionalTrigger: tweet.emotionalTrigger,
-              aiReasoning: tweet.reasoning,
-              viralPrediction: tweet.viralPrediction,
-            },
+            orderBy: { viralScore: "desc" },
+            take: 10,
           });
-          totalGenerated++;
+
+          const niche = xAccount.user.selectedNiche ?? "general";
+
+          const generatedTweets = await generateDrafts({
+            niche,
+            followerCount: xAccount.followerCount,
+            viralPatterns: viralPatterns.map((p) => ({
+              text: p.text,
+              hookType: p.hookType ?? "unknown",
+              format: p.format ?? "unknown",
+              emotionalTrigger: p.emotionalTrigger ?? "unknown",
+              likes: p.likes,
+              whyItWorked: p.whyItWorked ?? "",
+            })),
+          });
+
+          for (const tweet of generatedTweets) {
+            await prisma.tweetDraft.create({
+              data: {
+                userId: xAccount.userId,
+                xAccountId: xAccount.id,
+                text: tweet.text,
+                hookType: tweet.hookType,
+                format: tweet.format,
+                emotionalTrigger: tweet.emotionalTrigger,
+                aiReasoning: tweet.reasoning,
+                viralPrediction: tweet.viralPrediction,
+              },
+            });
+            totalGenerated++;
+          }
+        } catch (err) {
+          logger.error(
+            `[snipradar-daily-drafts] Draft generation failed for @${xAccount.xUsername}`,
+            { error: err, xAccountId: xAccount.id, userId: xAccount.userId }
+          );
         }
       });
     }
@@ -453,17 +474,25 @@ export const snipRadarPostScheduledPerUser = inngest.createFunction(
       Math.min(100, Number(process.env.SNIPRADAR_SCHEDULER_PER_USER_LIMIT ?? 25))
     );
     const result = await step.run(`process-user-${userId}`, async () => {
-      const [schedulerRun, autoDm] = await Promise.all([
-        processScheduledDrafts({
+      // Run scheduling and auto-DM independently so a failure in one doesn't block the other.
+      const schedulerRun = await processScheduledDrafts({
+        source: "inngest",
+        userId,
+        limit: perUserLimit,
+      });
+
+      let autoDm: { sent: number; skipped: number; failed: number } | null = null;
+      try {
+        autoDm = await processAutoDmAutomations({
           source: "inngest",
           userId,
-          limit: perUserLimit,
-        }),
-        processAutoDmAutomations({
-          source: "inngest",
+        });
+      } catch (err) {
+        logger.error("[snipradar-post-scheduled] Auto-DM processing failed", {
+          error: err,
           userId,
-        }),
-      ]);
+        });
+      }
 
       return {
         ...schedulerRun,

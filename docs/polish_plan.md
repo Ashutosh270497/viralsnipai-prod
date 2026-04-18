@@ -3,7 +3,7 @@
 Date: 2026-03-14
 Owner: Product / Engineering
 Scope: SnipRadar X ecosystem launch readiness
-Status: Drafted for execution
+Status: Wave 0 completed. Execution locked against current codebase audit.
 
 ## Goal
 
@@ -128,13 +128,13 @@ This is the canonical execution order for launch work. Execution should follow t
 
 | Wave | Name | Primary Workstreams | Status |
 |---|---|---|---|
-| 0 | Audit Freeze | scope lock, baseline capture, execution board | pending |
+| 0 | Audit Freeze | scope lock, baseline capture, execution board | complete |
 | 1 | Activation Core | onboarding, niche selection, seeded Discover, first-run CTAs | complete |
 | 2 | Revenue Hook MVP | Auto-DM MVP | complete |
-| 3 | Trust Gaps | Growth Planner completion, extension reliability, WinnerLoop verification | complete |
+| 3 | Trust Gaps | Growth Planner completion, extension reliability, WinnerLoop verification | partial |
 | 4 | Retention UX | Discover search/filters, Thread Writer polish, Research onboarding improvements | complete |
-| 5 | Launch Hardening | billing validation, X auth drills, diagnostics, AI routing consistency | complete |
-| 6 | Mobile and Packaging Polish | responsive cleanup, pricing and packaging polish | complete |
+| 5 | Launch Hardening | billing validation, X auth drills, diagnostics, AI routing consistency | partial |
+| 6 | Mobile and Packaging Polish | responsive cleanup, pricing and packaging polish | partial |
 
 ### Execution Rule
 
@@ -311,6 +311,13 @@ Tasks:
 
 Exit criteria:
 - every launch item has a status, owner, and target wave
+
+Completion notes:
+- completed in docs on 2026-03-22
+- launch scope is now frozen against the audited codebase rather than the optimistic tracker state
+- current implementation baseline captured in `docs/snipradar_wave0_baseline.md`
+- remaining launch blockers tracked in `docs/snipradar_launch_execution_board.md`
+- deployment checklist is now explicitly gated on closing remaining `partial` launch items before production rollout
 
 ### Wave 1 — Activation Core
 

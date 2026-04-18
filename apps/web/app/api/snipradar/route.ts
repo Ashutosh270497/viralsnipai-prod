@@ -33,25 +33,7 @@ const SUMMARY_CACHE_TTL_MS = 12_000;
 const dashboardCache = new Map<string, { data: unknown; expiresAt: number }>();
 
 function getActiveAutoDmAutomationCount(params: { userId: string; xAccountId: string }) {
-  const delegate = (
-    prisma as unknown as {
-      xAutoDmAutomation?: {
-        count: (args: {
-          where: {
-            userId: string;
-            xAccountId: string;
-            isActive: boolean;
-          };
-        }) => Promise<number>;
-      };
-    }
-  ).xAutoDmAutomation;
-
-  if (!delegate?.count) {
-    return Promise.resolve(0);
-  }
-
-  return delegate.count({
+  return prisma.xAutoDmAutomation.count({
     where: {
       userId: params.userId,
       xAccountId: params.xAccountId,

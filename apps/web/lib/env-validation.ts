@@ -22,6 +22,17 @@ const ENV_SCHEMA: EnvVar[] = [
   // AI providers
   { key: 'OPENAI_API_KEY', required: false, description: 'OpenAI API key (or set OPENROUTER_API_KEY)' },
   { key: 'OPENROUTER_API_KEY', required: false, description: 'OpenRouter API key' },
+  // X / Twitter OAuth (required for SnipRadar core features)
+  { key: 'X_CLIENT_ID', required: false, description: 'X OAuth 2.0 client ID — required for X account connection' },
+  { key: 'X_CLIENT_SECRET', required: false, description: 'X OAuth 2.0 client secret — required for X account connection' },
+  // Billing — Razorpay
+  { key: 'RAZORPAY_KEY_ID', required: false, description: 'Razorpay API key ID' },
+  { key: 'RAZORPAY_KEY_SECRET', required: false, description: 'Razorpay API key secret' },
+  { key: 'RAZORPAY_WEBHOOK_SECRET', required: false, description: 'Razorpay webhook signature secret' },
+  // SnipRadar cron security — scheduled posts will not fire if missing
+  { key: 'SNIPRADAR_SCHEDULER_CRON_SECRET', required: false, description: 'Cron auth secret for scheduled post execution' },
+  // SnipRadar assistant KB
+  { key: 'INGEST_SECRET', required: false, description: 'Auth secret for assistant knowledge base ingestion endpoint' },
 ];
 
 let validated = false;

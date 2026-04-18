@@ -7,6 +7,7 @@ import {
   buildSnipRadarRateLimitHeaders,
   consumeSnipRadarRateLimit,
 } from "@/lib/snipradar/request-guards";
+import { requireSnipRadarFeature } from "@/lib/snipradar/billing-gates-server";
 import { SNIPRADAR } from "@/lib/constants/snipradar";
 
 /**
@@ -19,6 +20,15 @@ export async function POST() {
     const user = await getCurrentUser();
     if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const gate = await requireSnipRadarFeature(
+      user.id,
+      "growthPlanAI",
+      "AI Growth Planner is available on Plus and Pro plans."
+    );
+    if (!gate.ok) {
+      return gate.response;
     }
 
     const rateLimit = consumeSnipRadarRateLimit(

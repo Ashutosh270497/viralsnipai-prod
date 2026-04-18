@@ -6,6 +6,7 @@ import {
   sendDirectMessageWithResult,
   type TokenResponse,
 } from "@/lib/integrations/x-api";
+import { decryptXToken, encryptXToken } from "@/lib/snipradar/token-encryption";
 import type { XSearchResponse } from "@/lib/types/snipradar";
 
 export type RefreshableXAccount = {
@@ -53,19 +54,24 @@ async function refreshAccountToken(account: RefreshableXAccount): Promise<TokenR
   const existing = tokenRefreshInFlight.get(account.id);
   if (existing) return existing;
 
+  // Decrypt the refresh token before sending to the X API.
+  const plaintextRefreshToken = decryptXToken(account.refreshToken);
+
   const refreshPromise = (async () => {
     try {
       const newTokens = await refreshAccessToken({
-        refreshToken: account.refreshToken as string,
+        refreshToken: plaintextRefreshToken,
         clientId,
         clientSecret,
       });
 
+      // Encrypt the new tokens before writing back to the database.
+      const newRefreshToken = newTokens.refresh_token ?? account.refreshToken;
       await prisma.xAccount.update({
         where: { id: account.id },
         data: {
-          accessToken: newTokens.access_token,
-          refreshToken: newTokens.refresh_token ?? account.refreshToken,
+          accessToken: encryptXToken(newTokens.access_token),
+          refreshToken: newRefreshToken ? encryptXToken(newRefreshToken) : null,
           tokenExpiresAt: new Date(Date.now() + newTokens.expires_in * 1000),
         },
       });
@@ -94,7 +100,14 @@ export async function getUserTweetsWithAutoRefresh(params: {
   includeReplies?: boolean;
 }): Promise<FetchTweetsWithAuthResult> {
   const { account, maxResults, startTime, includeReplies } = params;
-  let activeAccessToken = account.accessToken;
+  // Decrypt tokens — they may be stored encrypted or as legacy plaintext.
+  let activeAccessToken = decryptXToken(account.accessToken);
+  const decryptedRefreshToken = account.refreshToken ? decryptXToken(account.refreshToken) : null;
+  const decryptedAccount: RefreshableXAccount = {
+    ...account,
+    accessToken: activeAccessToken,
+    refreshToken: decryptedRefreshToken,
+  };
   let refreshedToken = false;
 
   const expiry = account.tokenExpiresAt ? new Date(account.tokenExpiresAt) : null;
@@ -106,10 +119,10 @@ export async function getUserTweetsWithAutoRefresh(params: {
   if (
     activeAccessToken &&
     activeAccessToken !== "bearer-only" &&
-    account.refreshToken &&
+    decryptedAccount.refreshToken &&
     isExpiredOrNearExpiry
   ) {
-    const refreshed = await refreshAccountToken(account);
+    const refreshed = await refreshAccountToken(decryptedAccount);
     if (refreshed?.access_token) {
       activeAccessToken = refreshed.access_token;
       refreshedToken = true;
@@ -117,7 +130,7 @@ export async function getUserTweetsWithAutoRefresh(params: {
   }
 
   const initialResponse = await getUserTweets({
-    userId: account.xUserId,
+    userId: decryptedAccount.xUserId,
     accessToken: activeAccessToken !== "bearer-only" ? activeAccessToken : undefined,
     maxResults,
     startTime,
@@ -134,7 +147,7 @@ export async function getUserTweetsWithAutoRefresh(params: {
     };
   }
 
-  if (!account.refreshToken) {
+  if (!decryptedAccount.refreshToken) {
     return {
       response: initialResponse,
       reauthRequired: true,
@@ -144,7 +157,7 @@ export async function getUserTweetsWithAutoRefresh(params: {
     };
   }
 
-  const refreshed = await refreshAccountToken(account);
+  const refreshed = await refreshAccountToken(decryptedAccount);
   if (!refreshed?.access_token) {
     return {
       response: initialResponse,
@@ -158,7 +171,7 @@ export async function getUserTweetsWithAutoRefresh(params: {
   refreshedToken = true;
 
   const retryResponse = await getUserTweets({
-    userId: account.xUserId,
+    userId: decryptedAccount.xUserId,
     accessToken: refreshed.access_token,
     maxResults,
     startTime,
@@ -190,7 +203,16 @@ export async function postTweetWithAutoRefresh(params: {
 }): Promise<PostTweetWithAuthResult> {
   const { account, text, replyToTweetId } = params;
 
-  if (!account.accessToken || account.accessToken === "bearer-only") {
+  // Decrypt tokens before use — supports both encrypted and legacy plaintext storage.
+  const plaintextAccessToken = decryptXToken(account.accessToken);
+  const plaintextRefreshToken = account.refreshToken ? decryptXToken(account.refreshToken) : null;
+  const decryptedAccount: RefreshableXAccount = {
+    ...account,
+    accessToken: plaintextAccessToken,
+    refreshToken: plaintextRefreshToken,
+  };
+
+  if (!plaintextAccessToken || plaintextAccessToken === "bearer-only") {
     return {
       tweetId: null,
       reauthRequired: true,
@@ -202,13 +224,13 @@ export async function postTweetWithAutoRefresh(params: {
     };
   }
 
-  let activeToken = account.accessToken;
+  let activeToken = plaintextAccessToken;
   let refreshedToken = false;
 
   // Proactive refresh when token is already expired.
   const expiry = account.tokenExpiresAt ? new Date(account.tokenExpiresAt) : null;
-  if (expiry && !Number.isNaN(expiry.getTime()) && expiry <= new Date() && account.refreshToken) {
-    const refreshed = await refreshAccountToken(account);
+  if (expiry && !Number.isNaN(expiry.getTime()) && expiry <= new Date() && decryptedAccount.refreshToken) {
+    const refreshed = await refreshAccountToken(decryptedAccount);
     if (refreshed?.access_token) {
       activeToken = refreshed.access_token;
       refreshedToken = true;
@@ -241,7 +263,7 @@ export async function postTweetWithAutoRefresh(params: {
     };
   }
 
-  if (!account.refreshToken) {
+  if (!decryptedAccount.refreshToken) {
     return {
       tweetId: null,
       reauthRequired: true,
@@ -253,7 +275,7 @@ export async function postTweetWithAutoRefresh(params: {
     };
   }
 
-  const refreshed = await refreshAccountToken(account);
+  const refreshed = await refreshAccountToken(decryptedAccount);
   if (!refreshed?.access_token) {
     return {
       tweetId: null,
@@ -305,7 +327,16 @@ export async function sendDirectMessageWithAutoRefresh(params: {
 }): Promise<SendDirectMessageWithAuthResult> {
   const { account, participantId, text } = params;
 
-  if (!account.accessToken || account.accessToken === "bearer-only") {
+  // Decrypt tokens before use — supports both encrypted and legacy plaintext storage.
+  const plaintextAccessToken = decryptXToken(account.accessToken);
+  const plaintextRefreshToken = account.refreshToken ? decryptXToken(account.refreshToken) : null;
+  const decryptedAccount: RefreshableXAccount = {
+    ...account,
+    accessToken: plaintextAccessToken,
+    refreshToken: plaintextRefreshToken,
+  };
+
+  if (!plaintextAccessToken || plaintextAccessToken === "bearer-only") {
     return {
       dmEventId: null,
       reauthRequired: true,
@@ -317,12 +348,12 @@ export async function sendDirectMessageWithAutoRefresh(params: {
     };
   }
 
-  let activeToken = account.accessToken;
+  let activeToken = plaintextAccessToken;
   let refreshedToken = false;
 
   const expiry = account.tokenExpiresAt ? new Date(account.tokenExpiresAt) : null;
-  if (expiry && !Number.isNaN(expiry.getTime()) && expiry <= new Date() && account.refreshToken) {
-    const refreshed = await refreshAccountToken(account);
+  if (expiry && !Number.isNaN(expiry.getTime()) && expiry <= new Date() && decryptedAccount.refreshToken) {
+    const refreshed = await refreshAccountToken(decryptedAccount);
     if (refreshed?.access_token) {
       activeToken = refreshed.access_token;
       refreshedToken = true;
@@ -356,7 +387,7 @@ export async function sendDirectMessageWithAutoRefresh(params: {
     };
   }
 
-  if (!account.refreshToken) {
+  if (!decryptedAccount.refreshToken) {
     return {
       dmEventId: null,
       reauthRequired: true,
@@ -367,7 +398,7 @@ export async function sendDirectMessageWithAutoRefresh(params: {
     };
   }
 
-  const refreshed = await refreshAccountToken(account);
+  const refreshed = await refreshAccountToken(decryptedAccount);
   if (!refreshed?.access_token) {
     return {
       dmEventId: null,

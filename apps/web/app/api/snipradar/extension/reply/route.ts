@@ -110,13 +110,21 @@ export async function POST(request: Request) {
       sourceAnalysis,
       referencePosts,
     });
-    const reply = variants[0]?.text ?? (await generateSnipRadarExtensionReply({
+    const variantText = variants[0]?.text;
+    const reply = variantText || (await generateSnipRadarExtensionReply({
       item,
       selectedNiche: user.selectedNiche,
       styleProfile: toStyleProfile(styleProfileRecord),
       sourceAnalysis,
       referencePosts,
     }));
+
+    if (!reply) {
+      return NextResponse.json(
+        { error: "Unable to generate a reply for this item. Please try again.", code: "REPLY_GENERATION_FAILED", retryable: true },
+        { status: 500 }
+      );
+    }
 
     const updated = await prisma.xResearchInboxItem.update({
       where: { id: item.id },
@@ -173,6 +181,6 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     console.error("[SnipRadar Extension] Reply error:", error);
-    return NextResponse.json({ error: "Failed to generate reply assist" }, { status: 500 });
+    return NextResponse.json({ error: "Failed to generate reply assist", code: "INTERNAL_ERROR", retryable: true }, { status: 500 });
   }
 }

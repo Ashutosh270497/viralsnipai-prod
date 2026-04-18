@@ -19,7 +19,7 @@ export type BillingFeatureName =
   | "activityCenterPriority"
   | "whitelabelExports";
 
-export type BillingAnalyticsAccess = false | "7d" | "30d + export" | "30d + export + client reports";
+export type BillingAnalyticsAccess = false | "7d" | "30d + export" | "90d + export" | "30d + export + client reports";
 
 export type BillingSchedulingAccess = false | { monthlyPosts: BillingLimitValue };
 

@@ -12,6 +12,7 @@ import {
   type RelationshipLeadStage,
 } from "@/lib/snipradar/relationships";
 import { recordRelationshipInteraction } from "@/lib/snipradar/relationship-graph";
+import { readEnvFeatureFlags } from "@/lib/feature-flags";
 
 const updateSchema = z.object({
   stage: z.enum(RELATIONSHIP_LEAD_STAGES).optional(),
@@ -25,6 +26,9 @@ export async function PATCH(
   request: Request,
   { params }: { params: { id: string } }
 ) {
+  if (!readEnvFeatureFlags().relationshipsCrmEnabled) {
+    return NextResponse.json({ error: "Feature not available" }, { status: 403 });
+  }
   try {
     const user = await getCurrentDbUser();
     if (!user) {

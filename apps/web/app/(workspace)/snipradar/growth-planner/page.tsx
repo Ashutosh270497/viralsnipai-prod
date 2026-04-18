@@ -20,6 +20,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { useBillingSubscriptionState } from "@/hooks/use-billing-subscription";
 import { trackSnipRadarEvent } from "@/lib/snipradar/events";
+import { parseSnipRadarApiError } from "@/lib/snipradar/client-errors";
+import { getSnipRadarBillingGateDetails } from "@/lib/snipradar/billing-gates";
 import type { GrowthPlan } from "@/lib/ai/growth-planner";
 
 const PHASE_ICONS = [Target, TrendingUp, Zap];
@@ -144,10 +146,7 @@ export default function SnipRadarGrowthPlannerPage() {
   const generateMutation = useMutation({
     mutationFn: async () => {
       const res = await fetch("/api/snipradar/growth", { method: "POST" });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body.error ?? "Failed to generate plan");
-      }
+      if (!res.ok) throw await parseSnipRadarApiError(res, "Failed to generate plan");
       return res.json() as Promise<{ plan: GrowthPlan }>;
     },
     onSuccess: (data) => {
@@ -167,8 +166,8 @@ export default function SnipRadarGrowthPlannerPage() {
             kind: "upgrade_required",
             feature: "growthPlanAI",
             currentPlan: billingQuery.data!.plan.id,
-            requiredPlan: "pro",
-            upgradePlan: "pro",
+            requiredPlan: "plus",
+            upgradePlan: "plus",
           }}
         />
       ) : null}
@@ -247,9 +246,18 @@ export default function SnipRadarGrowthPlannerPage() {
           </div>
 
           {generateMutation.isError ? (
-            <p className="mt-3 text-xs text-destructive">
-              {generateMutation.error?.message ?? "Something went wrong. Please try again."}
-            </p>
+            (() => {
+              const billingGate = getSnipRadarBillingGateDetails(generateMutation.error);
+              return billingGate ? (
+                <div className="mt-4 text-left">
+                  <SnipRadarBillingGateCard details={billingGate} compact />
+                </div>
+              ) : (
+                <p className="mt-3 text-xs text-destructive">
+                  {generateMutation.error?.message ?? "Something went wrong. Please try again."}
+                </p>
+              );
+            })()
           ) : null}
         </CardContent>
       </Card>

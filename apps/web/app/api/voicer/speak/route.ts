@@ -8,6 +8,10 @@ import { prisma } from "@/lib/prisma";
 import { saveBuffer } from "@/lib/storage";
 import { generateElevenLabsSpeech, ElevenLabsError } from "@/lib/elevenlabs";
 import { probeDuration } from "@/lib/ffmpeg";
+import {
+  consumeSnipRadarRateLimit,
+  buildSnipRadarRateLimitHeaders,
+} from "@/lib/snipradar/request-guards";
 
 const MAX_TEXT_LENGTH = 600;
 
@@ -31,6 +35,17 @@ export async function POST(request: Request) {
   const user = await getCurrentUser();
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401, headers: { "Cache-Control": "no-store" } });
+  }
+
+  // Rate limit: 30 TTS generations per hour per user
+  const rateLimit = consumeSnipRadarRateLimit("voicer:speak", user.id, [
+    { name: "hourly", windowMs: 60 * 60 * 1000, maxHits: 30 },
+  ]);
+  if (!rateLimit.allowed) {
+    return NextResponse.json(
+      { error: "Too many speech synthesis requests. Please wait before trying again." },
+      { status: 429, headers: { "Cache-Control": "no-store", ...buildSnipRadarRateLimitHeaders(rateLimit) } }
+    );
   }
 
   const json = await request.json().catch(() => null);

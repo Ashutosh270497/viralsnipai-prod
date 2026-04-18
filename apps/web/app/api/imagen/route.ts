@@ -9,6 +9,10 @@ import { generateImagenImages, ImagenRequestError } from "@/lib/google-imagen";
 import { getBrandKit } from "@/lib/brand-kit";
 import { prisma } from "@/lib/prisma";
 import { resolveWatermarkStyle } from "@/lib/watermark";
+import {
+  consumeSnipRadarRateLimit,
+  buildSnipRadarRateLimitHeaders,
+} from "@/lib/snipradar/request-guards";
 
 const aspectRatioEnum = z.enum(["1:1", "3:4", "4:3", "9:16", "16:9"]);
 const qualityEnum = z.enum(["standard", "premium"]);
@@ -44,6 +48,17 @@ export async function POST(request: Request) {
   const user = await getCurrentUser();
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401, headers: { "Cache-Control": "no-store" } });
+  }
+
+  // Rate limit: 20 image generations per hour per user
+  const rateLimit = consumeSnipRadarRateLimit("imagen:generate", user.id, [
+    { name: "hourly", windowMs: 60 * 60 * 1000, maxHits: 20 },
+  ]);
+  if (!rateLimit.allowed) {
+    return NextResponse.json(
+      { error: "Too many image generation requests. Please wait before trying again." },
+      { status: 429, headers: { "Cache-Control": "no-store", ...buildSnipRadarRateLimitHeaders(rateLimit) } }
+    );
   }
 
   let payload: unknown;

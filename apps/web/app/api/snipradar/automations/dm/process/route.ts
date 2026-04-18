@@ -4,8 +4,12 @@ import { NextResponse } from "next/server";
 
 import { getCurrentDbUser } from "@/lib/auth";
 import { processAutoDmAutomations } from "@/lib/snipradar/auto-dm";
+import { readEnvFeatureFlags } from "@/lib/feature-flags";
 
 export async function POST() {
+  if (!readEnvFeatureFlags().autoDmEnabled) {
+    return NextResponse.json({ error: "Feature not available" }, { status: 403 });
+  }
   try {
     const user = await getCurrentDbUser();
     if (!user) {

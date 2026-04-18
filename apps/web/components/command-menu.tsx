@@ -23,7 +23,7 @@ type CommandAction = {
   route: string;
 };
 
-const ACTIONS: CommandAction[] = [
+const BASE_ACTIONS: CommandAction[] = [
   {
     id: "go-snipradar-overview",
     label: "SnipRadar Overview",
@@ -47,12 +47,6 @@ const ACTIONS: CommandAction[] = [
     label: "SnipRadar Inbox",
     hint: "Review browser captures and push them into Draft Studio",
     route: "/snipradar/inbox"
-  },
-  {
-    id: "go-snipradar-relationships",
-    label: "SnipRadar Relationships",
-    hint: "Manage leads, follow-ups, and reply history",
-    route: "/snipradar/relationships"
   },
   {
     id: "go-snipradar-publish",
@@ -94,8 +88,24 @@ const ACTIONS: CommandAction[] = [
 
 export function CommandMenu() {
   const router = useRouter();
-  const { uiV2Enabled } = useFeatureFlags();
+  const { uiV2Enabled, relationshipsCrmEnabled } = useFeatureFlags();
   const [open, setOpen] = useState(false);
+
+  const actions = useMemo(() => {
+    if (!relationshipsCrmEnabled) return BASE_ACTIONS;
+    const relationshipsAction: CommandAction = {
+      id: "go-snipradar-relationships",
+      label: "SnipRadar Relationships",
+      hint: "Manage leads, follow-ups, and reply history",
+      route: "/snipradar/relationships"
+    };
+    // Insert after inbox (index 3)
+    return [
+      ...BASE_ACTIONS.slice(0, 4),
+      relationshipsAction,
+      ...BASE_ACTIONS.slice(4),
+    ];
+  }, [relationshipsCrmEnabled]);
 
   const modifierKey = useMemo(() => (typeof navigator !== "undefined" ? (/(Mac|iPhone|iPod|iPad)/i.test(navigator.platform) ? "⌘" : "Ctrl") : "⌘"), []);
 
@@ -135,7 +145,7 @@ export function CommandMenu() {
           <CommandList>
             <CommandEmpty>No actions found.</CommandEmpty>
             <CommandGroup heading="Navigation">
-              {ACTIONS.map((action) => (
+              {actions.map((action) => (
                 <CommandItem
                   key={action.id}
                   value={action.label}

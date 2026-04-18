@@ -123,6 +123,6 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     console.error("[SnipRadar Extension] Remix error:", error);
-    return NextResponse.json({ error: "Failed to generate remix" }, { status: 500 });
+    return NextResponse.json({ error: "Failed to generate remix", code: "INTERNAL_ERROR", retryable: true }, { status: 500 });
   }
 }

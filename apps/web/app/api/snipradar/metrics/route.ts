@@ -11,8 +11,13 @@ import {
 } from "@/lib/snipradar/billing-gates";
 import { withSnipRadarErrorContract } from "@/lib/snipradar/api-errors";
 import { loadSnipRadarBillingState } from "@/lib/snipradar/billing-gates-server";
+import {
+  consumeSnipRadarRateLimit,
+  buildSnipRadarRateLimitHeaders,
+} from "@/lib/snipradar/request-guards";
 import { isDbPoolSaturationError, withDbPoolRetry } from "@/lib/snipradar/db-resilience";
 import { lookupUserById } from "@/lib/integrations/x-api";
+import { decryptXToken } from "@/lib/snipradar/token-encryption";
 import {
   buildAiSummary,
   buildSummary,
@@ -66,6 +71,23 @@ export async function GET(req: NextRequest) {
     if (!user) {
       return respond({ error: "Unauthorized" }, 401);
     }
+
+    // Rate limit — metrics is expensive (live X API + 30-day DB reads).
+    // Allow 10 requests per 2 minutes per user.
+    const rl = consumeSnipRadarRateLimit("snipradar:metrics", user.id, [
+      { name: "burst", windowMs: 2 * 60 * 1000, maxHits: 10 },
+    ]);
+    if (!rl.allowed) {
+      const rlResponse = respond(
+        { error: "Too many requests. Please wait before refreshing metrics." },
+        429,
+        { rateLimited: true }
+      );
+      const rlHeaders = buildSnipRadarRateLimitHeaders(rl) as Record<string, string>;
+      Object.entries(rlHeaders).forEach(([k, v]) => rlResponse.headers.set(k, v));
+      return rlResponse;
+    }
+
     const periodDays = parsePeriodDays(req.nextUrl.searchParams.get("periodDays"));
     const billingState = await loadSnipRadarBillingState(user.id);
     const analyticsWindowDays = getAnalyticsWindowDaysFromState(billingState);
@@ -162,10 +184,12 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    const userAccessToken =
+    // Decrypt before direct use — tokens are stored encrypted at rest.
+    const decryptedAccessToken =
       xAccount.accessToken && xAccount.accessToken !== "bearer-only"
-        ? xAccount.accessToken
+        ? decryptXToken(xAccount.accessToken)
         : undefined;
+    const userAccessToken = decryptedAccessToken;
 
     // Growth chart, local DB analytics, and live X reads in parallel.
     const dbReadsPromise = withDbPoolRetry("metrics.fetch-db-reads", () =>

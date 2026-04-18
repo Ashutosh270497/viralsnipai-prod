@@ -7,6 +7,11 @@ import OpenAI from "openai";
 
 import { getCurrentUser } from "@/lib/auth";
 import { formatPlanName, getRuntimeSecondaryUsageLimit, resolvePlanTier } from "@/lib/billing/plans";
+import { logger } from "@/lib/logger";
+import {
+  consumeSnipRadarRateLimit,
+  buildSnipRadarRateLimitHeaders,
+} from "@/lib/snipradar/request-guards";
 import { prisma } from "@/lib/prisma";
 import { NICHE_DATABASE } from "@/lib/niche-data";
 import type { NicheRecommendation, SkillLevel, ContentGoal, ShowFacePreference } from "@/lib/types/niche";
@@ -75,6 +80,17 @@ export async function POST(request: Request) {
       );
     }
 
+    // Rate limit: 10 niche analyses per hour per user
+    const rateLimit = consumeSnipRadarRateLimit("niche:analyze", user.id, [
+      { name: "hourly", windowMs: 60 * 60 * 1000, maxHits: 10 },
+    ]);
+    if (!rateLimit.allowed) {
+      return NextResponse.json(
+        { error: "Too many analysis requests. Please wait before trying again." },
+        { status: 429, headers: { "Cache-Control": "no-store", ...buildSnipRadarRateLimitHeaders(rateLimit) } }
+      );
+    }
+
     // Parse and validate request body
     const body = await request.json();
     const result = analyzeSchema.safeParse(body);
@@ -117,11 +133,11 @@ export async function POST(request: Request) {
 
     if (!client) {
       // Use mock data if no OpenAI API key
-      console.log("[Niche Discovery] No OpenAI API key, using mock data");
+      logger.debug("[Niche Discovery] No OpenAI API key, using mock data");
       recommendations = generateMockRecommendations(interests, skillLevel, showFace);
     } else {
       // Use OpenAI for analysis
-      console.log("[Niche Discovery] Using OpenAI model:", OPENAI_MODEL);
+      logger.debug("[Niche Discovery] Using OpenAI model", { model: OPENAI_MODEL });
 
       const userProfile = {
         interests,

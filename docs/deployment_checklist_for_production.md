@@ -5,6 +5,16 @@
 > Server: Hostinger KVM 2 (2 vCPU / 8GB RAM / 100GB NVMe)
 > Deployment tool: **Coolify Self-Hosted (free)** — recommended over Coolify Cloud for single-VPS setup
 
+## Launch Gate
+
+This checklist is for production deployment preparation, not proof that launch blockers are already closed.
+
+Before treating the product as launch-ready, review:
+- `docs/snipradar_wave0_baseline.md`
+- `docs/snipradar_launch_execution_board.md`
+
+Do not start the public launch until all `launch_blocker` items in the execution board are complete.
+
 ---
 
 ## PHASE 0 — Code Changes (Already Done)
@@ -13,12 +23,13 @@
   - File: `apps/web/components/layout/ecosystem-select-screen.tsx`
   - Default: `"false"` — only X card is shown; YouTube card shows "Coming Soon"
   - To unlock YouTube later: set env to `"true"` in Coolify + redeploy (no code change needed)
-- [x] OpenRouter migration complete for all 5 remaining SnipRadar AI files
+- [x] OpenRouter-first routing added for the 5 remaining SnipRadar AI files
   - `lib/ai/growth-planner.ts`
   - `lib/ai/winner-loop.ts`
   - `lib/ai/growth-coach.ts`
   - `lib/ai/research-inbox.ts`
   - `lib/ai/profile-audit.ts`
+- [ ] Remaining direct OpenAI fallback policy reviewed and either removed or explicitly accepted before launch
 - [x] Diagnostics tab wired into SnipRadar Publish page
 - [x] Pricing config — taglines, bullets, comparison table (15 rows)
 - [x] Thread composer — mobile tip + preview toggle hidden on small screens

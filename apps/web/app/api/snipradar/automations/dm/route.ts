@@ -10,6 +10,14 @@ import {
   parseTriggerTweetId,
 } from "@/lib/snipradar/auto-dm";
 import { prisma } from "@/lib/prisma";
+import { readEnvFeatureFlags } from "@/lib/feature-flags";
+
+function autoDmFeatureGate() {
+  if (!readEnvFeatureFlags().autoDmEnabled) {
+    return NextResponse.json({ error: "Feature not available" }, { status: 403 });
+  }
+  return null;
+}
 
 const createSchema = z
   .object({
@@ -26,6 +34,8 @@ const createSchema = z
   });
 
 export async function GET() {
+  const flagGate = autoDmFeatureGate();
+  if (flagGate) return flagGate;
   try {
     const user = await getCurrentDbUser();
     if (!user) {
@@ -41,6 +51,8 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  const flagGate = autoDmFeatureGate();
+  if (flagGate) return flagGate;
   try {
     const user = await getCurrentDbUser();
     if (!user) {

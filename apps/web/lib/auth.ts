@@ -103,7 +103,7 @@ export const authOptions: NextAuthOptions = {
   callbacks: {
     async signIn({ user, account, profile }) {
       if (process.env.NODE_ENV === "development") {
-        console.log("[Auth] signIn:", { email: user?.email, provider: account?.provider });
+        console.log("[Auth] signIn:", { provider: account?.provider });
       }
 
       // For Google OAuth: create/link user in database

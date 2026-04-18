@@ -13,20 +13,10 @@ interface PerformanceMetric {
  */
 export function reportWebVitals(metric: PerformanceMetric) {
   if (process.env.NODE_ENV === "production") {
-    // Log to console in production for monitoring
-    console.log(`[Web Vitals] ${metric.name}:`, {
+    console.info(`[Web Vitals] ${metric.name}:`, {
       value: metric.value,
       rating: metric.rating,
     });
-
-    // TODO: Send to analytics service (Google Analytics, Vercel Analytics, etc.)
-    // if (window.gtag) {
-    //   window.gtag('event', metric.name, {
-    //     value: Math.round(metric.name === 'CLS' ? metric.value * 1000 : metric.value),
-    //     event_label: metric.id,
-    //     non_interaction: true,
-    //   });
-    // }
   }
 }
 

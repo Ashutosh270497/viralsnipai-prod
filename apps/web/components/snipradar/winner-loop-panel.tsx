@@ -7,7 +7,10 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/components/ui/use-toast";
+import { SnipRadarBillingGateCard } from "@/components/snipradar/billing-gate-card";
 import { trackSnipRadarEvent } from "@/lib/snipradar/events";
+import { parseSnipRadarApiError } from "@/lib/snipradar/client-errors";
+import { getSnipRadarBillingGateDetails } from "@/lib/snipradar/billing-gates";
 import { cn } from "@/lib/utils";
 
 type WinnerAction = "expand_thread" | "repost_variant" | "spin_off_post";
@@ -66,10 +69,7 @@ export function WinnerLoopPanel({
     queryKey: ["snipradar-winners", 30],
     queryFn: async () => {
       const res = await fetch("/api/snipradar/winners?periodDays=30");
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.error ?? "Failed to load winners");
-      }
+      if (!res.ok) throw await parseSnipRadarApiError(res, "Failed to load winners");
       return res.json();
     },
     staleTime: 60_000,
@@ -83,11 +83,8 @@ export function WinnerLoopPanel({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ winnerDraftId, action }),
       });
-      const payload = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(payload.error ?? "Failed to execute automation");
-      }
-      return payload as { createdCount: number; action: WinnerAction };
+      if (!res.ok) throw await parseSnipRadarApiError(res, "Failed to execute automation");
+      return res.json() as Promise<{ createdCount: number; action: WinnerAction }>;
     },
     onSuccess: (payload) => {
       queryClient.invalidateQueries({ queryKey: ["snipradar-create-data"] });
@@ -127,7 +124,14 @@ export function WinnerLoopPanel({
         {winnersQuery.isLoading ? (
           <p className="text-sm text-muted-foreground">Scanning posted drafts for winners...</p>
         ) : winnersQuery.error ? (
-          <p className="text-sm text-destructive">{(winnersQuery.error as Error).message}</p>
+          (() => {
+            const billingGate = getSnipRadarBillingGateDetails(winnersQuery.error);
+            return billingGate ? (
+              <SnipRadarBillingGateCard details={billingGate} />
+            ) : (
+              <p className="text-sm text-destructive">{(winnersQuery.error as Error).message}</p>
+            );
+          })()
         ) : winnersQuery.data ? (
           <>
             <div className="rounded-xl border border-border/70 bg-background/40 p-4">
@@ -218,7 +222,14 @@ export function WinnerLoopPanel({
         ) : null}
 
         {automationMutation.error ? (
-          <p className="text-sm text-destructive">{(automationMutation.error as Error).message}</p>
+          (() => {
+            const billingGate = getSnipRadarBillingGateDetails(automationMutation.error);
+            return billingGate ? (
+              <SnipRadarBillingGateCard details={billingGate} compact />
+            ) : (
+              <p className="text-sm text-destructive">{(automationMutation.error as Error).message}</p>
+            );
+          })()
         ) : null}
       </CardContent>
     </Card>

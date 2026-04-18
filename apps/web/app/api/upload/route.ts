@@ -9,6 +9,15 @@ import { prisma } from "@/lib/prisma";
 import { probeDuration } from "@/lib/ffmpeg";
 import { saveBuffer } from "@/lib/storage";
 
+const MAX_VIDEO_SIZE = 500 * 1024 * 1024; // 500 MB
+const MAX_AUDIO_SIZE = 100 * 1024 * 1024; // 100 MB
+
+const ALLOWED_VIDEO_EXTENSIONS = new Set([".mp4", ".webm", ".mov", ".mkv", ".avi"]);
+const ALLOWED_AUDIO_EXTENSIONS = new Set([".mp3", ".wav", ".m4a", ".aac", ".ogg"]);
+
+const ALLOWED_VIDEO_MIME = new Set(["video/mp4", "video/webm", "video/quicktime", "video/x-matroska", "video/x-msvideo"]);
+const ALLOWED_AUDIO_MIME = new Set(["audio/mpeg", "audio/wav", "audio/x-wav", "audio/mp4", "audio/aac", "audio/ogg"]);
+
 export async function POST(request: Request) {
   const user = await getCurrentUser();
   if (!user) {
@@ -23,6 +32,36 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid payload" }, { status: 400, headers: { "Cache-Control": "no-store" } });
   }
 
+  // Validate MIME type
+  const isAudio = ALLOWED_AUDIO_MIME.has(file.type);
+  const isVideo = ALLOWED_VIDEO_MIME.has(file.type);
+  if (!isAudio && !isVideo) {
+    return NextResponse.json(
+      { error: "Unsupported file type. Allowed: video (mp4, webm, mov) or audio (mp3, wav, m4a)." },
+      { status: 400, headers: { "Cache-Control": "no-store" } }
+    );
+  }
+
+  // Validate extension against whitelist
+  const extension = path.extname(file.name).toLowerCase();
+  const allowedExtensions = isAudio ? ALLOWED_AUDIO_EXTENSIONS : ALLOWED_VIDEO_EXTENSIONS;
+  if (!allowedExtensions.has(extension)) {
+    return NextResponse.json(
+      { error: "File extension does not match type. Please use a standard file name." },
+      { status: 400, headers: { "Cache-Control": "no-store" } }
+    );
+  }
+
+  // Validate file size before reading into memory
+  const maxSize = isAudio ? MAX_AUDIO_SIZE : MAX_VIDEO_SIZE;
+  if (file.size > maxSize) {
+    const limitMB = maxSize / (1024 * 1024);
+    return NextResponse.json(
+      { error: `File too large. Maximum size is ${limitMB} MB.` },
+      { status: 413, headers: { "Cache-Control": "no-store" } }
+    );
+  }
+
   const project = await prisma.project.findFirst({
     where: { id: projectId, userId: user.id }
   });
@@ -33,11 +72,10 @@ export async function POST(request: Request) {
 
   const arrayBuffer = await file.arrayBuffer();
   const buffer = Buffer.from(arrayBuffer);
-  const extension = path.extname(file.name) || (file.type.includes("audio") ? ".mp3" : ".mp4");
 
   const saved = await saveBuffer(buffer, {
     prefix: `${projectId}/assets/`,
-    extension,
+    extension,                // already validated above
     contentType: file.type
   });
 
@@ -52,7 +90,7 @@ export async function POST(request: Request) {
   const asset = await prisma.asset.create({
     data: {
       projectId: project.id,
-      type: file.type.startsWith("audio") ? "audio" : "video",
+      type: isAudio ? "audio" : "video",
       path: saved.url,
       storagePath: saved.storagePath,
       durationSec

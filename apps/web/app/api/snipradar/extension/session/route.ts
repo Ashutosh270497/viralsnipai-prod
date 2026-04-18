@@ -36,6 +36,6 @@ export async function GET() {
     });
   } catch (error) {
     console.error("[SnipRadar Extension] Session error:", error);
-    return NextResponse.json({ error: "Failed to load extension session" }, { status: 500 });
+    return NextResponse.json({ error: "Failed to load extension session", code: "INTERNAL_ERROR", retryable: false }, { status: 500 });
   }
 }

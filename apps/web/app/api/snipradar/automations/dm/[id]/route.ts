@@ -5,6 +5,14 @@ import { z } from "zod";
 
 import { getCurrentDbUser } from "@/lib/auth";
 import { deleteAutoDmAutomation, updateAutoDmAutomation } from "@/lib/snipradar/auto-dm";
+import { readEnvFeatureFlags } from "@/lib/feature-flags";
+
+function autoDmFeatureGate() {
+  if (!readEnvFeatureFlags().autoDmEnabled) {
+    return NextResponse.json({ error: "Feature not available" }, { status: 403 });
+  }
+  return null;
+}
 
 const patchSchema = z.object({
   keyword: z.string().trim().max(80).optional().nullable(),
@@ -18,6 +26,8 @@ export async function PATCH(
   request: Request,
   context: { params: Promise<{ id: string }> }
 ) {
+  const flagGate = autoDmFeatureGate();
+  if (flagGate) return flagGate;
   try {
     const user = await getCurrentDbUser();
     if (!user) {
@@ -53,6 +63,8 @@ export async function DELETE(
   _request: Request,
   context: { params: Promise<{ id: string }> }
 ) {
+  const flagGate = autoDmFeatureGate();
+  if (flagGate) return flagGate;
   try {
     const user = await getCurrentDbUser();
     if (!user) {

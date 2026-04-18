@@ -42,7 +42,24 @@ const nextConfig = {
       process.env.NEXT_PUBLIC_UI_V2_ENABLED ?? process.env.UI_V2_ENABLED ?? "false",
   },
   images: {
-    remotePatterns: [{ protocol: "https", hostname: "**" }],
+    remotePatterns: [
+      // Google OAuth avatars + Cloud Storage (Imagen/Veo outputs)
+      { protocol: "https", hostname: "lh3.googleusercontent.com" },
+      { protocol: "https", hostname: "storage.googleapis.com" },
+      // YouTube thumbnails (competitor analysis)
+      { protocol: "https", hostname: "i.ytimg.com" },
+      { protocol: "https", hostname: "img.youtube.com" },
+      // X / Twitter avatars and media
+      { protocol: "https", hostname: "pbs.twimg.com" },
+      { protocol: "https", hostname: "abs.twimg.com" },
+      // UploadThing file storage
+      { protocol: "https", hostname: "utfs.io" },
+      // AWS S3 / CloudFront
+      { protocol: "https", hostname: "*.s3.amazonaws.com" },
+      { protocol: "https", hostname: "*.amazonaws.com" },
+      // OpenAI DALL-E image URLs
+      { protocol: "https", hostname: "oaidalleapiprodscus.blob.core.windows.net" },
+    ],
     formats: ["image/avif", "image/webp"],
   },
   compress: true,
@@ -69,7 +86,7 @@ const nextConfig = {
             key: 'Content-Security-Policy',
             value: [
               "default-src 'self'",
-              "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://js.stripe.com https://checkout.razorpay.com",
+              "script-src 'self' 'unsafe-inline' https://js.stripe.com https://checkout.razorpay.com",
               "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
               "font-src 'self' https://fonts.gstatic.com",
               "img-src 'self' data: https: blob:",

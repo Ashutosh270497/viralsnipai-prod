@@ -42,7 +42,7 @@ function buildUpgradeDetails(
       feature === "analytics" ? getAnalyticsWindowDaysFromState(state) : undefined,
     suggestedPeriodDays:
       feature === "analytics" && getAnalyticsWindowDaysFromState(state) > 0
-        ? getAnalyticsWindowDaysFromState(state)
+        ? (getAnalyticsWindowDaysFromState(state) as 7 | 30 | 90)
         : undefined,
   };
 }

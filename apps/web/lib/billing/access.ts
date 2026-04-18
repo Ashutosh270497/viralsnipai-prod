@@ -55,8 +55,9 @@ export function getRequiredPlanForFeature(featureName: BillingFeatureName): Bill
     case "researchCopilot":
     case "engagementFinder":
       return "plus";
-    case "analytics":
     case "growthPlanAI":
+      return "plus";
+    case "analytics":
     case "relationships":
     case "activityCenterPriority":
       return "pro";

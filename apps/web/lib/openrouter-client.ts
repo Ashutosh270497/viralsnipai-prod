@@ -299,6 +299,22 @@ export function getActiveClient(
 }
 
 /**
+ * Plan-tiered AI model routing for SnipRadar.
+ *
+ * Free  → google/gemini-2.5-flash-lite  (fast, low-cost)
+ * Plus  → google/gemini-2.5-flash       (balanced quality + speed)
+ * Pro   → anthropic/claude-sonnet-4.6   (frontier quality)
+ *
+ * Used for user-facing generative features (draft generation, hooks, threads)
+ * where model quality is a plan differentiator.
+ */
+export function getSnipRadarModelForPlan(planId: string): string {
+  if (planId === 'pro') return process.env.OPENROUTER_PLAN_PRO_MODEL ?? 'anthropic/claude-sonnet-4.6';
+  if (planId === 'plus') return process.env.OPENROUTER_PLAN_PLUS_MODEL ?? 'google/gemini-2.5-flash';
+  return process.env.OPENROUTER_PLAN_FREE_MODEL ?? 'google/gemini-2.5-flash-lite';
+}
+
+/**
  * Helper: Make a chat completion with automatic OpenRouter/OpenAI routing.
  * Uses chat.completions API (standard OpenAI-compatible endpoint).
  *

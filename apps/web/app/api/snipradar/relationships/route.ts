@@ -9,6 +9,7 @@ import {
   RELATIONSHIP_LEAD_STAGES,
   type RelationshipLeadStage,
 } from "@/lib/snipradar/relationships";
+import { readEnvFeatureFlags } from "@/lib/feature-flags";
 
 function serializeLead(lead: {
   id: string;
@@ -89,6 +90,9 @@ function serializeLead(lead: {
 }
 
 export async function GET(request: NextRequest) {
+  if (!readEnvFeatureFlags().relationshipsCrmEnabled) {
+    return NextResponse.json({ error: "Feature not available" }, { status: 403 });
+  }
   try {
     const user = await getCurrentDbUser();
     if (!user) {

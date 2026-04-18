@@ -1,6 +1,7 @@
 import OpenAI from "openai";
 
 import { generateGeminiHighlights, HAS_GEMINI_KEY } from "@/lib/google-gemini";
+import { logger } from "@/lib/logger";
 import { generateHooksViaOpenRouter, generateScriptViaOpenRouter } from "./openai-with-router";
 import { openRouterClient, OPENROUTER_MODELS, HAS_OPENROUTER_KEY, routedChatCompletion } from "./openrouter-client";
 
@@ -150,7 +151,7 @@ export async function generateHooks(payload: HookPayload) {
     return mockHooks(payload.topic);
   }
 
-  console.log("[Hooksmith] Using OpenAI model", OPENAI_HOOKS_MODEL);
+  logger.debug("[Hooksmith] Using OpenAI model", { model: OPENAI_HOOKS_MODEL });
   const response = await client.responses.create({
     model: OPENAI_HOOKS_MODEL,
     input: [
@@ -211,7 +212,7 @@ export async function generateScript(payload: ScriptPayload) {
     return mockScript(payload.hook);
   }
 
-  console.log("[Hooksmith] Using OpenAI script model", OPENAI_SCRIPT_MODEL);
+  logger.debug("[Hooksmith] Using OpenAI script model", { model: OPENAI_SCRIPT_MODEL });
   const response = await client.responses.create({
     model: OPENAI_SCRIPT_MODEL,
     input: `Write a ${payload.durationSec ?? 120}-second YouTube Short script in 3 beats (Hook–Value–CTA). Sentences short, spoken tone, timestamp markers optional. End with a crisp CTA. Hook: ${
@@ -255,7 +256,7 @@ export async function generateHighlights(payload: HighlightPayload) {
   if (HAS_GEMINI_KEY && (!wantsOpenAI && (wantsGemini || !requestedModel))) {
     const geminiModel = requestedModel ?? process.env.GOOGLE_GEMINI_MODEL ?? "gemini-1.5-flash";
     try {
-      console.log("[Highlights] Using Gemini model", geminiModel);
+      logger.debug("[Highlights] Using Gemini model", { model: geminiModel });
       const result = await generateGeminiHighlights({
         ...payload,
         model: geminiModel,
@@ -264,7 +265,7 @@ export async function generateHighlights(payload: HighlightPayload) {
       if (result && result.length > 0) {
         return result;
       }
-      console.log("[Highlights] Gemini returned no highlights, falling back to OpenAI.");
+      logger.debug("[Highlights] Gemini returned no highlights, falling back to OpenAI.");
     } catch (error) {
       console.error("Gemini highlight generation failed", error);
     }
@@ -370,7 +371,7 @@ export async function generateHighlights(payload: HighlightPayload) {
   const OPENROUTER_HIGHLIGHTS_ENABLED = process.env.OPENROUTER_ENABLED === 'true';
   if (OPENROUTER_HIGHLIGHTS_ENABLED && HAS_OPENROUTER_KEY && openRouterClient && !wantsOpenAI) {
     try {
-      console.log("[Highlights] Trying OpenRouter model", OPENROUTER_MODELS.highlights);
+      logger.debug("[Highlights] Trying OpenRouter model", { model: OPENROUTER_MODELS.highlights });
       const orResp = await openRouterClient.chat.completions.create({
         model: OPENROUTER_MODELS.highlights,
         messages: [
@@ -398,13 +399,13 @@ export async function generateHighlights(payload: HighlightPayload) {
       } catch {
         // JSON parse failed — fall through to OpenAI
       }
-      console.log("[Highlights] OpenRouter returned no usable highlights, falling back to OpenAI.");
+      logger.debug("[Highlights] OpenRouter returned no usable highlights, falling back to OpenAI.");
     } catch (error) {
       console.warn("[Highlights] OpenRouter generation failed, falling back to OpenAI:", error instanceof Error ? error.message : error);
     }
   }
 
-  console.log("[Highlights] Using OpenAI model", openAIModel);
+  logger.debug("[Highlights] Using OpenAI model", { model: openAIModel });
   const response = await client.responses.create({
     model: openAIModel,
     input: [

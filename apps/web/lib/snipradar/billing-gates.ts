@@ -18,8 +18,8 @@ export type SnipRadarBillingGateDetails = {
   upgradePlan: BillingPlanId | null;
   remaining?: number | "unlimited";
   limit?: number | "unlimited" | string | false | null;
-  analyticsWindowDays?: 0 | 7 | 30;
-  suggestedPeriodDays?: 7 | 30;
+  analyticsWindowDays?: 0 | 7 | 30 | 90;
+  suggestedPeriodDays?: 7 | 30 | 90;
 };
 
 const FEATURE_LABELS: Partial<Record<BillingFeatureName, string>> = {
@@ -52,13 +52,14 @@ export function getBillingPlanLabel(planId: BillingPlanId | null | undefined): s
   return planId.charAt(0).toUpperCase() + planId.slice(1);
 }
 
-export function getAnalyticsWindowDays(access: BillingAnalyticsAccess): 0 | 7 | 30 {
+export function getAnalyticsWindowDays(access: BillingAnalyticsAccess): 0 | 7 | 30 | 90 {
   if (access === false) return 0;
   if (access === "7d") return 7;
+  if (access === "90d + export") return 90;
   return 30;
 }
 
-export function getAnalyticsWindowDaysFromState(state: BillingSubscriptionState): 0 | 7 | 30 {
+export function getAnalyticsWindowDaysFromState(state: BillingSubscriptionState): 0 | 7 | 30 | 90 {
   return getAnalyticsWindowDays(state.limits.analytics);
 }
 

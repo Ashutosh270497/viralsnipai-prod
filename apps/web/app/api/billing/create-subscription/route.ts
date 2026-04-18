@@ -7,6 +7,10 @@ import { getBillingPlan, getBillingPlanRazorpayPlanId, resolveBillingPlanId } fr
 import { getCurrentDbUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import {
+  consumeSnipRadarRateLimit,
+  buildSnipRadarRateLimitHeaders,
+} from "@/lib/snipradar/request-guards";
+import {
   createRazorpayCustomer,
   createRazorpaySubscriptionRecord,
   fetchRazorpaySubscription,
@@ -20,7 +24,9 @@ import {
 
 const requestSchema = z.object({
   planId: z.string().min(1),
-  billingRegion: z.enum(["IN", "GLOBAL"]).optional(),
+  // billingRegion is intentionally NOT accepted from the client —
+  // it is always derived server-side from Vercel geo headers to
+  // prevent users from self-selecting a cheaper pricing region.
   promoCode: z.string().trim().min(2).max(40).optional(),
 });
 
@@ -31,6 +37,17 @@ export async function POST(request: NextRequest) {
     const user = await getCurrentDbUser();
     if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    // Rate limit: 10 subscription attempts per hour per user (prevents promo brute-force)
+    const rateLimit = consumeSnipRadarRateLimit("billing:create-subscription", user.id, [
+      { name: "hourly", windowMs: 60 * 60 * 1000, maxHits: 10 },
+    ]);
+    if (!rateLimit.allowed) {
+      return NextResponse.json(
+        { error: "Too many subscription attempts. Please wait before trying again." },
+        { status: 429, headers: { "Cache-Control": "no-store", ...buildSnipRadarRateLimitHeaders(rateLimit) } }
+      );
     }
 
     const parsed = requestSchema.safeParse(await request.json());
@@ -62,13 +79,12 @@ export async function POST(request: NextRequest) {
       where: { userId: user.id },
     });
 
-    const billingRegion =
-      parsed.data.billingRegion ??
-      detectBillingRegion({
-        country: request.headers.get("x-vercel-ip-country"),
-        locale: request.headers.get("accept-language"),
-        host: request.headers.get("host"),
-      });
+    // Always derive billing region from server-side geo headers — never from client input.
+    const billingRegion = detectBillingRegion({
+      country: request.headers.get("x-vercel-ip-country"),
+      locale: request.headers.get("accept-language"),
+      host: request.headers.get("host"),
+    });
 
     const razorpayPlanId = getBillingPlanRazorpayPlanId(planId, billingRegion);
     if (!razorpayPlanId) {

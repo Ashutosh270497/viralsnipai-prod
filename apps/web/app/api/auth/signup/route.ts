@@ -4,8 +4,27 @@ import { prisma } from "@/lib/prisma";
 import { recordActivationCheckpointSafe } from "@/lib/analytics/activation";
 import { ensureSubscriptionBootstrap } from "@/lib/billing/subscriptions";
 import { signupSchema } from "@/lib/validations";
+import {
+  consumeSnipRadarRateLimit,
+  buildSnipRadarRateLimitHeaders,
+} from "@/lib/snipradar/request-guards";
 
 export async function POST(request: NextRequest) {
+  // Rate limit: 5 signup attempts per 15 minutes per IP
+  const ip =
+    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
+    request.headers.get("x-real-ip") ??
+    "unknown";
+  const rateLimit = consumeSnipRadarRateLimit(`signup:${ip}`, "global", [
+    { name: "15min", windowMs: 15 * 60 * 1000, maxHits: 5 },
+  ]);
+  if (!rateLimit.allowed) {
+    return NextResponse.json(
+      { error: "Too many signup attempts. Please try again later." },
+      { status: 429, headers: { "Cache-Control": "no-store", ...buildSnipRadarRateLimitHeaders(rateLimit) } }
+    );
+  }
+
   try {
     const body = await request.json();
 

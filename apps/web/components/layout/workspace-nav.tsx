@@ -125,7 +125,9 @@ export function WorkspaceNav({ user, ecosystem, onNavigate }: WorkspaceNavProps)
           { href: "/activity", label: "Activity Center", icon: Activity },
           { href: "/snipradar/discover/tracker", label: "Discover", icon: Radar },
           { href: "/snipradar/inbox", label: "Inbox", icon: Inbox, badge: "New" },
-          { href: "/snipradar/relationships", label: "Relationships", icon: Users },
+          ...(flags.relationshipsCrmEnabled
+            ? [{ href: "/snipradar/relationships", label: "Relationships", icon: Users }]
+            : []),
           { href: "/snipradar/create/drafts", label: "Create", icon: Sparkles },
           { href: "/snipradar/publish/scheduler", label: "Publish", icon: Calendar },
           { href: "/snipradar/analytics", label: "Analytics", icon: TrendingUp },
@@ -140,7 +142,9 @@ export function WorkspaceNav({ user, ecosystem, onNavigate }: WorkspaceNavProps)
           { href: "/dashboard/content-calendar", label: "Content Calendar", icon: Calendar },
           { href: "/dashboard/script-generator", label: "Script Generator", icon: FileText },
           { href: "/dashboard/title-generator", label: "Title Generator", icon: TrendingUp },
-          { href: "/dashboard/thumbnail-generator", label: "Thumbnail Generator", icon: ImageIcon },
+          ...(flags.youtubeThumbnailGeneratorEnabled
+            ? [{ href: "/dashboard/thumbnail-generator", label: "Thumbnail Generator", icon: ImageIcon }]
+            : []),
         ];
 
   const productionTools: WorkspaceLink[] =
@@ -148,13 +152,15 @@ export function WorkspaceNav({ user, ecosystem, onNavigate }: WorkspaceNavProps)
       ? []
       : [
           { href: "/hooksmith", label: "Hooksmith", icon: Sparkles },
-          { href: "/repurpose", label: "RepurposeOS", icon: Scissors },
+          ...(flags.youtubeRepurposeOsEnabled
+            ? [{ href: "/repurpose", label: "RepurposeOS", icon: Scissors }]
+            : []),
           ...(flags.transcribeUiEnabled
             ? [{ href: "/transcribe", label: "Transcribe", icon: FileText }]
             : []),
           ...(flags.imagenEnabled ? [{ href: "/imagen", label: "Imagen", icon: ImageIcon }] : []),
           ...(flags.soraEnabled ? [{ href: "/video", label: "Video Lab", icon: Film }] : []),
-          ...(flags.voicerEnabled ? [{ href: "/voicer", label: "Voicer", icon: Mic }] : []),
+          ...(flags.youtubeVoicerEnabled ? [{ href: "/voicer", label: "Voicer", icon: Mic }] : []),
           ...(flags.veoEnabled ? [{ href: "/veo", label: "Veo", icon: Film }] : []),
         ];
 

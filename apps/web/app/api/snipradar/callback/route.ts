@@ -10,6 +10,7 @@ import {
   getAuthenticatedUser,
 } from "@/lib/integrations/x-api";
 import { logger } from "@/lib/logger";
+import { encryptXToken } from "@/lib/snipradar/token-encryption";
 import { seedStarterTrackedAccountsForUser } from "@/lib/snipradar/starter-account-seeding";
 
 /**
@@ -99,6 +100,12 @@ export async function GET(request: Request) {
       Date.now() + tokenResponse.expires_in * 1000
     );
 
+    // Encrypt tokens before persisting — decrypted only when needed at runtime.
+    const encryptedAccessToken = encryptXToken(tokenResponse.access_token);
+    const encryptedRefreshToken = tokenResponse.refresh_token
+      ? encryptXToken(tokenResponse.refresh_token)
+      : null;
+
     // Upsert X account (re-link if previously disconnected)
     await prisma.xAccount.upsert({
       where: {
@@ -113,8 +120,8 @@ export async function GET(request: Request) {
         profileImageUrl: xUser.profile_image_url ?? null,
         followerCount: xUser.public_metrics?.followers_count ?? 0,
         followingCount: xUser.public_metrics?.following_count ?? 0,
-        accessToken: tokenResponse.access_token,
-        refreshToken: tokenResponse.refresh_token ?? null,
+        accessToken: encryptedAccessToken,
+        refreshToken: encryptedRefreshToken,
         tokenExpiresAt,
         isActive: true,
       },
@@ -126,8 +133,8 @@ export async function GET(request: Request) {
         profileImageUrl: xUser.profile_image_url ?? null,
         followerCount: xUser.public_metrics?.followers_count ?? 0,
         followingCount: xUser.public_metrics?.following_count ?? 0,
-        accessToken: tokenResponse.access_token,
-        refreshToken: tokenResponse.refresh_token ?? null,
+        accessToken: encryptedAccessToken,
+        refreshToken: encryptedRefreshToken,
         tokenExpiresAt,
       },
     });

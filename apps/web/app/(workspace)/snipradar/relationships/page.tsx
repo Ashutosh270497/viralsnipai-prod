@@ -1,6 +1,7 @@
 "use client";
 
 import { useDeferredValue, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   CheckCircle2,
@@ -27,7 +28,11 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/use-toast";
+import { SnipRadarBillingGateCard } from "@/components/snipradar/billing-gate-card";
 import { SnipRadarEmptyState } from "@/components/snipradar/snipradar-empty-state";
+import { useFeatureFlags } from "@/components/providers/feature-flag-provider";
+import { parseSnipRadarApiError } from "@/lib/snipradar/client-errors";
+import { getSnipRadarBillingGateDetails } from "@/lib/snipradar/billing-gates";
 import { RELATIONSHIP_LEAD_STAGES, type RelationshipLeadStage } from "@/lib/snipradar/relationships";
 
 type RelationshipLead = {
@@ -158,9 +163,8 @@ function RelationshipLeadCard({
           notes: notes.trim() || null,
         }),
       });
-      const payload = await res.json();
-      if (!res.ok) throw new Error(payload.error ?? "Failed to update relationship");
-      return payload;
+      if (!res.ok) throw await parseSnipRadarApiError(res, "Failed to update relationship");
+      return res.json();
     },
     onSuccess: () => {
       onUpdated();
@@ -343,7 +347,14 @@ function RelationshipLeadCard({
                 </Button>
               </div>
               {mutation.error ? (
-                <p className="text-sm text-destructive">{(mutation.error as Error).message}</p>
+                (() => {
+                  const billingGate = getSnipRadarBillingGateDetails(mutation.error);
+                  return billingGate ? (
+                    <SnipRadarBillingGateCard details={billingGate} compact />
+                  ) : (
+                    <p className="text-sm text-destructive">{(mutation.error as Error).message}</p>
+                  );
+                })()
               ) : null}
             </div>
           </div>
@@ -354,11 +365,19 @@ function RelationshipLeadCard({
 }
 
 export default function SnipRadarRelationshipsPage() {
+  const router = useRouter();
+  const flags = useFeatureFlags();
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
   const [stage, setStage] = useState<string>("all");
   const [dueOnly, setDueOnly] = useState(false);
   const deferredSearch = useDeferredValue(search);
+
+  useEffect(() => {
+    if (!flags.relationshipsCrmEnabled) {
+      router.replace("/snipradar/overview");
+    }
+  }, [flags.relationshipsCrmEnabled, router]);
 
   const relationshipsQuery = useQuery<RelationshipsPayload>({
     queryKey: ["snipradar-relationships", stage, dueOnly, deferredSearch],
@@ -368,9 +387,8 @@ export default function SnipRadarRelationshipsPage() {
       if (dueOnly) params.set("due", "true");
       if (deferredSearch.trim()) params.set("q", deferredSearch.trim());
       const res = await fetch(`/api/snipradar/relationships?${params.toString()}`);
-      const payload = await res.json();
-      if (!res.ok) throw new Error(payload.error ?? "Failed to load relationship graph");
-      return payload;
+      if (!res.ok) throw await parseSnipRadarApiError(res, "Failed to load relationship graph");
+      return res.json();
     },
     staleTime: 20_000,
     refetchOnWindowFocus: false,
@@ -489,11 +507,18 @@ export default function SnipRadarRelationshipsPage() {
           <CardContent className="p-6 text-sm text-muted-foreground">Loading relationship graph...</CardContent>
         </Card>
       ) : relationshipsQuery.error ? (
-        <Card className="border-border/70 bg-card/80">
-          <CardContent className="p-6 text-sm text-destructive">
-            {(relationshipsQuery.error as Error).message}
-          </CardContent>
-        </Card>
+        (() => {
+          const billingGate = getSnipRadarBillingGateDetails(relationshipsQuery.error);
+          return billingGate ? (
+            <SnipRadarBillingGateCard details={billingGate} />
+          ) : (
+            <Card className="border-border/70 bg-card/80">
+              <CardContent className="p-6 text-sm text-destructive">
+                {(relationshipsQuery.error as Error).message}
+              </CardContent>
+            </Card>
+          );
+        })()
       ) : relationshipsQuery.data?.leads.length ? (
         <div className="space-y-4">
           {relationshipsQuery.data.leads.map((lead) => (

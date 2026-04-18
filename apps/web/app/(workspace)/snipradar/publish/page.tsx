@@ -32,6 +32,7 @@ import {
   type SchedulerRunsOpsPayload,
 } from "@/components/snipradar/analytics/scheduler-ops-panel";
 import { useBillingSubscriptionState } from "@/hooks/use-billing-subscription";
+import { useFeatureFlags } from "@/components/providers/feature-flag-provider";
 import { isPublishTab, type PublishTab } from "@/lib/snipradar-tabs";
 import { trackSnipRadarEvent } from "@/lib/snipradar/events";
 
@@ -54,6 +55,7 @@ export default function SnipRadarPublishPage({
   tabOverride?: PublishTab;
 } = {}) {
   const { tab, setTab } = useUrlTab("calendar", tabOverride);
+  const flags = useFeatureFlags();
   const billingQuery = useBillingSubscriptionState();
   const queryClient = useQueryClient();
   const { account, auth, invalidate, reportPerf } = useSnipRadar();
@@ -347,12 +349,23 @@ export default function SnipRadarPublishPage({
       </TabsContent>
 
       <TabsContent value="automations" className="space-y-4">
-        <AutoDmPanel billingState={billingQuery.data} />
-        <WinnerLoopPanel mode="publish" />
+        {flags.autoDmEnabled && <AutoDmPanel billingState={billingQuery.data} />}
+        {flags.winnerLoopEnabled && <WinnerLoopPanel mode="publish" />}
+        {!flags.autoDmEnabled && !flags.winnerLoopEnabled && (
+          <p className="text-sm text-muted-foreground py-4 text-center">
+            Automation features are not yet available.
+          </p>
+        )}
       </TabsContent>
 
       <TabsContent value="api" className="space-y-4">
-        <ApiWebhooksPanel />
+        {flags.apiWebhooksEnabled ? (
+          <ApiWebhooksPanel />
+        ) : (
+          <p className="text-sm text-muted-foreground py-4 text-center">
+            API &amp; Webhooks are not yet available.
+          </p>
+        )}
       </TabsContent>
 
       <TabsContent value="diagnostics" className="space-y-4">

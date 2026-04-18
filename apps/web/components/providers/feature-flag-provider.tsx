@@ -67,6 +67,14 @@ export function FeatureFlagProvider({ children }: { children: React.ReactNode })
         overrides.snipRadarPublishV2Enabled ?? envFlags.snipRadarPublishV2Enabled,
       snipRadarGrowthPlanV2Enabled:
         overrides.snipRadarGrowthPlanV2Enabled ?? envFlags.snipRadarGrowthPlanV2Enabled,
+      // Not-ready features (default false — env-controlled only, not overridable from UI)
+      winnerLoopEnabled: envFlags.winnerLoopEnabled,
+      relationshipsCrmEnabled: envFlags.relationshipsCrmEnabled,
+      apiWebhooksEnabled: envFlags.apiWebhooksEnabled,
+      autoDmEnabled: envFlags.autoDmEnabled,
+      youtubeRepurposeOsEnabled: envFlags.youtubeRepurposeOsEnabled,
+      youtubeVoicerEnabled: envFlags.youtubeVoicerEnabled,
+      youtubeThumbnailGeneratorEnabled: envFlags.youtubeThumbnailGeneratorEnabled,
     };
     return {
       flags,
