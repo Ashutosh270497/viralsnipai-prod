@@ -4,6 +4,7 @@ import { cookies } from "next/headers";
 
 import { getCurrentUser } from "@/lib/auth";
 import { ECOSYSTEM_COOKIE_KEY, getEcosystemHome, parseEcosystem } from "@/lib/ecosystem";
+import { isFeatureEnabled } from "@/config/features";
 
 export const dynamic = "force-dynamic";
 
@@ -24,6 +25,10 @@ export async function POST(request: Request) {
   }
 
   const ecosystem = parsed.data.ecosystem;
+  if (ecosystem === "x" && !isFeatureEnabled("snipRadar")) {
+    return NextResponse.json({ error: "Automation OS is not enabled" }, { status: 403 });
+  }
+
   const response = NextResponse.json({
     ecosystem,
     home: getEcosystemHome(ecosystem),
@@ -48,9 +53,11 @@ export async function GET() {
   }
 
   const ecosystem = parseEcosystem(cookies().get(ECOSYSTEM_COOKIE_KEY)?.value);
+  const effectiveEcosystem =
+    ecosystem === "x" && !isFeatureEnabled("snipRadar") ? "youtube" : ecosystem;
 
   return NextResponse.json({
-    ecosystem,
-    home: ecosystem ? getEcosystemHome(ecosystem) : null,
+    ecosystem: effectiveEcosystem,
+    home: effectiveEcosystem ? getEcosystemHome(effectiveEcosystem) : null,
   });
 }

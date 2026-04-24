@@ -31,3 +31,41 @@ export function bytesToSize(bytes: number) {
   const i = Math.floor(Math.log(bytes) / Math.log(k));
   return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`;
 }
+
+/**
+ * Friendly relative date for dashboard/list surfaces.
+ * Today → "Today, 14:03"
+ * This week → "Mon, 14:03"
+ * Older → "12 Apr 2026"
+ */
+export function formatDate(input: Date | string | number): string {
+  const date = input instanceof Date ? input : new Date(input);
+  if (Number.isNaN(date.getTime())) return "";
+
+  const now = new Date();
+  const sameDay =
+    date.getFullYear() === now.getFullYear() &&
+    date.getMonth() === now.getMonth() &&
+    date.getDate() === now.getDate();
+
+  const time = date.toLocaleTimeString(undefined, {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+
+  if (sameDay) return `Today, ${time}`;
+
+  const msInDay = 24 * 60 * 60 * 1000;
+  const daysAgo = Math.floor((now.getTime() - date.getTime()) / msInDay);
+  if (daysAgo >= 0 && daysAgo < 7) {
+    const weekday = date.toLocaleDateString(undefined, { weekday: "short" });
+    return `${weekday}, ${time}`;
+  }
+
+  return date.toLocaleDateString(undefined, {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+}

@@ -1,6 +1,8 @@
 # ViralSnipAI Monorepo
 
-ViralSnipAI is an AI-assisted SaaS workspace that combines **Hooksmith** (hook + script ideation) with **RepurposeOS** (clip generation, captions, and branded exports). The monorepo is built with Next.js 14 App Router, Prisma, MySQL, Tailwind, shadcn/ui, and an FFmpeg-based rendering pipeline.
+ViralSnipAI turns long videos into viral-ready short clips with AI hooks, captions, and branded exports.
+
+The launch plan is intentionally versioned. **V1** focuses on the core video repurposing workflow: landing, auth, onboarding, dashboard, projects, video upload, AI clip detection, captions, brand kit, exports/downloads, billing, and basic usage limits. **V2** adds creator growth tools. **V3** adds SnipRadar, X automation, advanced media AI, CRM, API/webhooks, and automation workflows. The monorepo is built with Next.js 14 App Router, Prisma, PostgreSQL/Supabase, Tailwind, shadcn/ui, and an FFmpeg-based rendering pipeline.
 
 ![Dashboard placeholder](docs/assets/dashboard-placeholder.png)
 
@@ -8,16 +10,16 @@ ViralSnipAI is an AI-assisted SaaS workspace that combines **Hooksmith** (hook +
 
 All project documentation is organized in the [`docs/`](./docs/) folder. Start with:
 - **[Documentation Index](./docs/INDEX.md)** - Complete documentation navigation
+- **[Launch Versions](./docs/LAUNCH_VERSIONS.md)** - V1/V2/V3 launch scope and feature gates
 - **[Supabase Setup Guide](./docs/SUPABASE_SETUP_GUIDE.md)** - Database setup instructions
 - **[Architecture](./docs/architecture/)** - Technical architecture documentation
 
 ## Features
 
-- **Hooksmith** – Generate 8–10 hooks from a topic/URL and expand them into 120-second scripts with tone + audience controls.
-- **RepurposeOS** – Upload/record long-form video, auto-detect highlights, burn-in captions, and queue preset exports (9:16, 1:1, 16:9).
+- **V1 Core Repurposing** – Upload long-form video, auto-detect highlights, edit captions, apply brand kit, and export/download short clips.
 - **Brand Kit** – Persist color, font, logo, watermark, and caption styles that flow through clips + exports.
-- **Imagen** – Craft marketing-ready visuals with Google’s Nano Banana model, complete with voice prompts, style hints, aspect-ratio controls, and optional reference image uploads for grounded compositions.
-- **Veo** – Generate short-form cinematic clips with Google Veo 3.1, offering aspect ratio + duration controls and downloadable previews.
+- **V2 Creator Growth** – Feature-gated roadmap for hook generation per clip, platform captions, clip ranking, content calendar, title generation, thumbnail ideas, and creator analytics.
+- **V3 Automation OS** – Feature-gated roadmap for SnipRadar, X automation, scheduling, CRM, API/webhooks, Imagen, Veo, and advanced automation.
 - **Auth** – NextAuth with email magic links, Google OAuth, and an instant demo login.
 - **Storage** – Local `/uploads` during development; S3-compatible hooks for production.
 - **Background rendering** – In-memory render queue built on `@clippers/jobs` + FFmpeg static binaries.
@@ -28,7 +30,7 @@ All project documentation is organized in the [`docs/`](./docs/) folder. Start w
 
 - **Frontend**: Next.js 14 (App Router, TypeScript), TailwindCSS, shadcn/ui, React Query
 - **Backend**: Next.js route handlers, NextAuth, Prisma ORM
-- **Database**: MySQL 8 via Docker Compose
+- **Database**: PostgreSQL via Supabase (production) or local Docker Compose (development)
 - **Media**: `fluent-ffmpeg`, `ffmpeg-static`, `ffprobe-static`
 - **AI**: OpenAI Responses + Whisper (mockable for dev)
 - **Storage**: Local disk or S3-compatible
@@ -55,47 +57,60 @@ All project documentation is organized in the [`docs/`](./docs/) folder. Start w
 │   ├── PHASE_0_IMPLEMENTATION_COMPLETE.md  # Phase 0 status
 │   ├── REPURPOSEOS_ENHANCEMENT_PLAN.md     # Enhancement roadmap
 │   └── assets/                        # Images & diagrams
-└── docker-compose.yml  # MySQL 8 for local development
+└── docker-compose.yml  # Local PostgreSQL for development
 ```
 
 ## Prerequisites
 
-- Node.js 18+
-- pnpm 8+
-- Docker Desktop (or compatible daemon)
+- Node.js 20+
+- pnpm 9+
+- Docker Desktop (for local database) — OR a Supabase project
 
 ## Local Development
 
-1. Start the database:
+### Option A — Local PostgreSQL (fastest)
+
+1. Start a local PostgreSQL instance:
    ```bash
    docker compose up -d
    ```
+   This starts `postgres:16-alpine` on port 5432 with database `clippers`.
+
 2. Bootstrap environment variables:
    ```bash
    cp .env.example apps/web/.env.local
    ```
-   Fill in runtime secrets in `apps/web/.env.local` as needed (OpenAI/OpenRouter, Google OAuth, SMTP for magic links).
-   Keep `apps/web/.env` minimal with `DATABASE_URL` only so Prisma CLI commands continue to work locally.
-   - Imagen requires `GOOGLE_NANO_BANANA_API_KEY`. Leave `GOOGLE_NANO_BANANA_ENDPOINT` unset unless you have a custom endpoint; change `GOOGLE_IMAGEN_MODEL` (defaults to `imagen-4.0-generate-1`) if you want to target another Gemini image model such as `gemini-2.5-flash-image`.
-     - Gemini image models currently return only one candidate per request; the app automatically clamps `Images per batch` to 1 when a Gemini model is active.
-   - Voice prompts & transcriptions use OpenAI Whisper. Provide `OPENAI_API_KEY` and set `USE_MOCK_TRANSCRIBE="false"` (optionally override `WHISPER_MODEL`) to generate real transcripts; the flag can remain `true` for synthetic text while developing offline.
-   - OpenRouter is the primary routed text-model provider for migrated flows. Set `OPENROUTER_API_KEY` and `OPENROUTER_ENABLED="true"` in `apps/web/.env.local`.
-   - Text-to-speech in the Transcribe workspace relies on OpenAI audio models. Optionally configure `TTS_MODEL` (defaults to `gpt-4o-mini-tts`), `TTS_VOICE`, or `TTS_FORMAT` to customise the generated clips.
-  - Veo video generation needs `GOOGLE_VEO_API_KEY` (defaults to the image key if omitted) and optionally `GOOGLE_VEO_MODEL`. Toggle with `VEO_ENABLED` / `NEXT_PUBLIC_VEO_ENABLED`.
-  - When targeting the Vertex AI long-running endpoint, set `GOOGLE_VEO_SERVICE_ACCOUNT_KEY_PATH`, `GOOGLE_VEO_PROJECT_ID`, and `GOOGLE_VEO_LOCATION`. `GOOGLE_VEO_OUTPUT_URI` is optional (provide a `gs://` bucket if you want renders delivered to Cloud Storage). You can also override `GOOGLE_VEO_API_ENDPOINT` (defaults to `${LOCATION}-aiplatform.googleapis.com`).
-  - Fine-tune request behaviour with env overrides (defaults shown in parentheses): `GOOGLE_VEO_SAMPLE_COUNT` (4), `GOOGLE_VEO_GENERATE_AUDIO` (true), `GOOGLE_VEO_INCLUDE_RAI_REASON` (true), `GOOGLE_VEO_ADD_WATERMARK` (true), `GOOGLE_VEO_PERSON_GENERATION` (`allow_all`), `GOOGLE_VEO_RESOLUTION` (`720p`).
-3. Install dependencies and prepare Prisma:
+   Set `DATABASE_URL` in `apps/web/.env.local` to the local connection string:
+   ```
+   DATABASE_URL="postgresql://clippers:clippers_local@localhost:5432/clippers"
+   ```
+   Fill in the remaining required secrets (OpenAI/OpenRouter, Google OAuth). See the
+   `[V1 REQUIRED]` sections in `.env.example` for what is needed to run the core workflow.
+   Keep `apps/web/.env` minimal (just `DATABASE_URL`) so Prisma CLI commands work without
+   loading the full runtime env.
+
+3. Install dependencies and set up the database:
    ```bash
    pnpm install
-   pnpm --filter web prisma generate
-   pnpm --filter web prisma db push
+   pnpm --filter web exec prisma generate
+   pnpm --filter web exec prisma db push
    pnpm seed
    ```
+
 4. Run the app:
    ```bash
    pnpm dev
    ```
    Visit http://localhost:3000 and click **Try the demo** to jump into a seeded workspace.
+
+### Option B — Supabase (production parity)
+
+1. Create a project at [app.supabase.com](https://app.supabase.com).
+2. Copy the **Direct connection** string (not the pooled one) from
+   Settings → Database → Connection String → Prisma tab.
+3. Follow steps 2–4 above using the Supabase `DATABASE_URL`.
+
+See [docs/PRODUCTION_SETUP.md](./docs/PRODUCTION_SETUP.md) for the full production deployment guide.
 
 ### Available Scripts (pnpm)
 
@@ -156,7 +171,7 @@ The project ships with `ffmpeg-static`/`ffprobe-static` binaries. If you hit cod
 
 | Issue | Fix |
 | ----- | --- |
-| `PrismaClientInitializationError` | Ensure `docker compose up -d` is running and `DATABASE_URL` points at localhost. |
+| `PrismaClientInitializationError` | Ensure `docker compose up -d` is running (local) or your Supabase project is active, and that `DATABASE_URL` in `apps/web/.env.local` is the direct (non-pooled) connection string. |
 | FFmpeg permission denied | Run `chmod +x node_modules/.bin/ffmpeg` or provide native FFmpeg via `FFMPEG_PATH`. |
 | Upload previews returning 404 | Verify `LOCAL_UPLOAD_DIR` exists and that `/api/uploads/*` is reachable (development-only). |
 | Magic link email not arriving | Configure SMTP variables or, during dev, check the terminal log for the JSON transport payload. |
@@ -166,19 +181,6 @@ The project ships with `ffmpeg-static`/`ffprobe-static` binaries. If you hit cod
 
 - ![Hooksmith](docs/assets/hooksmith-placeholder.png)
 - ![RepurposeOS](docs/assets/repurpose-placeholder.png)
-
-## 📚 Documentation
-
-All project documentation is located in the [`docs/`](./docs/) folder:
-
-- **[docs/README.md](./docs/README.md)** - Documentation index and navigation guide
-- **[CODE_REVIEW_IMPROVEMENTS.md](./docs/CODE_REVIEW_IMPROVEMENTS.md)** - Infrastructure improvements and code quality enhancements
-- **[PHASE_0_IMPLEMENTATION_COMPLETE.md](./docs/PHASE_0_IMPLEMENTATION_COMPLETE.md)** - Phase 0 backend implementation status
-- **[REPURPOSEOS_ENHANCEMENT_PLAN.md](./docs/REPURPOSEOS_ENHANCEMENT_PLAN.md)** - Comprehensive enhancement roadmap
-- **[PRD_ViralSnipAI.md](./docs/PRD_ViralSnipAI.md)** - Product requirements document
-- **[clippers-journal.md](./docs/clippers-journal.md)** - Development journal and build log
-
-For detailed implementation guides, API references, and technical specifications, see the [docs README](./docs/README.md).
 
 ## License
 

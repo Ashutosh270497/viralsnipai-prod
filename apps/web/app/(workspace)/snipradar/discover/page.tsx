@@ -40,7 +40,7 @@ import { SnipRadarEmptyState } from "@/components/snipradar/snipradar-empty-stat
 import { ViralTweetCard } from "@/components/snipradar/viral-tweet-card";
 import { EngagementFinder } from "@/components/snipradar/engagement-finder";
 import { useBillingSubscriptionState } from "@/hooks/use-billing-subscription";
-import { getSnipRadarBillingGateDetails } from "@/lib/snipradar/billing-gates";
+import { getNextBillingPlan, getSnipRadarBillingGateDetails } from "@/lib/snipradar/billing-gates";
 import {
   parseSnipRadarApiError,
   toSnipRadarApiError,
@@ -547,8 +547,8 @@ export default function SnipRadarDiscoverPage({
           kind: "usage_limit_reached" as const,
           feature: "tracker" as const,
           currentPlan: billingQuery.data.plan.id,
-          requiredPlan: billingQuery.data.plan.id === "free" ? "plus" : billingQuery.data.plan.id === "plus" ? "pro" : null,
-          upgradePlan: billingQuery.data.plan.id === "free" ? "plus" : billingQuery.data.plan.id === "plus" ? "pro" : null,
+          requiredPlan: getNextBillingPlan(billingQuery.data.plan.id),
+          upgradePlan: getNextBillingPlan(billingQuery.data.plan.id),
           remaining: 0,
           limit: billingQuery.data.limits.trackedAccounts,
         }
@@ -561,8 +561,8 @@ export default function SnipRadarDiscoverPage({
           feature: "viralFeed" as const,
           action: "viral_fetch" as const,
           currentPlan: billingQuery.data.plan.id,
-          requiredPlan: billingQuery.data.plan.id === "free" ? "plus" : billingQuery.data.plan.id === "plus" ? "pro" : null,
-          upgradePlan: billingQuery.data.plan.id === "free" ? "plus" : billingQuery.data.plan.id === "plus" ? "pro" : null,
+          requiredPlan: getNextBillingPlan(billingQuery.data.plan.id),
+          upgradePlan: getNextBillingPlan(billingQuery.data.plan.id),
           remaining: 0,
           limit: billingQuery.data.limits.viralFeedFetches,
         }

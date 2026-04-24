@@ -1,16 +1,37 @@
 version: "3.9"
+
+# ----------------------------------------------------------------
+# LOCAL DEVELOPMENT — PostgreSQL
+# ----------------------------------------------------------------
+# This Compose file starts a local PostgreSQL instance that matches
+# the Prisma schema (provider = "postgresql") for local development.
+#
+# Production uses Supabase PostgreSQL — see docs/PRODUCTION_SETUP.md.
+#
+# Usage:
+#   docker compose up -d          # start DB
+#   docker compose down           # stop DB
+#   docker compose down -v        # stop + wipe data
+# ----------------------------------------------------------------
+
 services:
-  mysql:
-    image: mysql:8.0
+  postgres:
+    image: postgres:16-alpine
     restart: unless-stopped
     environment:
-      MYSQL_ROOT_PASSWORD: password
-      MYSQL_DATABASE: clippers
+      POSTGRES_USER: clippers
+      POSTGRES_PASSWORD: clippers_local
+      POSTGRES_DB: clippers
     ports:
-      - "3306:3306"
+      - "5432:5432"
     volumes:
-      - mysql-data:/var/lib/mysql
-    command: ["--default-authentication-plugin=mysql_native_password", "--character-set-server=utf8mb4", "--collation-server=utf8mb4_unicode_ci"]
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U clippers"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
 volumes:
-  mysql-data:
+  postgres-data:
     driver: local

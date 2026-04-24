@@ -31,6 +31,9 @@ export const authOptions: NextAuthOptions = {
       },
       allowDangerousEmailAccountLinking: false,
     }),
+    // Demo provider is only available in development. Production must never
+    // expose this — it bypasses password checks and signs the user in as the
+    // shared demo@clippers.dev account.
     ...(process.env.NODE_ENV === 'development' ? [CredentialsProvider({
       id: "demo",
       name: "Demo Login",

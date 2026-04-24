@@ -254,9 +254,6 @@ export async function ensureSubscriptionBootstrap(
           ...(!existingSubscription.stripeCustomerId && legacySeed.stripeCustomerId
             ? { stripeCustomerId: legacySeed.stripeCustomerId }
             : {}),
-          ...(!existingSubscription.stripeSubscriptionId && legacySeed.stripeSubscriptionId
-            ? { stripeSubscriptionId: legacySeed.stripeSubscriptionId }
-            : {}),
           ...(!existingSubscription.currentPeriodStart && legacySeed.currentPeriodStart
             ? { currentPeriodStart: legacySeed.currentPeriodStart }
             : {}),
@@ -277,7 +274,6 @@ export async function ensureSubscriptionBootstrap(
           razorpayCustomerId: legacySeed.razorpayCustomerId,
           razorpaySubscriptionId: legacySeed.razorpaySubscriptionId,
           stripeCustomerId: legacySeed.stripeCustomerId,
-          stripeSubscriptionId: legacySeed.stripeSubscriptionId,
           currentPeriodStart: legacySeed.currentPeriodStart,
           currentPeriodEnd: legacySeed.currentPeriodEnd,
           cancelAtPeriodEnd: legacySeed.cancelAtPeriodEnd,
@@ -452,15 +448,16 @@ export async function updateSubscriptionRecord(
   userId: string,
   data: Prisma.SubscriptionUncheckedUpdateInput,
 ) {
+  const createData = data as Prisma.SubscriptionUncheckedCreateInput;
   const subscription = await prisma.subscription.upsert({
     where: { userId },
     update: data,
     create: {
-      userId,
-      planId: "free",
-      status: "active",
-      billingRegion: "IN",
-      ...(data as Prisma.SubscriptionUncheckedCreateInput),
+      ...createData,
+      userId: createData.userId ?? userId,
+      planId: createData.planId ?? "free",
+      status: createData.status ?? "active",
+      billingRegion: createData.billingRegion ?? "IN",
     },
   });
   await syncLegacySubscriptionFields(userId, subscription);

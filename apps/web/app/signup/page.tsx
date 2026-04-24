@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, Suspense, useState } from "react";
 import { signIn } from "next-auth/react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
@@ -11,6 +11,14 @@ import { useToast } from "@/components/ui/use-toast";
 import { signupSchema } from "@/lib/validations";
 
 export default function SignUpPage() {
+  return (
+    <Suspense fallback={<SignupFallback />}>
+      <SignUpPageInner />
+    </Suspense>
+  );
+}
+
+function SignUpPageInner() {
   const searchParams = useSearchParams();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -251,6 +259,14 @@ export default function SignUpPage() {
           </p>
         </div>
       </div>
+    </div>
+  );
+}
+
+function SignupFallback() {
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-gray-50 px-4 py-12 dark:bg-black">
+      <div className="text-sm text-gray-600 dark:text-neutral-400">Loading signup...</div>
     </div>
   );
 }

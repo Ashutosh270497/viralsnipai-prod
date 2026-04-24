@@ -25,6 +25,45 @@ type CommandAction = {
 
 const BASE_ACTIONS: CommandAction[] = [
   {
+    id: "go-dashboard",
+    label: "Go to Dashboard",
+    hint: "Open your core workspace",
+    route: "/dashboard"
+  },
+  {
+    id: "go-projects",
+    label: "Go to Projects",
+    hint: "Open your workspace projects",
+    route: "/projects"
+  },
+  {
+    id: "new-project",
+    label: "Create New Project",
+    hint: "Jump to the projects dashboard to start fresh",
+    route: "/projects#new"
+  },
+  {
+    id: "create-clip",
+    label: "Create Clip",
+    hint: "Upload a long video and detect short clips",
+    route: "/repurpose"
+  },
+  {
+    id: "go-exports",
+    label: "Go to Exports",
+    hint: "Export and download branded short clips",
+    route: "/repurpose/export"
+  },
+  {
+    id: "go-brand-kit",
+    label: "Go to Brand Kit",
+    hint: "Manage logos, captions, and watermark settings",
+    route: "/brand-kit"
+  }
+];
+
+const SNIPRADAR_ACTIONS: CommandAction[] = [
+  {
     id: "go-snipradar-overview",
     label: "SnipRadar Overview",
     hint: "Open your X growth dashboard",
@@ -66,46 +105,30 @@ const BASE_ACTIONS: CommandAction[] = [
     hint: "Generate phased execution roadmap",
     route: "/snipradar/growth-planner"
   },
-  {
-    id: "go-projects",
-    label: "Go to Projects",
-    hint: "Open your workspace projects",
-    route: "/projects"
-  },
-  {
-    id: "new-project",
-    label: "Create New Project",
-    hint: "Jump to the projects dashboard to start fresh",
-    route: "/projects#new"
-  },
-  {
-    id: "open-templates",
-    label: "Open Templates",
-    hint: "Browse repurpose templates",
-    route: "/repurpose"
-  }
 ];
 
 export function CommandMenu() {
   const router = useRouter();
-  const { uiV2Enabled, relationshipsCrmEnabled } = useFeatureFlags();
+  const { uiV2Enabled, relationshipsCrmEnabled, snipRadarEnabled } = useFeatureFlags();
   const [open, setOpen] = useState(false);
 
   const actions = useMemo(() => {
-    if (!relationshipsCrmEnabled) return BASE_ACTIONS;
-    const relationshipsAction: CommandAction = {
-      id: "go-snipradar-relationships",
-      label: "SnipRadar Relationships",
-      hint: "Manage leads, follow-ups, and reply history",
-      route: "/snipradar/relationships"
-    };
-    // Insert after inbox (index 3)
-    return [
-      ...BASE_ACTIONS.slice(0, 4),
-      relationshipsAction,
-      ...BASE_ACTIONS.slice(4),
-    ];
-  }, [relationshipsCrmEnabled]);
+    if (!snipRadarEnabled) return BASE_ACTIONS;
+    const snipRadarActions = relationshipsCrmEnabled
+      ? [
+          ...SNIPRADAR_ACTIONS.slice(0, 4),
+          {
+            id: "go-snipradar-relationships",
+            label: "SnipRadar Relationships",
+            hint: "Manage leads, follow-ups, and reply history",
+            route: "/snipradar/relationships"
+          },
+          ...SNIPRADAR_ACTIONS.slice(4),
+        ]
+      : SNIPRADAR_ACTIONS;
+
+    return [...BASE_ACTIONS, ...snipRadarActions];
+  }, [relationshipsCrmEnabled, snipRadarEnabled]);
 
   const modifierKey = useMemo(() => (typeof navigator !== "undefined" ? (/(Mac|iPhone|iPod|iPad)/i.test(navigator.platform) ? "⌘" : "Ctrl") : "⌘"), []);
 

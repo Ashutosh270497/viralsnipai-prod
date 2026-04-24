@@ -38,15 +38,25 @@ export const openRouterClient = HAS_OPENROUTER_KEY
 
 /**
  * Recommended model routing for ViralSnipAI features.
- * Updated March 2026 — benchmarked against OpenRouter's live model catalog.
+ * Updated April 2026 against OpenRouter's live model catalog.
  * Override any default via the corresponding env var for A/B testing.
  *
  * Selection rationale:
- *   claude-sonnet-4.6  — frontier creative quality, 200K ctx, ~$3/$15 per 1M — default for prose/creative tasks
- *   gemini-2.5-flash   — 1M ctx window (ideal for long transcripts), best structured JSON, ~$0.15/$0.60 per 1M
- *   gemini-2.5-flash-lite — ultra-low latency, cheapest tier, sufficient for short-text tasks
+ *   gemini-3.1-pro-preview        — best OpenRouter fit for long transcript/video reasoning and structured highlights.
+ *   gemini-3-flash-preview        — balanced multimodal model for fast structured extraction and analysis.
+ *   gemini-3.1-flash-lite-preview — high-volume, low-latency transforms, captions, replies, and ingest metadata.
+ *   claude-sonnet-4.6             — strongest default for polished creative writing and style transfer.
+ *   gpt-5.3-chat                  — premium reasoning/scoring where correctness matters more than cost.
  */
 export const OPENROUTER_MODELS = {
+  /**
+   * Video ingest analysis — Gemini 3.1 Flash Lite Preview
+   * Used for future direct-video/audio metadata extraction. Current V1 ingest still
+   * transcribes media through the existing media pipeline, then routes transcript
+   * analysis through the highlight model below.
+   */
+  videoIngest: process.env.OPENROUTER_VIDEO_INGEST_MODEL ?? 'google/gemini-3.1-flash-lite-preview',
+
   /**
    * Hook generation — Claude Sonnet 4.6
    * Short creative text (8-14 words). Sonnet 4.6 is Anthropic's frontier creative model
@@ -62,26 +72,23 @@ export const OPENROUTER_MODELS = {
   scripts: process.env.OPENROUTER_SCRIPTS_MODEL ?? 'anthropic/claude-sonnet-4.6',
 
   /**
-   * Highlight / timestamp detection — Gemini 2.5 Flash
-   * Best choice for transcript analysis: 1M token context window eliminates truncation
-   * on long videos, excellent structured JSON reliability, and significantly cheaper
-   * than Claude. Replaces claude-3.5-sonnet.
+   * Highlight / timestamp detection — Gemini 3.1 Pro Preview
+   * Best choice for the V1 core loop: long transcript/video context, multimodal
+   * support, strong reasoning, and reliable structured JSON for timestamp clips.
    */
-  highlights: process.env.OPENROUTER_HIGHLIGHTS_MODEL ?? 'google/gemini-2.5-flash',
+  highlights: process.env.OPENROUTER_HIGHLIGHTS_MODEL ?? 'google/gemini-3.1-pro-preview',
 
   /**
-   * Imagen prompt enhancement — Gemini 2.5 Flash
-   * Same Gemini family as the Imagen models — best prompt understanding.
-   * Two generations newer than the previous gemini-2.0-flash-001.
+   * Imagen prompt enhancement — Gemini 3.1 Flash Lite Preview
+   * Fast prompt rewrite and structured JSON for image-generation prep.
    */
-  imagenPrompt: process.env.OPENROUTER_IMAGEN_PROMPT_MODEL ?? 'google/gemini-2.5-flash',
+  imagenPrompt: process.env.OPENROUTER_IMAGEN_PROMPT_MODEL ?? 'google/gemini-3.1-flash-lite-preview',
 
   /**
-   * Caption refinement — Gemini 2.5 Flash Lite
-   * Ultra-low latency and cheapest tier — sufficient for short caption text.
-   * Replaces gpt-4o-mini.
+   * Caption refinement — Gemini 3.1 Flash Lite Preview
+   * Low latency with stronger extraction/translation quality than the 2.5 lite tier.
    */
-  captions: process.env.OPENROUTER_CAPTIONS_MODEL ?? 'google/gemini-2.5-flash-lite',
+  captions: process.env.OPENROUTER_CAPTIONS_MODEL ?? 'google/gemini-3.1-flash-lite-preview',
 
   /**
    * Content calendar planning — Claude Sonnet 4.6
@@ -91,10 +98,10 @@ export const OPENROUTER_MODELS = {
   contentCalendar: process.env.OPENROUTER_CONTENT_CALENDAR_MODEL ?? 'anthropic/claude-sonnet-4.6',
 
   /**
-   * Title / thumbnail copy — Gemini 2.5 Flash Lite
-   * Same speed tier as gpt-4o-mini, cheaper, sufficient for short title generation.
+   * Title / thumbnail copy — Gemini 3.1 Flash Lite Preview
+   * Fast, structured short-copy generation for title and thumbnail concepts.
    */
-  titles: process.env.OPENROUTER_TITLES_MODEL ?? 'google/gemini-2.5-flash-lite',
+  titles: process.env.OPENROUTER_TITLES_MODEL ?? 'google/gemini-3.1-flash-lite-preview',
 
   /**
    * Thread / X post generation — Claude Sonnet 4.6
@@ -104,32 +111,32 @@ export const OPENROUTER_MODELS = {
   threads: process.env.OPENROUTER_THREADS_MODEL ?? 'anthropic/claude-sonnet-4.6',
 
   /**
-   * SnipRadar browser extension source analysis — Gemini 2.5 Flash
+   * SnipRadar browser extension source analysis — Gemini 3 Flash Preview
    * Best fit for fast structured extraction from short social posts.
    */
   extensionAnalysis:
-    process.env.OPENROUTER_SNIPRADAR_EXTENSION_ANALYSIS_MODEL ?? 'google/gemini-2.5-flash',
+    process.env.OPENROUTER_SNIPRADAR_EXTENSION_ANALYSIS_MODEL ?? 'google/gemini-3-flash-preview',
 
   /**
-   * SnipRadar browser extension reply assist — Gemini 2.5 Flash
+   * SnipRadar browser extension reply assist — Gemini 3.1 Flash Lite Preview
    * Best cost / quality balance for short, source-anchored reply variants.
    */
   extensionReply:
-    process.env.OPENROUTER_SNIPRADAR_EXTENSION_REPLY_MODEL ?? 'google/gemini-2.5-flash',
+    process.env.OPENROUTER_SNIPRADAR_EXTENSION_REPLY_MODEL ?? 'google/gemini-3.1-flash-lite-preview',
 
   /**
-   * SnipRadar browser extension remix assist — Gemini 2.5 Flash
+   * SnipRadar browser extension remix assist — Gemini 3 Flash Preview
    * Strong enough for short-form remixes without Sonnet-level pricing.
    */
   extensionRemix:
-    process.env.OPENROUTER_SNIPRADAR_EXTENSION_REMIX_MODEL ?? 'google/gemini-2.5-flash',
+    process.env.OPENROUTER_SNIPRADAR_EXTENSION_REMIX_MODEL ?? 'google/gemini-3-flash-preview',
 
   /**
-   * SnipRadar Discover viral analysis — Gemini 2.5 Flash
+   * SnipRadar Discover viral analysis — Gemini 3 Flash Preview
    * Strong structured reasoning for tweet pattern analysis and viral mechanics.
    */
   snipradarViralAnalysis:
-    process.env.OPENROUTER_SNIPRADAR_VIRAL_ANALYSIS_MODEL ?? 'google/gemini-2.5-flash',
+    process.env.OPENROUTER_SNIPRADAR_VIRAL_ANALYSIS_MODEL ?? 'google/gemini-3-flash-preview',
 
   /**
    * SnipRadar draft generation — Claude Sonnet 4.6
@@ -139,11 +146,11 @@ export const OPENROUTER_MODELS = {
     process.env.OPENROUTER_SNIPRADAR_DRAFT_GENERATION_MODEL ?? 'anthropic/claude-sonnet-4.6',
 
   /**
-   * SnipRadar tweet prediction — GPT-4.1 Mini
-   * Fast reasoning and robust structured scoring for predictor use cases.
+   * SnipRadar tweet prediction — GPT-5.3 Chat
+   * Premium reasoning and robust structured scoring for predictor use cases.
    */
   snipradarPrediction:
-    process.env.OPENROUTER_SNIPRADAR_PREDICTION_MODEL ?? 'openai/gpt-4.1-mini',
+    process.env.OPENROUTER_SNIPRADAR_PREDICTION_MODEL ?? 'openai/gpt-5.3-chat',
 
   /**
    * SnipRadar variant generation — Claude Sonnet 4.6
@@ -153,11 +160,11 @@ export const OPENROUTER_MODELS = {
     process.env.OPENROUTER_SNIPRADAR_VARIANT_GENERATION_MODEL ?? 'anthropic/claude-sonnet-4.6',
 
   /**
-   * SnipRadar variant scoring — GPT-4.1 Mini
-   * Fast structured evaluation of publish-ready alternatives.
+   * SnipRadar variant scoring — GPT-5.3 Chat
+   * Premium structured evaluation of publish-ready alternatives.
    */
   snipradarVariantScoring:
-    process.env.OPENROUTER_SNIPRADAR_VARIANT_SCORING_MODEL ?? 'openai/gpt-4.1-mini',
+    process.env.OPENROUTER_SNIPRADAR_VARIANT_SCORING_MODEL ?? 'openai/gpt-5.3-chat',
 
   /**
    * SnipRadar research brief synthesis — Claude Sonnet 4.6
@@ -174,11 +181,11 @@ export const OPENROUTER_MODELS = {
     process.env.OPENROUTER_SNIPRADAR_RESEARCH_EMBEDDING_MODEL ?? 'openai/text-embedding-3-small',
 
   /**
-   * SnipRadar engagement replies — GPT-4.1 Mini
+   * SnipRadar engagement replies — Gemini 3.1 Flash Lite Preview
    * Fast short-form reasoning for multiple reply options.
    */
   snipradarEngagementReplies:
-    process.env.OPENROUTER_SNIPRADAR_ENGAGEMENT_REPLIES_MODEL ?? 'openai/gpt-4.1-mini',
+    process.env.OPENROUTER_SNIPRADAR_ENGAGEMENT_REPLIES_MODEL ?? 'google/gemini-3.1-flash-lite-preview',
 
   /**
    * SnipRadar templates remix — Claude Sonnet 4.6
@@ -216,20 +223,20 @@ export const OPENROUTER_MODELS = {
     process.env.OPENROUTER_SNIPRADAR_THREADS_MODEL ?? 'anthropic/claude-sonnet-4.6',
 
   /**
-   * SnipRadar Assistant (RAG chatbot) — Gemini 2.5 Flash
+   * SnipRadar Assistant (RAG chatbot) — Gemini 3 Flash Preview
    * Long-context grounding over KB chunks; structured, conversational answers.
-   * Gemini 2.5 Flash's 1M context window ensures we never truncate retrieved chunks.
+   * Gemini 3 Flash's 1M context window keeps retrieved chunks intact.
    */
   snipradarAssistant:
-    process.env.OPENROUTER_SNIPRADAR_ASSISTANT_MODEL ?? 'google/gemini-2.5-flash',
+    process.env.OPENROUTER_SNIPRADAR_ASSISTANT_MODEL ?? 'google/gemini-3-flash-preview',
 
   /**
-   * SnipRadar Growth Planner — Claude Sonnet 4.6
+   * SnipRadar Growth Planner — GPT-5.3 Chat
    * Personalized 3-phase X growth roadmap requiring complex multi-step reasoning
    * over account state, niche, and 30-day analytics. Frontier quality needed.
    */
   snipradarGrowthPlanner:
-    process.env.OPENROUTER_SNIPRADAR_GROWTH_PLANNER_MODEL ?? 'anthropic/claude-sonnet-4.6',
+    process.env.OPENROUTER_SNIPRADAR_GROWTH_PLANNER_MODEL ?? 'openai/gpt-5.3-chat',
 
   /**
    * SnipRadar Winner Loop — Claude Sonnet 4.6
@@ -240,28 +247,28 @@ export const OPENROUTER_MODELS = {
     process.env.OPENROUTER_SNIPRADAR_WINNER_LOOP_MODEL ?? 'anthropic/claude-sonnet-4.6',
 
   /**
-   * SnipRadar Growth Coach — Claude Sonnet 4.6
+   * SnipRadar Growth Coach — GPT-5.3 Chat
    * Weekly performance analysis with specific, data-driven recommendations.
    * Needs strong reasoning over engagement data patterns.
    */
   snipradarGrowthCoach:
-    process.env.OPENROUTER_SNIPRADAR_GROWTH_COACH_MODEL ?? 'anthropic/claude-sonnet-4.6',
+    process.env.OPENROUTER_SNIPRADAR_GROWTH_COACH_MODEL ?? 'openai/gpt-5.3-chat',
 
   /**
-   * SnipRadar Inbox Enrichment — Gemini 2.5 Flash
+   * SnipRadar Inbox Enrichment — Gemini 3.1 Flash Lite Preview
    * Fast structured extraction of title, summary, labels from short X captures.
    * Speed and cost matter more than frontier quality for this background task.
    */
   snipradarInboxEnrichment:
-    process.env.OPENROUTER_SNIPRADAR_INBOX_ENRICHMENT_MODEL ?? 'google/gemini-2.5-flash',
+    process.env.OPENROUTER_SNIPRADAR_INBOX_ENRICHMENT_MODEL ?? 'google/gemini-3.1-flash-lite-preview',
 
   /**
-   * SnipRadar Profile Audit — Claude Sonnet 4.6
+   * SnipRadar Profile Audit — GPT-5.3 Chat
    * Deep profile analysis, bio rewrites, and 7-day execution plans.
    * High-signal output requires frontier reasoning and creative quality.
    */
   snipradarProfileAudit:
-    process.env.OPENROUTER_SNIPRADAR_PROFILE_AUDIT_MODEL ?? 'anthropic/claude-sonnet-4.6',
+    process.env.OPENROUTER_SNIPRADAR_PROFILE_AUDIT_MODEL ?? 'openai/gpt-5.3-chat',
 } as const;
 
 export type OpenRouterModelKey = keyof typeof OPENROUTER_MODELS;
@@ -301,17 +308,27 @@ export function getActiveClient(
 /**
  * Plan-tiered AI model routing for SnipRadar.
  *
- * Free  → google/gemini-2.5-flash-lite  (fast, low-cost)
- * Plus  → google/gemini-2.5-flash       (balanced quality + speed)
- * Pro   → anthropic/claude-sonnet-4.6   (frontier quality)
+ * Free/Starter  → google/gemini-3.1-flash-lite-preview  (fast, low-cost)
+ * Creator/Plus  → google/gemini-3-flash-preview          (balanced quality + speed)
+ * Studio/Pro    → anthropic/claude-sonnet-4.6            (frontier creative quality)
  *
  * Used for user-facing generative features (draft generation, hooks, threads)
  * where model quality is a plan differentiator.
  */
 export function getSnipRadarModelForPlan(planId: string): string {
-  if (planId === 'pro') return process.env.OPENROUTER_PLAN_PRO_MODEL ?? 'anthropic/claude-sonnet-4.6';
-  if (planId === 'plus') return process.env.OPENROUTER_PLAN_PLUS_MODEL ?? 'google/gemini-2.5-flash';
-  return process.env.OPENROUTER_PLAN_FREE_MODEL ?? 'google/gemini-2.5-flash-lite';
+  if (planId === 'studio' || planId === 'pro') {
+    return process.env.OPENROUTER_PLAN_STUDIO_MODEL ??
+      process.env.OPENROUTER_PLAN_PRO_MODEL ??
+      'anthropic/claude-sonnet-4.6';
+  }
+  if (planId === 'creator' || planId === 'plus') {
+    return process.env.OPENROUTER_PLAN_CREATOR_MODEL ??
+      process.env.OPENROUTER_PLAN_PLUS_MODEL ??
+      'google/gemini-3-flash-preview';
+  }
+  return process.env.OPENROUTER_PLAN_STARTER_MODEL ??
+    process.env.OPENROUTER_PLAN_FREE_MODEL ??
+    'google/gemini-3.1-flash-lite-preview';
 }
 
 /**

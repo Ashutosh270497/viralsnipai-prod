@@ -12,6 +12,7 @@ import { WorkflowProvider } from "@/components/providers/workflow-provider";
 import { ECOSYSTEM_COOKIE_KEY, getEcosystemHome, parseEcosystem } from "@/lib/ecosystem";
 import { EcosystemSwitcher } from "@/components/layout/ecosystem-switcher";
 import { EcosystemRouteGate } from "@/components/layout/ecosystem-route-gate";
+import { isFeatureEnabled } from "@/config/features";
 
 export default async function WorkspaceLayout({ children }: { children: ReactNode }) {
   const user = await getCurrentUser();
@@ -24,8 +25,10 @@ export default async function WorkspaceLayout({ children }: { children: ReactNod
   if (!ecosystem) {
     redirect("/ecosystem/select");
   }
+  const effectiveEcosystem =
+    ecosystem === "x" && !isFeatureEnabled("snipRadar") ? "youtube" : ecosystem;
 
-  const homeHref = getEcosystemHome(ecosystem);
+  const homeHref = getEcosystemHome(effectiveEcosystem);
 
   const userForMenu = {
     ...user,
@@ -55,7 +58,7 @@ export default async function WorkspaceLayout({ children }: { children: ReactNod
             </span>
           </Link>
         </div>
-        <WorkspaceNav user={userForMenu} ecosystem={ecosystem} />
+        <WorkspaceNav user={userForMenu} ecosystem={effectiveEcosystem} />
       </aside>
 
       {/* Main area */}
@@ -64,7 +67,7 @@ export default async function WorkspaceLayout({ children }: { children: ReactNod
         <header className="sticky top-0 z-40 flex h-14 shrink-0 items-center gap-3 border-b border-border/40 bg-background/90 px-4 backdrop-blur-xl lg:px-6">
           {/* Mobile trigger + logo */}
           <div className="flex items-center gap-2 lg:hidden">
-            <MobileSidebar user={userForMenu} ecosystem={ecosystem} />
+            <MobileSidebar user={userForMenu} ecosystem={effectiveEcosystem} />
             <Link href={homeHref} className="flex items-center gap-2">
               <div
                 className="flex h-6 w-6 items-center justify-center rounded-md"
@@ -80,7 +83,7 @@ export default async function WorkspaceLayout({ children }: { children: ReactNod
 
           {/* Right side */}
           <div className="ml-auto flex items-center gap-1">
-            <EcosystemSwitcher ecosystem={ecosystem} />
+            <EcosystemSwitcher ecosystem={effectiveEcosystem} />
             <ThemeToggle />
             <UserMenu user={userForMenu} />
           </div>
@@ -88,7 +91,7 @@ export default async function WorkspaceLayout({ children }: { children: ReactNod
 
         {/* Page content */}
         <main className="flex flex-1 flex-col bg-background">
-          <EcosystemRouteGate ecosystem={ecosystem}>
+          <EcosystemRouteGate ecosystem={effectiveEcosystem}>
             <WorkflowProvider>
               <div className="flex-1 p-4 lg:p-6">{children}</div>
             </WorkflowProvider>

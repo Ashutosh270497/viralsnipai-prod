@@ -11,7 +11,7 @@ interface ThreadTweetRowProps {
   draft: {
     id: string;
     text: string;
-    threadOrder: number | null;
+    threadOrder?: number | null;
     status: string;
     postedTweetId?: string | null;
   };

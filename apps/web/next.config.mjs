@@ -86,7 +86,9 @@ const nextConfig = {
             key: 'Content-Security-Policy',
             value: [
               "default-src 'self'",
-              "script-src 'self' 'unsafe-inline' https://js.stripe.com https://checkout.razorpay.com",
+              // 'unsafe-eval' is required in development for Next.js webpack HMR and source maps.
+              // It is intentionally omitted from the production CSP.
+              `script-src 'self' 'unsafe-inline'${process.env.NODE_ENV === 'development' ? " 'unsafe-eval'" : ""} https://js.stripe.com https://checkout.razorpay.com`,
               "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
               "font-src 'self' https://fonts.gstatic.com",
               "img-src 'self' data: https: blob:",

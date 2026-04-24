@@ -25,9 +25,9 @@ const ibmPlexMono = IBM_Plex_Mono({
 
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"),
-  title: "ViralSnipAI — Hooksmith & RepurposeOS",
+  title: "ViralSnipAI — AI Video Repurposing",
   description:
-    "Create scroll-stopping hooks, scripts, and social-ready clips with AI-assisted editing, burnt-in captions, and brand-safe exports.",
+    "ViralSnipAI turns long videos into viral-ready short clips with AI hooks, captions, and branded exports.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

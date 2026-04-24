@@ -377,7 +377,7 @@ export const FEATURES = {
   /** Enable Sora integration */
   SORA: process.env.NEXT_PUBLIC_SORA_ENABLED === 'true',
   /** Enable Voicer (voice cloning) */
-  VOICER: process.env.NEXT_PUBLIC_VOICER_ENABLED !== 'false' // Default true
+  VOICER: process.env.NEXT_PUBLIC_VOICER_ENABLED === 'true'
 } as const;
 
 // =============================================================================

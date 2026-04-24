@@ -38,10 +38,15 @@ model User {
 
   // Authentication & Onboarding Fields
   password          String?    // Optional for OAuth users
-  goalSelection     String?    // 'start_channel', 'grow_channel', 'monetization', 'professional'
+  goalSelection     String?    // Legacy YouTube goal — 'start_channel', 'grow_channel', 'monetization', 'professional'
   nicheInterests    String[]   @default([]) // Array of selected niches
   resetToken        String?
   resetTokenExpiry  DateTime?
+
+  // V1 Onboarding Fields
+  creatorType       String?    // 'founder', 'coach', 'agency', 'youtuber', 'podcaster', 'marketer', 'other'
+  primaryPlatform   String?    // 'youtube_shorts', 'instagram_reels', 'tiktok', 'linkedin', 'x'
+  contentGoal       String?    // 'more_reach', 'more_leads', 'faster_editing', 'repurpose_long_form', 'personal_brand'
 
   projects     Project[]
   brandKit     BrandKit?
@@ -105,6 +110,9 @@ model Project {
   title        String
   topic        String?
   sourceUrl    String?
+  // V1 project context fields
+  targetPlatform String?  // 'youtube_shorts', 'instagram_reels', 'tiktok', 'linkedin', 'x'
+  contentGoal    String?  // 'more_reach', 'more_leads', 'faster_editing', 'repurpose_long_form', 'personal_brand'
   script       Script?   @relation("ProjectScript")
   assets       Asset[]
   clips        Clip[]

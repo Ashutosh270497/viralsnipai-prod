@@ -229,9 +229,10 @@ export { client as openAIClient };
 export async function generateHighlights(payload: HighlightPayload) {
   const requestedModel = payload.model?.trim();
   const requestedLower = requestedModel?.toLowerCase();
-  const wantsGemini = requestedLower ? requestedLower.startsWith("gemini") : false;
+  const wantsDirectGemini = requestedLower ? requestedLower.startsWith("gemini") : false;
+  const wantsOpenRouterModel = requestedModel ? requestedModel.includes("/") : false;
   const wantsOpenAI = requestedLower
-    ? requestedLower.startsWith("gpt") || requestedLower.includes("openai")
+    ? !wantsOpenRouterModel && requestedLower.startsWith("gpt")
     : false;
 
   const determineClipLimit = (seconds: number): number => {
@@ -253,7 +254,7 @@ export async function generateHighlights(payload: HighlightPayload) {
   const minClipSeconds = 30;
   const maxClipSeconds = 45;
 
-  if (HAS_GEMINI_KEY && (!wantsOpenAI && (wantsGemini || !requestedModel))) {
+  if (HAS_GEMINI_KEY && (!wantsOpenAI && !wantsOpenRouterModel && (wantsDirectGemini || !requestedModel))) {
     const geminiModel = requestedModel ?? process.env.GOOGLE_GEMINI_MODEL ?? "gemini-1.5-flash";
     try {
       logger.debug("[Highlights] Using Gemini model", { model: geminiModel });
@@ -269,7 +270,7 @@ export async function generateHighlights(payload: HighlightPayload) {
     } catch (error) {
       console.error("Gemini highlight generation failed", error);
     }
-  } else if (wantsGemini && !HAS_GEMINI_KEY) {
+  } else if (wantsDirectGemini && !HAS_GEMINI_KEY) {
     console.warn("[Highlights] Gemini model requested but no API key configured; using OpenAI instead.");
   }
 
@@ -295,7 +296,7 @@ export async function generateHighlights(payload: HighlightPayload) {
     });
   }
 
-  const openAIModel = requestedModel && !wantsGemini ? requestedModel : OPENAI_HIGHLIGHTS_MODEL;
+  const openAIModel = requestedModel && wantsOpenAI ? requestedModel : OPENAI_HIGHLIGHTS_MODEL;
 
   // Use smarter transcript truncation for longer videos
   const maxTranscriptLength = 50000; // Increased from 16000 to 50000
@@ -370,10 +371,13 @@ export async function generateHighlights(payload: HighlightPayload) {
   // Try OpenRouter for highlights if enabled and not explicitly requesting OpenAI/a specific model
   const OPENROUTER_HIGHLIGHTS_ENABLED = process.env.OPENROUTER_ENABLED === 'true';
   if (OPENROUTER_HIGHLIGHTS_ENABLED && HAS_OPENROUTER_KEY && openRouterClient && !wantsOpenAI) {
+    const openRouterHighlightsModel: string = wantsOpenRouterModel && requestedModel
+      ? requestedModel
+      : OPENROUTER_MODELS.highlights;
     try {
-      logger.debug("[Highlights] Trying OpenRouter model", { model: OPENROUTER_MODELS.highlights });
+      logger.debug("[Highlights] Trying OpenRouter model", { model: openRouterHighlightsModel });
       const orResp = await openRouterClient.chat.completions.create({
-        model: OPENROUTER_MODELS.highlights,
+        model: openRouterHighlightsModel,
         messages: [
           { role: "system", content: highlightsSystemContent },
           { role: "user", content: JSON.stringify(userPayload) }

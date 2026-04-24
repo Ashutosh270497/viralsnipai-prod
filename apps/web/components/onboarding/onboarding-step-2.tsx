@@ -1,138 +1,119 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { Target, TrendingUp, DollarSign, Sparkles } from "lucide-react";
+import { useEffect } from "react";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+
+import {
+  v1OnboardingStep2Schema,
+  type V1OnboardingStep2Input,
+} from "@/lib/validations";
+import { PRIMARY_PLATFORM_OPTIONS } from "@/lib/onboarding-options";
 
 interface OnboardingStep2Props {
-  data: { goalSelection: string };
-  onChange: (data: { goalSelection: string }) => void;
+  data: V1OnboardingStep2Input;
+  onChange: (data: V1OnboardingStep2Input) => void;
   onNext: () => void;
 }
 
-const goals = [
-  {
-    id: "start_channel",
-    title: "Start a new YouTube channel",
-    description: "Just getting started and want to learn the basics",
-    icon: Sparkles,
-    accent: "text-primary",
-    ring: "ring-primary/30",
-    bg: "bg-primary/[0.08]",
-  },
-  {
-    id: "grow_channel",
-    title: "Grow my existing channel",
-    description: "Have a channel and want to increase my subscriber base",
-    icon: TrendingUp,
-    accent: "text-emerald-400",
-    ring: "ring-emerald-500/30",
-    bg: "bg-emerald-500/[0.08]",
-  },
-  {
-    id: "monetization",
-    title: "Scale to monetisation",
-    description: "Want to reach 1,000 subscribers and 4,000 watch hours",
-    icon: DollarSign,
-    accent: "text-amber-400",
-    ring: "ring-amber-500/30",
-    bg: "bg-amber-500/[0.08]",
-  },
-  {
-    id: "professional",
-    title: "Create professional content",
-    description: "Want to produce high-quality, engaging videos at scale",
-    icon: Target,
-    accent: "text-sky-400",
-    ring: "ring-sky-500/30",
-    bg: "bg-sky-500/[0.08]",
-  },
-];
+const inputClass =
+  "w-full rounded-lg border border-border/50 bg-background/60 px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground/40 focus:border-primary/50 focus:outline-none focus:ring-2 focus:ring-primary/10 transition-colors";
 
 export default function OnboardingStep2({ data, onChange, onNext }: OnboardingStep2Props) {
-  const [selectedGoal, setSelectedGoal] = useState(data.goalSelection || "");
-  const [error, setError] = useState("");
+  const {
+    register,
+    handleSubmit,
+    setValue,
+    formState: { errors },
+    watch,
+  } = useForm<V1OnboardingStep2Input>({
+    resolver: zodResolver(v1OnboardingStep2Schema),
+    defaultValues: data,
+  });
 
-  useEffect(() => { onChange({ goalSelection: selectedGoal }); }, [selectedGoal, onChange]);
+  const formValues = watch();
+  const selectedPlatform = formValues.primaryPlatform;
 
-  const handleSelect = (goalId: string) => { setSelectedGoal(goalId); setError(""); };
-
-  const handleNext = () => {
-    if (!selectedGoal) { setError("Please select your primary goal"); return; }
-    onNext();
-  };
+  useEffect(() => {
+    onChange(formValues);
+  }, [formValues, onChange]);
 
   return (
-    <div className="space-y-7">
+    <form onSubmit={handleSubmit(() => onNext())} className="space-y-7">
       <div className="space-y-1.5">
         <h2 className="text-2xl font-bold tracking-tight text-foreground">
-          What&apos;s your primary goal?
+          Where do your clips go?
         </h2>
         <p className="text-sm text-muted-foreground/60">
-          Choose the option that best describes what you want to achieve
+          Pick the platform you post to most. We&apos;ll tune aspect ratios and captions to fit.
         </p>
       </div>
 
       <div className="space-y-3">
-        {goals.map((goal) => {
-          const Icon = goal.icon;
-          const isSelected = selectedGoal === goal.id;
-
-          return (
-            <button
-              key={goal.id}
-              type="button"
-              onClick={() => handleSelect(goal.id)}
-              className={
-                `w-full rounded-xl border p-4 text-left transition-all duration-150 ${
+        <label className="block text-xs font-semibold uppercase tracking-widest text-muted-foreground/50">
+          Primary platform <span className="text-red-400/70 normal-case tracking-normal">*</span>
+        </label>
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+          {PRIMARY_PLATFORM_OPTIONS.map((option) => {
+            const isSelected = selectedPlatform === option.value;
+            return (
+              <button
+                key={option.value}
+                type="button"
+                onClick={() =>
+                  setValue("primaryPlatform", option.value, {
+                    shouldValidate: true,
+                    shouldDirty: true,
+                  })
+                }
+                className={`rounded-xl border px-3 py-3 text-center text-sm font-semibold transition-all ${
                   isSelected
-                    ? "border-primary/50 bg-primary/[0.06]"
-                    : "border-border/40 bg-white/[0.02] hover:border-border/70 hover:bg-white/[0.04]"
-                }`
-              }
-            >
-              <div className="flex items-center gap-4">
-                <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ring-1 ${goal.ring} ${goal.bg}`}>
-                  <Icon className={`h-5 w-5 ${goal.accent}`} />
-                </div>
-                <div className="flex-1 space-y-0.5">
-                  <div className="flex items-center gap-2">
-                    <h3 className="text-sm font-semibold text-foreground">{goal.title}</h3>
-                    {isSelected && (
-                      <div
-                        className="h-1.5 w-1.5 rounded-full bg-primary"
-                        style={{ boxShadow: "0 0 6px hsl(263 72% 56% / 0.8)" }}
-                      />
-                    )}
-                  </div>
-                  <p className="text-xs text-muted-foreground/60">{goal.description}</p>
-                </div>
-              </div>
-            </button>
-          );
-        })}
+                    ? "border-primary/60 bg-primary/[0.08] text-foreground"
+                    : "border-border/40 bg-white/[0.02] text-foreground/80 hover:border-border/70 hover:bg-white/[0.04]"
+                }`}
+              >
+                {option.label}
+              </button>
+            );
+          })}
+        </div>
+        {errors.primaryPlatform && (
+          <p className="text-xs text-red-400/80">{errors.primaryPlatform.message}</p>
+        )}
       </div>
 
-      {error && <p className="text-xs text-red-400/80">{error}</p>}
+      <div className="space-y-2">
+        <label
+          htmlFor="contentNiche"
+          className="block text-xs font-semibold uppercase tracking-widest text-muted-foreground/50"
+        >
+          Your content niche <span className="text-red-400/70 normal-case tracking-normal">*</span>
+        </label>
+        <input
+          id="contentNiche"
+          type="text"
+          placeholder="SaaS marketing, fitness coaching, personal finance…"
+          {...register("contentNiche")}
+          className={inputClass}
+        />
+        <p className="text-xs text-muted-foreground/40">
+          One short phrase is perfect. You can refine this later.
+        </p>
+        {errors.contentNiche && (
+          <p className="text-xs text-red-400/80">{errors.contentNiche.message}</p>
+        )}
+      </div>
 
       <button
-        type="button"
-        onClick={handleNext}
+        type="submit"
         className="w-full rounded-lg py-3 text-sm font-semibold text-white transition-all active:scale-[0.98]"
         style={{
           background: "linear-gradient(135deg, #10b981 0%, #34d399 100%)",
-          boxShadow: "0 0 14px hsl(263 72% 56% / 0.4), 0 2px 8px rgba(0,0,0,0.3)",
-        }}
-        onMouseEnter={(e) => {
-          (e.currentTarget as HTMLButtonElement).style.boxShadow =
-            "0 0 24px hsl(263 72% 56% / 0.6), 0 4px 12px rgba(0,0,0,0.4)";
-        }}
-        onMouseLeave={(e) => {
-          (e.currentTarget as HTMLButtonElement).style.boxShadow =
-            "0 0 14px hsl(263 72% 56% / 0.4), 0 2px 8px rgba(0,0,0,0.3)";
+          boxShadow: "0 0 14px hsl(160 84% 39% / 0.4), 0 2px 8px rgba(0,0,0,0.3)",
         }}
       >
         Continue →
       </button>
-    </div>
+    </form>
   );
 }

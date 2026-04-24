@@ -71,19 +71,39 @@ export const paginationSchema = z.object({
 // PROJECT SCHEMAS
 // =============================================================================
 
+export const targetPlatformSchema = z.enum([
+  'youtube_shorts',
+  'instagram_reels',
+  'tiktok',
+  'linkedin',
+  'x'
+]);
+
+export const contentGoalSchema = z.enum([
+  'more_reach',
+  'more_leads',
+  'faster_editing',
+  'repurpose_long_form',
+  'personal_brand'
+]);
+
 export const createProjectSchema = z.object({
   title: z
     .string()
     .min(1, 'Title is required')
     .max(200, 'Title must be 200 characters or less'),
   topic: z.string().max(500, 'Topic must be 500 characters or less').optional(),
-  sourceUrl: urlSchema.optional()
+  sourceUrl: urlSchema.optional(),
+  targetPlatform: targetPlatformSchema.optional(),
+  contentGoal: contentGoalSchema.optional()
 });
 
 export const updateProjectSchema = z.object({
   title: z.string().min(1).max(200).optional(),
   topic: z.string().max(500).optional(),
-  sourceUrl: urlSchema.optional()
+  sourceUrl: urlSchema.optional(),
+  targetPlatform: targetPlatformSchema.optional(),
+  contentGoal: contentGoalSchema.optional()
 });
 
 export const updateScriptSchema = z.object({
@@ -447,6 +467,50 @@ export const completeOnboardingSchema = z.object({
   nicheInterests: z.array(z.string()).min(1)
 });
 
+export const creatorTypeSchema = z.enum([
+  'founder',
+  'coach',
+  'agency',
+  'youtuber',
+  'podcaster',
+  'marketer',
+  'other'
+]);
+
+export const primaryPlatformSchema = z.enum([
+  'youtube_shorts',
+  'instagram_reels',
+  'tiktok',
+  'linkedin',
+  'x'
+]);
+
+/**
+ * V1 onboarding — the new focused flow that collects creator type, primary platform,
+ * content niche, and main goal. Replaces the legacy YouTube-first onboarding.
+ */
+export const v1OnboardingStep1Schema = z.object({
+  name: z.string().min(2, 'Name must be at least 2 characters').max(100),
+  creatorType: creatorTypeSchema
+});
+
+export const v1OnboardingStep2Schema = z.object({
+  primaryPlatform: primaryPlatformSchema,
+  contentNiche: z.string().min(2, 'Tell us your content niche').max(120)
+});
+
+export const v1OnboardingStep3Schema = z.object({
+  contentGoal: contentGoalSchema
+});
+
+export const v1CompleteOnboardingSchema = z.object({
+  name: z.string().min(2).max(100),
+  creatorType: creatorTypeSchema,
+  primaryPlatform: primaryPlatformSchema,
+  contentNiche: z.string().min(2).max(120),
+  contentGoal: contentGoalSchema
+});
+
 // =============================================================================
 // NICHE DISCOVERY SCHEMAS
 // =============================================================================
@@ -575,6 +639,14 @@ export type OnboardingStep1Input = z.infer<typeof onboardingStep1Schema>;
 export type OnboardingStep2Input = z.infer<typeof onboardingStep2Schema>;
 export type OnboardingStep3Input = z.infer<typeof onboardingStep3Schema>;
 export type CompleteOnboardingInput = z.infer<typeof completeOnboardingSchema>;
+export type CreatorType = z.infer<typeof creatorTypeSchema>;
+export type PrimaryPlatform = z.infer<typeof primaryPlatformSchema>;
+export type ContentGoal = z.infer<typeof contentGoalSchema>;
+export type TargetPlatform = z.infer<typeof targetPlatformSchema>;
+export type V1OnboardingStep1Input = z.infer<typeof v1OnboardingStep1Schema>;
+export type V1OnboardingStep2Input = z.infer<typeof v1OnboardingStep2Schema>;
+export type V1OnboardingStep3Input = z.infer<typeof v1OnboardingStep3Schema>;
+export type V1CompleteOnboardingInput = z.infer<typeof v1CompleteOnboardingSchema>;
 export type NicheQuizInput = z.infer<typeof nicheQuizSchema>;
 export type NicheAnalysisRequestInput = z.infer<typeof nicheAnalysisRequestSchema>;
 export type NicheSelectInput = z.infer<typeof nicheSelectSchema>;

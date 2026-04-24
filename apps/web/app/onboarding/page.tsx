@@ -9,23 +9,27 @@ import OnboardingStep1 from "@/components/onboarding/onboarding-step-1";
 import OnboardingStep2 from "@/components/onboarding/onboarding-step-2";
 import OnboardingStep3 from "@/components/onboarding/onboarding-step-3";
 import { useToast } from "@/components/ui/use-toast";
-import type { OnboardingStep1Input } from "@/lib/validations";
+import type {
+  V1OnboardingStep1Input,
+  V1OnboardingStep2Input,
+  ContentGoal,
+} from "@/lib/validations";
 
-const STORAGE_KEY = "youtube_creator_onboarding_progress";
+const STORAGE_KEY = "viralsnipai_v1_onboarding_progress";
 
 interface OnboardingData {
-  step1: OnboardingStep1Input;
-  step2: { goalSelection: string };
-  step3: { nicheInterests: string[] };
+  step1: V1OnboardingStep1Input;
+  step2: V1OnboardingStep2Input;
+  step3: { contentGoal: ContentGoal | "" };
 }
 
 const initialData: OnboardingData = {
-  step1: { name: "", youtubeChannelUrl: "", subscriberCount: "0-1k" },
-  step2: { goalSelection: "" },
-  step3: { nicheInterests: [] },
+  step1: { name: "", creatorType: "founder" },
+  step2: { primaryPlatform: "youtube_shorts", contentNiche: "" },
+  step3: { contentGoal: "" },
 };
 
-const STEP_LABELS = ["Your profile", "Your goal", "Your niche"];
+const STEP_LABELS = ["About you", "Platform & niche", "Main goal"];
 
 export default function OnboardingPage() {
   const { data: session, status, update } = useSession();
@@ -60,16 +64,17 @@ export default function OnboardingPage() {
   }, [status, session, router]);
 
   const handleStep1Change = (data: OnboardingData["step1"]) =>
-    setFormData({ ...formData, step1: data });
+    setFormData((prev) => ({ ...prev, step1: data }));
   const handleStep2Change = (data: OnboardingData["step2"]) =>
-    setFormData({ ...formData, step2: data });
+    setFormData((prev) => ({ ...prev, step2: data }));
   const handleStep3Change = (data: OnboardingData["step3"]) =>
-    setFormData({ ...formData, step3: data });
+    setFormData((prev) => ({ ...prev, step3: data }));
 
-  const handleNext = () => { if (currentStep < 3) setCurrentStep(currentStep + 1); };
-  const handleBack = () => { if (currentStep > 1) setCurrentStep(currentStep - 1); };
+  const handleNext = () => setCurrentStep((step) => Math.min(step + 1, 3));
+  const handleBack = () => setCurrentStep((step) => Math.max(step - 1, 1));
 
-  const handleSubmit = async () => {
+  async function handleSubmit() {
+    if (!formData.step3.contentGoal) return;
     setIsSubmitting(true);
     try {
       const response = await fetch("/api/onboarding", {
@@ -77,33 +82,46 @@ export default function OnboardingPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: formData.step1.name,
-          youtubeChannelUrl: formData.step1.youtubeChannelUrl || null,
-          subscriberCount: formData.step1.subscriberCount,
-          goalSelection: formData.step2.goalSelection,
-          nicheInterests: formData.step3.nicheInterests,
+          creatorType: formData.step1.creatorType,
+          primaryPlatform: formData.step2.primaryPlatform,
+          contentNiche: formData.step2.contentNiche,
+          contentGoal: formData.step3.contentGoal,
         }),
       });
+
       const data = await response.json();
       if (!response.ok) {
-        toast({ title: "Error", description: data.error || "Failed to complete onboarding", variant: "destructive" });
+        toast({
+          title: "We couldn't save that",
+          description: data.error || "Please try again.",
+          variant: "destructive",
+        });
         setIsSubmitting(false);
         return;
       }
+
       localStorage.removeItem(STORAGE_KEY);
-      toast({ title: "Welcome!", description: "Your account has been set up successfully" });
+      toast({
+        title: "You're in!",
+        description: "Your workspace is ready. Let's create your first clip.",
+      });
       await update();
       window.location.href = "/dashboard";
     } catch (error) {
       console.error("Onboarding error:", error);
-      toast({ title: "Error", description: "An unexpected error occurred", variant: "destructive" });
+      toast({
+        title: "Something went wrong",
+        description: "Please try again.",
+        variant: "destructive",
+      });
       setIsSubmitting(false);
     }
-  };
+  }
 
   if (status === "loading") {
     return (
       <div className="flex min-h-screen items-center justify-center">
-        <div className="text-muted-foreground text-sm">Loading…</div>
+        <div className="text-sm text-muted-foreground">Loading…</div>
       </div>
     );
   }
@@ -117,10 +135,7 @@ export default function OnboardingPage() {
 
   return (
     <div className="w-full max-w-xl space-y-6 animate-enter">
-
-      {/* ── Step indicators ─────────────────────────────────────────────────── */}
       <div className="space-y-3">
-        {/* Step pills */}
         <div className="flex items-center gap-2">
           {STEP_LABELS.map((label, i) => {
             const step = i + 1;
@@ -152,34 +167,38 @@ export default function OnboardingPage() {
                     {label}
                   </span>
                 </div>
-                {i < STEP_LABELS.length - 1 && (
-                  <div className="flex-1 h-px w-8 bg-border/30" />
-                )}
+                {i < STEP_LABELS.length - 1 && <div className="h-px w-8 flex-1 bg-border/30" />}
               </div>
             );
           })}
         </div>
 
-        {/* Progress bar */}
         <div className="h-1 w-full overflow-hidden rounded-full bg-white/[0.06]">
           <div
             className="h-full rounded-full transition-all duration-500"
             style={{
               width: `${progressPct}%`,
               background: "linear-gradient(90deg, #10b981, #34d399)",
-              boxShadow: "0 0 8px hsl(263 72% 56% / 0.5)",
+              boxShadow: "0 0 8px hsl(160 84% 39% / 0.5)",
             }}
           />
         </div>
       </div>
 
-      {/* ── Step card ───────────────────────────────────────────────────────── */}
       <div className="rounded-xl border border-border/50 bg-card p-8">
         {currentStep === 1 && (
-          <OnboardingStep1 data={formData.step1} onChange={handleStep1Change} onNext={handleNext} />
+          <OnboardingStep1
+            data={formData.step1}
+            onChange={handleStep1Change}
+            onNext={handleNext}
+          />
         )}
         {currentStep === 2 && (
-          <OnboardingStep2 data={formData.step2} onChange={handleStep2Change} onNext={handleNext} />
+          <OnboardingStep2
+            data={formData.step2}
+            onChange={handleStep2Change}
+            onNext={handleNext}
+          />
         )}
         {currentStep === 3 && (
           <OnboardingStep3
@@ -191,7 +210,6 @@ export default function OnboardingPage() {
         )}
       </div>
 
-      {/* ── Back navigation ─────────────────────────────────────────────────── */}
       {currentStep > 1 && (
         <button
           onClick={handleBack}

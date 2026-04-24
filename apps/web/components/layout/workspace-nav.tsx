@@ -3,17 +3,15 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
-  Activity,
   LayoutDashboard,
   Sparkles,
   Scissors,
   Palette,
   FolderKanban,
-  FileText,
   Image as ImageIcon,
   Film,
   Mic,
-  Compass,
+  Download,
   Calendar,
   TrendingUp,
   Target,
@@ -28,6 +26,7 @@ import {
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
+import { isFeatureEnabled } from "@/config/features";
 import { useFeatureFlags } from "@/components/providers/feature-flag-provider";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import type { Ecosystem } from "@/lib/ecosystem";
@@ -38,6 +37,7 @@ type WorkspaceLink = {
   icon: React.ComponentType<{ className?: string }>;
   disabled?: boolean;
   badge?: string;
+  activePaths?: string[];
 };
 
 type NavSection = {
@@ -116,13 +116,18 @@ function NavLink({
 export function WorkspaceNav({ user, ecosystem, onNavigate }: WorkspaceNavProps) {
   const pathname = usePathname();
   const flags = useFeatureFlags();
+  const v2CreatorGrowthEnabled =
+    isFeatureEnabled("contentCalendar") ||
+    isFeatureEnabled("youtubeTitleGenerator") ||
+    isFeatureEnabled("keywordResearch");
+  const v3AutomationEnabled = flags.snipRadarEnabled;
+  const competitorTrackingEnabled = isFeatureEnabled("competitorTracking");
 
   const contentWorkflow: WorkspaceLink[] =
-    ecosystem === "x"
+    ecosystem === "x" && v3AutomationEnabled
       ? [
           { href: "/snipradar/assistant", label: "Assistant", icon: MessageSquare, badge: "AI" },
           { href: "/snipradar/overview", label: "Overview", icon: LayoutDashboard },
-          { href: "/activity", label: "Activity Center", icon: Activity },
           { href: "/snipradar/discover/tracker", label: "Discover", icon: Radar },
           { href: "/snipradar/inbox", label: "Inbox", icon: Inbox, badge: "New" },
           ...(flags.relationshipsCrmEnabled
@@ -135,28 +140,36 @@ export function WorkspaceNav({ user, ecosystem, onNavigate }: WorkspaceNavProps)
         ]
       : [
           { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-          { href: "/activity", label: "Activity Center", icon: Activity },
-          { href: "/niche-discovery", label: "Niche Discovery", icon: Compass, badge: "Start" },
-          { href: "/keywords", label: "Keyword Research", icon: Target },
-          { href: "/competitors", label: "Competitors", icon: Users, badge: "New" },
-          { href: "/dashboard/content-calendar", label: "Content Calendar", icon: Calendar },
-          { href: "/dashboard/script-generator", label: "Script Generator", icon: FileText },
-          { href: "/dashboard/title-generator", label: "Title Generator", icon: TrendingUp },
+          { href: "/projects", label: "Projects", icon: FolderKanban },
+          {
+            href: "/repurpose",
+            label: "Create Clip",
+            icon: Scissors,
+            activePaths: ["/repurpose", "/repurpose/editor"],
+          },
+          { href: "/repurpose/export", label: "Exports", icon: Download },
+          { href: "/brand-kit", label: "Brand Kit", icon: Palette },
+          ...(v2CreatorGrowthEnabled
+            ? [
+                { href: "/dashboard/content-calendar", label: "Content Calendar", icon: Calendar },
+                { href: "/dashboard/title-generator", label: "Title Generator", icon: TrendingUp },
+                { href: "/keywords", label: "Keyword Research", icon: Target },
+              ]
+            : []),
           ...(flags.youtubeThumbnailGeneratorEnabled
             ? [{ href: "/dashboard/thumbnail-generator", label: "Thumbnail Generator", icon: ImageIcon }]
+            : []),
+          ...(competitorTrackingEnabled
+            ? [{ href: "/competitors", label: "Competitors", icon: Users, badge: "V3" }]
             : []),
         ];
 
   const productionTools: WorkspaceLink[] =
-    ecosystem === "x"
+    ecosystem === "x" || !v3AutomationEnabled
       ? []
       : [
-          { href: "/hooksmith", label: "Hooksmith", icon: Sparkles },
-          ...(flags.youtubeRepurposeOsEnabled
-            ? [{ href: "/repurpose", label: "RepurposeOS", icon: Scissors }]
-            : []),
           ...(flags.transcribeUiEnabled
-            ? [{ href: "/transcribe", label: "Transcribe", icon: FileText }]
+            ? [{ href: "/transcribe", label: "Transcribe", icon: Download }]
             : []),
           ...(flags.imagenEnabled ? [{ href: "/imagen", label: "Imagen", icon: ImageIcon }] : []),
           ...(flags.soraEnabled ? [{ href: "/video", label: "Video Lab", icon: Film }] : []),
@@ -165,12 +178,7 @@ export function WorkspaceNav({ user, ecosystem, onNavigate }: WorkspaceNavProps)
         ];
 
   const assetManagement: WorkspaceLink[] =
-    ecosystem === "x"
-      ? []
-      : [
-          { href: "/brand-kit", label: "Brand Kit", icon: Palette },
-          { href: "/projects", label: "Projects", icon: FolderKanban },
-        ];
+    ecosystem === "x" ? [] : [];
 
   const sections: NavSection[] = [
     { title: "Workflow", links: contentWorkflow },
@@ -201,7 +209,10 @@ export function WorkspaceNav({ user, ecosystem, onNavigate }: WorkspaceNavProps)
                 {section.links.map((link) => {
                   const isActive =
                     pathname === link.href ||
-                    (link.href !== "/dashboard" && pathname?.startsWith(`${link.href}/`));
+                    link.activePaths?.some((activePath) => pathname === activePath) ||
+                    (link.href !== "/dashboard" &&
+                      link.href !== "/repurpose" &&
+                      pathname?.startsWith(`${link.href}/`));
                   return (
                     <NavLink
                       key={link.href}

@@ -18,20 +18,34 @@ export default async function ProjectsPage() {
       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <h1 className="text-3xl font-semibold tracking-tight">Projects</h1>
-          <p className="text-muted-foreground">All of your Hooksmith scripts, assets, clips, and exports.</p>
+          <p className="text-muted-foreground">
+            Each project bundles a source video, clips, and exports together.
+          </p>
         </div>
-        <NewProjectDialog />
+        <NewProjectDialog onSuccessRedirect="/repurpose" />
       </div>
       {projects.length === 0 ? (
-        <div className="flex flex-col items-center justify-center gap-6 rounded-3xl border-2 border-dashed border-border/40 bg-gradient-to-br from-slate-50/40 to-slate-100/20 dark:from-slate-900/20 dark:to-slate-800/10 px-6 py-16 text-center">
-          <div className="rounded-full bg-gradient-to-br from-violet-500/10 via-purple-500/10 to-fuchsia-500/10 p-6">
-            <svg className="h-12 w-12 text-muted-foreground/70" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+        <div className="flex flex-col items-center justify-center gap-6 rounded-3xl border-2 border-dashed border-border/40 bg-gradient-to-br from-slate-50/40 to-slate-100/20 px-6 py-16 text-center dark:from-slate-900/20 dark:to-slate-800/10">
+          <div className="rounded-full bg-gradient-to-br from-emerald-500/10 via-emerald-500/10 to-teal-500/10 p-6">
+            <svg
+              className="h-12 w-12 text-muted-foreground/70"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"
+              />
             </svg>
           </div>
           <div className="space-y-2">
             <p className="text-lg font-semibold text-foreground">No projects yet</p>
-            <p className="text-sm text-muted-foreground">Create your first project to start organizing your content.</p>
+            <p className="text-sm text-muted-foreground">
+              Upload your first long video and turn it into viral-ready clips.
+            </p>
           </div>
         </div>
       ) : (
@@ -41,8 +55,15 @@ export default async function ProjectsPage() {
           ))}
         </div>
       )}
-      <div className="rounded-lg border border-violet-200/60 dark:border-violet-800/40 bg-gradient-to-br from-violet-50/60 to-purple-50/40 dark:from-violet-950/30 dark:to-purple-950/20 p-6 text-sm text-muted-foreground">
-        Need more structure? <Link href="/brand-kit" className="text-violet-600 dark:text-violet-400 hover:underline font-medium">Define your brand kit</Link> so exports stay consistent.
+      <div className="rounded-lg border border-emerald-200/60 bg-gradient-to-br from-emerald-50/60 to-teal-50/40 p-6 text-sm text-muted-foreground dark:border-emerald-800/40 dark:from-emerald-950/30 dark:to-teal-950/20">
+        Tip: define your{" "}
+        <Link
+          href="/brand-kit"
+          className="font-medium text-emerald-600 hover:underline dark:text-emerald-400"
+        >
+          brand kit
+        </Link>{" "}
+        so every export stays visually consistent.
       </div>
     </div>
   );

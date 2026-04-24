@@ -2,12 +2,13 @@
 
 import { useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Youtube, Radar, Loader2, Lock } from "lucide-react";
-
-const YOUTUBE_ENABLED = process.env.NEXT_PUBLIC_YOUTUBE_ECOSYSTEM_ENABLED === "true";
+import { Youtube, Radar, Loader2 } from "lucide-react";
 
 import type { Ecosystem } from "@/lib/ecosystem";
 import { getEcosystemHome, isRouteAllowedForEcosystem } from "@/lib/ecosystem";
+import { isFeatureEnabled } from "@/config/features";
+
+const SNIPRADAR_ENABLED = isFeatureEnabled("snipRadar");
 
 interface EcosystemSelectScreenProps {
   userName?: string;
@@ -66,72 +67,51 @@ export function EcosystemSelectScreen({ userName }: EcosystemSelectScreenProps) 
         </p>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className={SNIPRADAR_ENABLED ? "grid gap-4 md:grid-cols-2" : "grid gap-4"}>
         <button
           type="button"
-          onClick={() => handleSelect("x")}
+          onClick={() => handleSelect("youtube")}
           disabled={pending !== null}
           className="group rounded-2xl border border-border/70 bg-card/60 p-6 text-left transition hover:border-primary/40 hover:bg-card"
         >
           <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
-            <Radar className="h-5 w-5" />
+            <Youtube className="h-5 w-5" />
           </div>
-          <h2 className="text-xl font-semibold">X (Twitter)</h2>
+          <h2 className="text-xl font-semibold">ViralSnipAI Core</h2>
           <p className="mt-2 text-sm text-muted-foreground">
-            Focus on SnipRadar workflows: discover viral patterns, generate drafts, publish, and
-            analyze.
+            Turn long videos into short clips with AI detection, captions, brand styling, and
+            exports.
           </p>
           <div className="mt-5">
             <div className="inline-flex items-center rounded-md border border-border bg-secondary px-3 py-2 text-sm font-medium text-secondary-foreground">
-              {pending === "x" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-              Enter X Ecosystem
+              {pending === "youtube" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              Enter Core Workspace
             </div>
           </div>
         </button>
 
-        {YOUTUBE_ENABLED ? (
+        {SNIPRADAR_ENABLED ? (
           <button
             type="button"
-            onClick={() => handleSelect("youtube")}
+            onClick={() => handleSelect("x")}
             disabled={pending !== null}
             className="group rounded-2xl border border-border/70 bg-card/60 p-6 text-left transition hover:border-primary/40 hover:bg-card"
           >
             <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
-              <Youtube className="h-5 w-5" />
+              <Radar className="h-5 w-5" />
             </div>
-            <h2 className="text-xl font-semibold">YouTube</h2>
+            <h2 className="text-xl font-semibold">Automation OS</h2>
             <p className="mt-2 text-sm text-muted-foreground">
-              Focus on YouTube workflows: niche, keyword, script, thumbnail, repurpose, and publishing
-              operations.
+              Access SnipRadar, X automation, scheduling, CRM, APIs, and advanced growth workflows.
             </p>
             <div className="mt-5">
               <div className="inline-flex items-center rounded-md border border-border bg-secondary px-3 py-2 text-sm font-medium text-secondary-foreground">
-                {pending === "youtube" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                Enter YouTube Ecosystem
+                {pending === "x" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                Enter Automation OS
               </div>
             </div>
           </button>
-        ) : (
-          <div className="relative rounded-2xl border border-border/40 bg-card/30 p-6 text-left opacity-60 cursor-not-allowed select-none">
-            <div className="absolute right-4 top-4 flex items-center gap-1.5 rounded-full bg-muted px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-              <Lock className="h-3 w-3" />
-              Coming Soon
-            </div>
-            <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-xl bg-muted text-muted-foreground">
-              <Youtube className="h-5 w-5" />
-            </div>
-            <h2 className="text-xl font-semibold text-muted-foreground">YouTube</h2>
-            <p className="mt-2 text-sm text-muted-foreground">
-              YouTube creator tools — niche research, keyword planner, script generator, thumbnail
-              studio, and repurposing workflows. Launching soon.
-            </p>
-            <div className="mt-5">
-              <div className="inline-flex items-center rounded-md border border-border/50 bg-muted px-3 py-2 text-sm font-medium text-muted-foreground">
-                Launching Soon
-              </div>
-            </div>
-          </div>
-        )}
+        ) : null}
       </div>
     </div>
   );

@@ -46,10 +46,11 @@ function SignInContent() {
     ? ERROR_MESSAGES[errorType] ?? ERROR_MESSAGES.default
     : null;
 
-  const devBypass = searchParams.get("dev-bypass") === "true";
+  const demoAvailable = process.env.NEXT_PUBLIC_ENABLE_DEMO_LOGIN === "true";
+  const devBypass = demoAvailable && searchParams.get("dev-bypass") === "true";
   const callbackUrl = sanitizeCallbackUrl(searchParams.get("callbackUrl"));
 
-  // Dev bypass: auto-trigger demo login
+  // Dev bypass: auto-trigger demo login (only when demo provider is available)
   useEffect(() => {
     if (devBypass && status === "unauthenticated" && !isSubmitting) {
       setIsSubmitting(true);
@@ -208,9 +209,15 @@ function SignInContent() {
           </form>
 
           <div className="space-y-3 text-sm">
-            <button onClick={handleDemo} disabled={isSubmitting} className="font-semibold text-gray-600 underline transition hover:text-gray-900 disabled:opacity-50 dark:text-neutral-400 dark:hover:text-neutral-200">
-              Try the demo workspace
-            </button>
+            {demoAvailable ? (
+              <button
+                onClick={handleDemo}
+                disabled={isSubmitting}
+                className="font-semibold text-gray-600 underline transition hover:text-gray-900 disabled:opacity-50 dark:text-neutral-400 dark:hover:text-neutral-200"
+              >
+                Try the demo workspace
+              </button>
+            ) : null}
             <div>
               <span className="text-gray-600 dark:text-neutral-400">Don&apos;t have an account? </span>
               <Link

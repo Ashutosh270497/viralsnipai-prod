@@ -7,6 +7,7 @@ import { Radar, Youtube } from "lucide-react";
 import type { Ecosystem } from "@/lib/ecosystem";
 import { ECOSYSTEM_COOKIE_KEY, getEcosystemHome } from "@/lib/ecosystem";
 import { cn } from "@/lib/utils";
+import { isFeatureEnabled } from "@/config/features";
 
 interface EcosystemSwitcherProps {
   ecosystem: Ecosystem;
@@ -15,6 +16,7 @@ interface EcosystemSwitcherProps {
 export function EcosystemSwitcher({ ecosystem }: EcosystemSwitcherProps) {
   const router = useRouter();
   const [pendingTarget, setPendingTarget] = useState<Ecosystem | null>(null);
+  const snipRadarEnabled = isFeatureEnabled("snipRadar");
   const activeEcosystem = pendingTarget ?? ecosystem;
 
   useEffect(() => {
@@ -67,6 +69,10 @@ export function EcosystemSwitcher({ ecosystem }: EcosystemSwitcherProps) {
         : "text-muted-foreground hover:bg-secondary hover:text-foreground",
       pendingTarget && "opacity-90",
     );
+  }
+
+  if (!snipRadarEnabled) {
+    return null;
   }
 
   return (

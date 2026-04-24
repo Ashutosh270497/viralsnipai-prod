@@ -7,6 +7,9 @@ import type { TranscriptionSegment as AudioTranscriptionSegment } from "openai/r
 import { openAIClient } from "@/lib/openai";
 import { transcodeToMp3 } from "@/lib/ffmpeg";
 
+// Whisper API hard limit. We use 24 MB to leave a safe margin.
+const WHISPER_MAX_BYTES = 24 * 1024 * 1024;
+
 const stat = promisify(fs.stat);
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -67,22 +70,40 @@ export async function transcribeFile(filePath: string): Promise<TranscriptionRes
 
     for (const plan of plans) {
       const attemptTranscription = async () => {
-        const fileStream = fs.createReadStream(prepared.path);
-        try {
-          const params: any = {
-            file: fileStream,
-            model: plan.model,
-            response_format: plan.format,
-          };
+        // Read the file into a Buffer and wrap with toFile() so the SDK sets
+        // the correct Content-Length header. Using a raw ReadStream inside a
+        // webpack-bundled RSC context causes ECONNRESET because node-fetch@2
+        // cannot determine Content-Length from a stream, and OpenAI drops the
+        // connection when the header is missing or incorrect.
+        const fileBuffer = await fsp.readFile(prepared.path);
+        const ext = path.extname(prepared.path).toLowerCase();
+        const mimeType =
+          ext === ".mp3" ? "audio/mpeg" :
+          ext === ".mp4" || ext === ".m4a" ? "audio/mp4" :
+          ext === ".wav" ? "audio/wav" :
+          ext === ".webm" ? "audio/webm" :
+          "audio/mpeg";
+        const fileObject = await openAIClient!.toFile(
+          fileBuffer,
+          path.basename(prepared.path),
+          { type: mimeType }
+        );
 
-          if (plan.format === "verbose_json") {
-            params.timestamp_granularities = ["segment", "word"];
-          }
+        const params: any = {
+          file: fileObject,
+          model: plan.model,
+          response_format: plan.format,
+        };
 
-          return await openAIClient!.audio.transcriptions.create(params);
-        } finally {
-          fileStream.destroy();
+        if (plan.format === "verbose_json") {
+          params.timestamp_granularities = ["segment", "word"];
         }
+
+        // Use a 3-minute timeout for audio uploads — the default 60 s is too
+        // tight for long videos where server-side processing takes 60-120 s.
+        return await openAIClient!.audio.transcriptions.create(params, {
+          timeout: 180_000,
+        });
       };
 
       const attempts = Math.max(1, MAX_ATTEMPTS);
@@ -279,6 +300,19 @@ async function prepareTranscriptionSource(originalPath: string) {
     console.error("Failed to transcode audio for transcription", error);
     throw new Error(
       "Unable to prepare audio for transcription. Verify FFmpeg is installed and the source media is accessible."
+    );
+  }
+
+  // Guard against transcoded files that still exceed Whisper's 25 MB limit.
+  // At 64 kbps mono this rarely happens (limit ≈ 54 min), but reject early
+  // with a clear message rather than letting OpenAI drop the connection.
+  const transcodedStats = await stat(targetPath);
+  if (transcodedStats.size > WHISPER_MAX_BYTES) {
+    await fsp.unlink(targetPath).catch(() => null);
+    const sizeMb = (transcodedStats.size / (1024 * 1024)).toFixed(1);
+    throw new Error(
+      `Transcoded audio is ${sizeMb} MB which exceeds the 24 MB Whisper limit. ` +
+      `Try a shorter source video (under ~50 minutes) or set USE_MOCK_TRANSCRIBE=true.`
     );
   }
 

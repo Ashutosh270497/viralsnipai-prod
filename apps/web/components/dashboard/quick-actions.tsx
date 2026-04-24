@@ -2,13 +2,15 @@
 
 import Link from "next/link";
 import {
-  Lightbulb,
-  FileText,
+  Download,
   TrendingUp,
   Image as ImageIcon,
   Calendar,
-  Sparkles,
+  Palette,
+  FolderKanban,
+  Scissors,
 } from "lucide-react";
+import { isFeatureEnabled } from "@/config/features";
 
 interface QuickAction {
   icon: React.ComponentType<{ className?: string }>;
@@ -20,41 +22,59 @@ interface QuickAction {
 
 const quickActions: QuickAction[] = [
   {
-    icon: Calendar,
-    label: "Content Calendar",
-    description: "Plan your content strategy",
-    href: "/dashboard/content-calendar",
+    icon: Scissors,
+    label: "Create Clip",
+    description: "Upload and detect short clips",
+    href: "/repurpose",
   },
   {
-    icon: FileText,
-    label: "Script Generator",
-    description: "Write viral scripts with AI",
-    href: "/dashboard/script-generator",
+    icon: FolderKanban,
+    label: "Projects",
+    description: "Manage source videos and clips",
+    href: "/projects",
   },
   {
-    icon: TrendingUp,
-    label: "Title Generator",
-    description: "Create click-worthy titles",
-    href: "/dashboard/title-generator",
+    icon: Download,
+    label: "Exports",
+    description: "Download branded clips",
+    href: "/repurpose/export",
   },
   {
-    icon: ImageIcon,
-    label: "Thumbnail Designer",
-    description: "Design eye-catching thumbnails",
-    href: "/dashboard/thumbnail-generator",
+    icon: Palette,
+    label: "Brand Kit",
+    description: "Set captions and watermark",
+    href: "/brand-kit",
   },
-  {
-    icon: Sparkles,
-    label: "Niche Discovery",
-    description: "Find profitable niches",
-    href: "/niche-discovery",
-  },
-  {
-    icon: Lightbulb,
-    label: "All Tools",
-    description: "Explore all features",
-    href: "/dashboard",
-  },
+  ...(isFeatureEnabled("contentCalendar")
+    ? [
+        {
+          icon: Calendar,
+          label: "Content Calendar",
+          description: "Plan your content strategy",
+          href: "/dashboard/content-calendar",
+        },
+      ]
+    : []),
+  ...(isFeatureEnabled("youtubeTitleGenerator")
+    ? [
+        {
+          icon: TrendingUp,
+          label: "Title Generator",
+          description: "Create click-worthy titles",
+          href: "/dashboard/title-generator",
+        },
+      ]
+    : []),
+  ...(isFeatureEnabled("thumbnailIdeas")
+    ? [
+        {
+          icon: ImageIcon,
+          label: "Thumbnail Ideas",
+          description: "Draft thumbnail concepts",
+          href: "/dashboard/thumbnail-generator",
+        },
+      ]
+    : []),
 ];
 
 export function QuickActions() {

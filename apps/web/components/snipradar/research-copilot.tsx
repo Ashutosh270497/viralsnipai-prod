@@ -353,7 +353,7 @@ export function ResearchCopilot({
                     ) : (
                       <RefreshCcw className="h-4 w-4" />
                     )}
-                    {activeStatus.totalDocuments > 0 ? "Refresh corpus" : "Build corpus"}
+                    {activeStatus?.totalDocuments ? "Refresh corpus" : "Build corpus"}
                   </Button>
                   <Button type="button" size="sm" variant="outline" onClick={() => router.push("/snipradar/discover")}>
                     Open Discover
