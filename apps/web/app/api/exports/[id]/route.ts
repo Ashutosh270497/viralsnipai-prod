@@ -1,12 +1,13 @@
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-import { NextResponse } from "next/server";
 import { promises as fs } from "fs";
 
 import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getExportRuntimeState, isExportJobActive, queueExportJob } from "@/lib/render-queue";
+import { ApiResponseBuilder } from "@/lib/api/response";
+import { publicExportMessage, toPublicExportStatus } from "@/lib/media/v1-media-policy";
 
 const STALLED_QUEUED_RECOVERY_MS = 12_000;
 const STALLED_PROCESSING_RECOVERY_MS = 45_000;
@@ -17,7 +18,7 @@ export async function GET(
 ) {
   const user = await getCurrentUser();
   if (!user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401, headers: { "Cache-Control": "no-store" } });
+    return ApiResponseBuilder.unauthorized("Authentication required");
   }
 
   let exportRecord = await prisma.export.findFirst({
@@ -30,7 +31,7 @@ export async function GET(
   });
 
   if (!exportRecord) {
-    return NextResponse.json({ error: "Not found" }, { status: 404, headers: { "Cache-Control": "no-store" } });
+    return ApiResponseBuilder.notFound("Export not found");
   }
 
   if ((exportRecord.status === "queued" || exportRecord.status === "processing") && !isExportJobActive(exportRecord.id)) {
@@ -72,8 +73,27 @@ export async function GET(
     }
   }
 
-  return NextResponse.json(
-    { export: exportRecord, runtime: getExportRuntimeState(exportRecord.id) },
-    { headers: { "Cache-Control": "no-store" } }
-  );
+  const runtime = getExportRuntimeState(exportRecord.id);
+  const publicStatus = toPublicExportStatus(exportRecord.status, runtime);
+
+  return ApiResponseBuilder.successResponse({
+    export: {
+      ...exportRecord,
+      status: publicStatus,
+      internalStatus: exportRecord.status,
+      downloadUrl: publicStatus === "completed" ? exportRecord.outputPath : null,
+    },
+    runtime,
+    status: {
+      value: publicStatus,
+      message: publicExportMessage(publicStatus),
+      progressPct:
+        publicStatus === "completed"
+          ? 100
+          : publicStatus === "failed"
+            ? 100
+            : runtime?.progressPct ?? (publicStatus === "queued" ? 2 : 0),
+      retryable: publicStatus === "retryable" || Boolean(runtime?.retryable),
+    },
+  });
 }

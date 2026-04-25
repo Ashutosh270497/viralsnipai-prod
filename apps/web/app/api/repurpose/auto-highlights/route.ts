@@ -78,19 +78,29 @@ export const POST = withErrorHandling(async (request: Request) => {
     TYPES.GenerateAutoHighlightsUseCase
   );
 
-  // Step 4: Execute use case
-  const result = await useCase.execute({
-    assetId: parsedData.assetId,
-    userId: user.id,
-    options: {
-      targetClipCount: parsedData.target,
-      model: parsedData.model,
-      audience: parsedData.audience,
-      tone: parsedData.tone,
-      brief: parsedData.brief,
-      callToAction: parsedData.callToAction,
-    },
-  });
+  let result;
+  try {
+    // Step 4: Execute use case
+    result = await useCase.execute({
+      assetId: parsedData.assetId,
+      userId: user.id,
+      options: {
+        targetClipCount: parsedData.target,
+        model: parsedData.model,
+        audience: parsedData.audience,
+        tone: parsedData.tone,
+        brief: parsedData.brief,
+        callToAction: parsedData.callToAction,
+      },
+    });
+  } catch (error) {
+    logger.error('Clip generation failed', {
+      userId: user.id,
+      assetId: parsedData.assetId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    throw error;
+  }
 
   logger.info('Auto-highlights generation completed', {
     userId: user.id,

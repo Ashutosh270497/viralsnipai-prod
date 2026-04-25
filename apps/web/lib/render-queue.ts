@@ -140,6 +140,7 @@ export async function queueExportJob(exportId: string) {
     exportId,
     handler: async () => {
       try {
+        logger.info("Export processing started", { exportId });
         await persistExportStatus(exportId, "processing", null);
         setRuntimeState(exportId, {
           stage: "preparing",
@@ -325,6 +326,7 @@ export async function queueExportJob(exportId: string) {
                 },
               });
               await persistExportStatus(exportId, "done", null);
+              logger.info("Export processing completed", { exportId, attempt });
               setRuntimeState(exportId, {
                 stage: "done",
                 progressPct: 100,
@@ -366,6 +368,12 @@ export async function queueExportJob(exportId: string) {
         try {
           await persistExportStatus(exportId, "failed", error);
           const failure = categorizeExportFailure(error);
+          logger.error("Export processing failed", {
+            exportId,
+            code: failure.code,
+            retryable: failure.retryable,
+            error: failure.detail,
+          });
           setRuntimeState(exportId, {
             stage: "failed",
             progressPct: 100,

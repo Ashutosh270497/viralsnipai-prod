@@ -2,6 +2,7 @@ import fs from "fs";
 import { promises as fsp } from "fs";
 import { promisify } from "util";
 import path from "path";
+import { toFile } from "openai";
 import type { TranscriptionSegment as AudioTranscriptionSegment } from "openai/resources/audio/transcriptions";
 
 import { openAIClient } from "@/lib/openai";
@@ -83,7 +84,7 @@ export async function transcribeFile(filePath: string): Promise<TranscriptionRes
           ext === ".wav" ? "audio/wav" :
           ext === ".webm" ? "audio/webm" :
           "audio/mpeg";
-        const fileObject = await openAIClient!.toFile(
+        const fileObject = await toFile(
           fileBuffer,
           path.basename(prepared.path),
           { type: mimeType }

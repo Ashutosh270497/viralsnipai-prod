@@ -10,6 +10,14 @@ export function getStorageDriver() {
   return STORAGE_DRIVER;
 }
 
+export function assertWritableUploadStorageConfigured() {
+  if (process.env.NODE_ENV === "production" && STORAGE_DRIVER === "local") {
+    throw new Error(
+      "Production upload storage is configured as local. Set STORAGE_DRIVER=s3 with S3/Supabase storage variables before accepting uploads."
+    );
+  }
+}
+
 function getS3Client() {
   if (!process.env.S3_BUCKET) {
     throw new Error("S3_BUCKET is required for S3 storage driver");
@@ -36,6 +44,8 @@ export interface SavedFile {
 }
 
 export async function saveBuffer(buffer: Buffer, options?: { prefix?: string; extension?: string; contentType?: string }) {
+  assertWritableUploadStorageConfigured();
+
   const key = `${options?.prefix ?? ""}${randomUUID()}${options?.extension ?? ""}`;
   if (STORAGE_DRIVER === "local") {
     await fs.mkdir(LOCAL_UPLOAD_DIR, { recursive: true });

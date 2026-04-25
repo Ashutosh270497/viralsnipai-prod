@@ -3,12 +3,18 @@ export const revalidate = 0;
 
 import { z } from 'zod';
 import { getCurrentUser } from '@/lib/auth';
+import { prisma } from '@/lib/prisma';
 import { container } from '@/lib/infrastructure/di/container';
 import { TYPES } from '@/lib/infrastructure/di/types';
 import { QueueExportUseCase } from '@/lib/application/use-cases/QueueExportUseCase';
 import { withErrorHandling } from '@/lib/utils/error-handler';
-import { ApiResponseBuilder } from '@/lib/api/response';
+import { ApiResponseBuilder, ErrorCodes } from '@/lib/api/response';
 import { logger } from '@/lib/logger';
+import {
+  assertMediaUsageAllowed,
+  recordMediaUsage,
+  resolveUserPlanForMedia,
+} from '@/lib/media/v1-media-policy';
 
 const schema = z.object({
   projectId: z.string(),
@@ -48,31 +54,84 @@ export const POST = withErrorHandling(async (request: Request) => {
 
   const { projectId, clipIds, preset, includeCaptions } = result.data;
 
-  logger.info('Export queue API called', {
+  logger.info('Export started', {
     projectId,
     clipIds,
     preset,
     includeCaptions,
     userId: user.id,
   });
+
+  const billingUser = await prisma.user.findUnique({
+    where: { id: user.id },
+    select: { plan: true, subscriptionTier: true },
+  });
+  const plan = resolveUserPlanForMedia(billingUser ?? {});
+  const usageGate = await assertMediaUsageAllowed({
+    userId: user.id,
+    plan,
+    feature: 'video_export',
+  });
+  if (!usageGate.allowed) {
+    logger.warn('Export blocked by usage limit', {
+      userId: user.id,
+      projectId,
+      plan,
+      used: usageGate.used,
+      limit: usageGate.limit,
+    });
+    return ApiResponseBuilder.errorResponse(
+      ErrorCodes.RATE_LIMIT_EXCEEDED,
+      `Monthly export limit reached for your ${plan} plan.`,
+      429,
+      { limit: usageGate.limit, used: usageGate.used }
+    );
+  }
 
   // Step 3: Execute use case via DI container
   const useCase = container.get<QueueExportUseCase>(TYPES.QueueExportUseCase);
 
-  const output = await useCase.execute({
-    projectId,
-    clipIds,
-    preset,
-    includeCaptions,
-    userId: user.id,
-  });
+  try {
+    const output = await useCase.execute({
+      projectId,
+      clipIds,
+      preset,
+      includeCaptions,
+      userId: user.id,
+    });
 
-  // Step 4: Return success response
-  return ApiResponseBuilder.success(
-    {
-      export: output.export,
-      queued: output.queued,
-    },
-    'Export queued successfully'
-  );
+    await recordMediaUsage({
+      userId: user.id,
+      feature: 'video_export',
+      metadata: {
+        projectId,
+        exportId: output.export.id,
+        clipCount: clipIds.length,
+        preset,
+        includeCaptions,
+      },
+    });
+
+    logger.info('Export queued successfully', {
+      userId: user.id,
+      projectId,
+      exportId: output.export.id,
+    });
+
+    // Step 4: Return success response
+    return ApiResponseBuilder.success(
+      {
+        export: output.export,
+        queued: output.queued,
+      },
+      'Export queued successfully'
+    );
+  } catch (error) {
+    logger.error('Export failed to queue', {
+      userId: user.id,
+      projectId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    throw error;
+  }
 });

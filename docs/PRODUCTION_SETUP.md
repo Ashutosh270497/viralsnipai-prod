@@ -190,7 +190,13 @@ NEXT_PUBLIC_V2_CREATOR_GROWTH_ENABLED=false
 NEXT_PUBLIC_V3_AUTOMATION_OS_ENABLED=false
 UI_V2_ENABLED=true
 NEXT_PUBLIC_UI_V2_ENABLED=true
+MAX_UPLOAD_MB=500
+MAX_VIDEO_DURATION_SECONDS=3600
+V1_FREE_MONTHLY_UPLOAD_LIMIT=3
+V1_FREE_MONTHLY_EXPORT_LIMIT=5
 ```
+
+Production must use `STORAGE_DRIVER="s3"`. The upload API rejects production uploads when `STORAGE_DRIVER="local"` to avoid writing user media to ephemeral app disk.
 
 ---
 

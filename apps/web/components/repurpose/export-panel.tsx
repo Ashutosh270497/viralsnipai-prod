@@ -48,6 +48,8 @@ type ExportRuntime = {
   failureDetail?: string | null;
 };
 
+type ExportStatus = "queued" | "processing" | "completed" | "done" | "failed" | "retryable" | "cancelled" | string;
+
 export function ExportPanel({
   projectId,
   selectedClipIds,
@@ -134,16 +136,17 @@ export function ExportPanel({
             return;
           }
 
-          const data = await response.json();
+          const payload = await response.json();
+          const data = payload?.data ?? payload;
           const status: string | undefined = data.export?.status;
           const errorMessage: string | undefined = data.export?.error;
           setRuntime(data.runtime ?? null);
 
-          if (status === "processing" || status === "queued") {
+          if (status === "processing" || status === "queued" || status === "retryable") {
             return;
           }
 
-          if (status === "done") {
+          if (isCompletedStatus(status)) {
             setRuntime((current) =>
               current && current.exportId === exportId
                 ? { ...current, stage: "done", progressPct: 100, retryable: false }
@@ -157,7 +160,7 @@ export function ExportPanel({
             return;
           }
 
-          if (status === "failed") {
+          if (status === "failed" || status === "cancelled") {
             setRuntime((current) =>
               current && current.exportId === exportId
                 ? { ...current, stage: "failed", progressPct: 100, retryable: false }
@@ -197,14 +200,14 @@ export function ExportPanel({
       return;
     }
 
-    if (latestExport.status === "queued" || latestExport.status === "processing") {
+    if (latestExport.status === "queued" || latestExport.status === "processing" || latestExport.status === "retryable") {
       if (activeExportIdRef.current !== latestExport.id) {
         startPolling(latestExport.id);
       }
       return;
     }
 
-    if (latestExport.status === "done") {
+    if (isCompletedStatus(latestExport.status)) {
       setRuntime((current) =>
         current && current.exportId === latestExport.id
           ? { ...current, stage: "done", progressPct: 100, retryable: false }
@@ -215,7 +218,7 @@ export function ExportPanel({
       return;
     }
 
-    if (latestExport.status === "failed") {
+    if (latestExport.status === "failed" || latestExport.status === "cancelled") {
       setRuntime((current) =>
         current && current.exportId === latestExport.id
           ? { ...current, stage: "failed", progressPct: 100, retryable: false }
@@ -261,7 +264,8 @@ export function ExportPanel({
         throw new Error(message ?? "Failed to queue export");
       }
 
-      const data = await response.json();
+      const payload = await response.json();
+      const data = payload?.data ?? payload;
       const exportRecord: { id: string } | undefined = data?.export;
 
       toast({
@@ -307,11 +311,11 @@ export function ExportPanel({
   }
 
   const currentStatus = latestExport?.status;
-  const isBusy = isQueueing || currentStatus === "queued" || currentStatus === "processing";
+  const isBusy = isQueueing || currentStatus === "queued" || currentStatus === "processing" || currentStatus === "retryable";
   const effectiveProgress =
-    currentStatus === "done"
+    isCompletedStatus(currentStatus)
       ? 100
-      : currentStatus === "failed"
+    : currentStatus === "failed"
         ? 100
         : runtime?.progressPct ?? (currentStatus === "queued" ? 2 : 0);
   const stageLabel = formatStage(runtime?.stage, currentStatus);
@@ -386,17 +390,17 @@ export function ExportPanel({
           "rounded-xl border px-4 py-4",
           latestExport.status === "done"
             ? "border-emerald-500/20 bg-emerald-500/[0.06]"
-            : latestExport.status === "failed"
+            : latestExport.status === "failed" || latestExport.status === "cancelled"
               ? "border-red-500/20 bg-red-500/[0.06]"
               : "border-purple-500/20 bg-purple-500/[0.06]"
         )}>
           <div className="flex items-start gap-3">
             <div className="shrink-0 pt-0.5">
-              {latestExport.status === "done" ? (
+              {isCompletedStatus(latestExport.status) ? (
                 <CheckCircle2 className="h-4 w-4 text-emerald-400" />
-              ) : latestExport.status === "failed" ? (
+              ) : latestExport.status === "failed" || latestExport.status === "cancelled" ? (
                 <XCircle className="h-4 w-4 text-red-400" />
-              ) : runtime?.stage === "retrying" ? (
+              ) : runtime?.stage === "retrying" || latestExport.status === "retryable" ? (
                 <RefreshCw className="h-4 w-4 animate-spin text-amber-400" />
               ) : (
                 <Loader2 className="h-4 w-4 animate-spin text-purple-400" />
@@ -408,9 +412,9 @@ export function ExportPanel({
                 <div>
                   <p className={cn(
                     "text-sm font-medium",
-                    latestExport.status === "done"
+                    isCompletedStatus(latestExport.status)
                       ? "text-emerald-400"
-                      : latestExport.status === "failed"
+                      : latestExport.status === "failed" || latestExport.status === "cancelled"
                         ? "text-red-400"
                         : runtime?.stage === "retrying"
                           ? "text-amber-400"
@@ -440,11 +444,11 @@ export function ExportPanel({
                 </div>
               ) : null}
 
-              {latestExport.status === "failed" && latestExport.error ? (
+              {(latestExport.status === "failed" || latestExport.status === "cancelled") && latestExport.error ? (
                 <p className="text-[11px] text-red-400/70">{summarizeError(latestExport.error)}</p>
               ) : null}
 
-              {latestExport.status === "done" && latestExport.outputPath ? (
+              {isCompletedStatus(latestExport.status) && latestExport.outputPath ? (
                 <div className="flex items-center gap-1.5 pt-1">
                   <a
                     href={latestExport.outputPath}
@@ -480,7 +484,7 @@ export function ExportPanel({
                 <div key={exp.id} className="group flex items-center gap-3 py-2.5 px-0.5">
                   <div className={cn(
                     "w-1.5 h-1.5 rounded-full shrink-0 mt-0.5",
-                    exp.status === "done" ? "bg-emerald-400"
+                    isCompletedStatus(exp.status) ? "bg-emerald-400"
                     : exp.status === "failed" ? "bg-red-400"
                     : "bg-purple-400 animate-pulse"
                   )} />
@@ -496,15 +500,15 @@ export function ExportPanel({
                   </div>
                   <span className={cn(
                     "text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0",
-                    exp.status === "done" ? "bg-emerald-500/15 text-emerald-400"
+                    isCompletedStatus(exp.status) ? "bg-emerald-500/15 text-emerald-400"
                     : exp.status === "failed" ? "bg-red-500/15 text-red-400"
                     : "bg-purple-500/15 text-purple-400"
                   )}>
-                    {exp.status === "done" ? "Done"
+                    {isCompletedStatus(exp.status) ? "Done"
                       : exp.status === "failed" ? "Failed"
                       : "Rendering…"}
                   </span>
-                  {exp.status === "done" && exp.outputPath && (
+                  {isCompletedStatus(exp.status) && exp.outputPath && (
                     <a
                       href={exp.outputPath}
                       download
@@ -523,7 +527,7 @@ export function ExportPanel({
   );
 }
 
-function formatStatus(status?: string): string {
+function formatStatus(status?: ExportStatus): string {
   if (!status) {
     return "Ready to export";
   }
@@ -533,8 +537,14 @@ function formatStatus(status?: string): string {
   if (status === "processing") {
     return "Rendering in progress";
   }
-  if (status === "done") {
+  if (isCompletedStatus(status)) {
     return "Export completed";
+  }
+  if (status === "retryable") {
+    return "Retrying export";
+  }
+  if (status === "cancelled") {
+    return "Export cancelled";
   }
   if (status === "failed") {
     return "Export failed";
@@ -588,7 +598,7 @@ function humanizeFailureCode(code: string) {
 async function extractErrorMessage(response: Response): Promise<string | null> {
   try {
     const payload = await response.json();
-    return payload?.message || payload?.error || null;
+    return payload?.message || payload?.error?.message || payload?.error || null;
   } catch {
     return null;
   }
@@ -598,4 +608,8 @@ function summarizeError(message?: string | null) {
   if (!message) return "";
   const normalized = message.replace(/^Error:\s*/i, "").trim();
   return normalized.length > 180 ? `${normalized.slice(0, 180)}...` : normalized;
+}
+
+function isCompletedStatus(status?: string | null) {
+  return status === "done" || status === "completed";
 }
