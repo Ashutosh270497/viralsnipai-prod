@@ -2,7 +2,7 @@
  * OpenRouter client — OpenAI-compatible SDK configured for OpenRouter.
  *
  * OpenRouter provides access to 200+ LLMs through a single OpenAI-compatible API.
- * Migrate AI calls here to reduce costs by ~35% and enable model fallbacks.
+ * ViralSnipAI routes text/model generation through OpenRouter only.
  *
  * Usage:
  *   import { openRouter, OPENROUTER_MODELS } from '@/lib/openrouter-client';
@@ -12,16 +12,19 @@
  */
 
 import OpenAI from 'openai';
+import { logger } from '@/lib/logger';
 
 const OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
 const SNIPRADAR_HTTP_REFERER = 'https://snipradar.app';
 const SNIPRADAR_X_TITLE = 'SnipRadar';
+const OPENROUTER_TIMEOUT_MS = Number.parseInt(process.env.OPENROUTER_TIMEOUT_MS ?? '45000', 10);
+const OPENROUTER_MODEL_TIMEOUT_MS = Number.parseInt(process.env.OPENROUTER_MODEL_TIMEOUT_MS ?? '15000', 10);
 
 export const HAS_OPENROUTER_KEY = Boolean(process.env.OPENROUTER_API_KEY);
 
 /**
  * OpenRouter client — drop-in replacement for the OpenAI client.
- * Null when OPENROUTER_API_KEY is not set (falls back to OpenAI or mock).
+ * Null when OPENROUTER_API_KEY is not set.
  */
 export const openRouterClient = HAS_OPENROUTER_KEY
   ? new OpenAI({
@@ -29,10 +32,10 @@ export const openRouterClient = HAS_OPENROUTER_KEY
       apiKey: process.env.OPENROUTER_API_KEY,
       defaultHeaders: {
         'HTTP-Referer': SNIPRADAR_HTTP_REFERER,
-        'X-Title': SNIPRADAR_X_TITLE,
+        'X-OpenRouter-Title': SNIPRADAR_X_TITLE,
       },
-      timeout: 60_000, // 60 second timeout
-      maxRetries: 2,
+      timeout: Number.isFinite(OPENROUTER_TIMEOUT_MS) ? OPENROUTER_TIMEOUT_MS : 45_000,
+      maxRetries: 0,
     })
   : null;
 
@@ -44,39 +47,34 @@ export const openRouterClient = HAS_OPENROUTER_KEY
  * Selection rationale:
  *   gemini-3.1-pro-preview        — best OpenRouter fit for long transcript/video reasoning and structured highlights.
  *   gemini-3-flash-preview        — balanced multimodal model for fast structured extraction and ingest metadata.
- *   qwen3.6-plus                  — cost-efficient video-capable fallback with long context.
- *   mimo-v2.5                     — native audio/video fallback for media-understanding experiments.
+ *   qwen3.6-plus                  — cost-efficient video-capable alternative with long context.
+ *   mimo-v2.5                     — native audio/video alternative for media-understanding experiments.
  *   gemini-3.1-flash-lite-preview — high-volume, low-latency transforms, captions, replies, and ingest metadata.
  *   claude-sonnet-4.6             — strongest default for polished creative writing and style transfer.
  *   gpt-5.5                       — premium transcript/file reasoning where correctness matters more than cost.
  */
 export const OPENROUTER_MODELS = {
   /**
-   * Video ingest analysis — Gemini 3 Flash Preview
-   * Used for future direct-video/audio metadata extraction. Current V1 ingest still
-   * transcribes media through the existing media pipeline, then routes transcript
-   * analysis through the highlight model below.
+   * Video ingest analysis — Gemini 2.5 Flash
+   * Stable-first transcript metadata extraction for the ingest pipeline.
    */
-  videoIngest: process.env.OPENROUTER_VIDEO_INGEST_MODEL ?? 'google/gemini-3-flash-preview',
+  videoIngest: process.env.OPENROUTER_VIDEO_INGEST_MODEL ?? 'google/gemini-2.5-flash',
 
   /**
    * Hook generation — Claude Sonnet 4.6
-   * Short creative text (8-14 words). Sonnet 4.6 is Anthropic's frontier creative model
-   * at a fraction of Opus pricing. Replaces the older claude-3.5-sonnet.
+   * Short creative text (8-14 words). Anthropic frontier creative model.
    */
   hooks: process.env.OPENROUTER_HOOKS_MODEL ?? 'anthropic/claude-sonnet-4.6',
 
   /**
    * Script writing — Claude Sonnet 4.6
-   * Long-form narrative prose. Opus 4.6 ($5/$25 per 1M) is overkill for scripts;
-   * Sonnet 4.6 matches quality at ~3x lower cost. Replaces claude-opus-4.
+   * Long-form narrative prose.
    */
   scripts: process.env.OPENROUTER_SCRIPTS_MODEL ?? 'anthropic/claude-sonnet-4.6',
 
   /**
    * Highlight / timestamp detection — Gemini 3.1 Pro Preview
-   * Best choice for the V1 core loop: long transcript/video context, multimodal
-   * support, strong reasoning, and reliable structured JSON for timestamp clips.
+   * Best for long transcript/video context and structured JSON reasoning.
    */
   highlights: process.env.OPENROUTER_HIGHLIGHTS_MODEL ?? 'google/gemini-3.1-pro-preview',
 
@@ -88,40 +86,44 @@ export const OPENROUTER_MODELS = {
 
   /**
    * Caption refinement — Gemini 3.1 Flash Lite Preview
-   * Low latency with stronger extraction/translation quality than the 2.5 lite tier.
+   * Low latency structured extraction/translation.
    */
   captions: process.env.OPENROUTER_CAPTIONS_MODEL ?? 'google/gemini-3.1-flash-lite-preview',
 
   /**
    * Content calendar planning — Claude Sonnet 4.6
-   * Complex multi-step planning benefits from frontier reasoning.
-   * Replaces claude-3.5-sonnet.
+   * Complex multi-step planning with frontier reasoning.
    */
   contentCalendar: process.env.OPENROUTER_CONTENT_CALENDAR_MODEL ?? 'anthropic/claude-sonnet-4.6',
 
   /**
    * Title / thumbnail copy — Gemini 3.1 Flash Lite Preview
-   * Fast, structured short-copy generation for title and thumbnail concepts.
+   * Fast, structured short-copy generation.
    */
   titles: process.env.OPENROUTER_TITLES_MODEL ?? 'google/gemini-3.1-flash-lite-preview',
 
   /**
    * Thread / X post generation — Claude Sonnet 4.6
-   * Structured multi-part output needs current frontier model.
-   * Replaces claude-3.5-sonnet.
+   * Structured multi-part output.
    */
   threads: process.env.OPENROUTER_THREADS_MODEL ?? 'anthropic/claude-sonnet-4.6',
 
   /**
+   * Niche analysis — Gemini 3.1 Flash Lite Preview
+   * Fast structured niche recommendation generation.
+   */
+  nicheAnalysis: process.env.OPENROUTER_NICHE_ANALYSIS_MODEL ?? 'google/gemini-3.1-flash-lite-preview',
+
+  /**
    * SnipRadar browser extension source analysis — Gemini 3 Flash Preview
-   * Best fit for fast structured extraction from short social posts.
+   * Fast structured extraction from short social posts.
    */
   extensionAnalysis:
     process.env.OPENROUTER_SNIPRADAR_EXTENSION_ANALYSIS_MODEL ?? 'google/gemini-3-flash-preview',
 
   /**
    * SnipRadar browser extension reply assist — Gemini 3.1 Flash Lite Preview
-   * Best cost / quality balance for short, source-anchored reply variants.
+   * Best cost/quality for short, source-anchored reply variants.
    */
   extensionReply:
     process.env.OPENROUTER_SNIPRADAR_EXTENSION_REPLY_MODEL ?? 'google/gemini-3.1-flash-lite-preview',
@@ -142,14 +144,14 @@ export const OPENROUTER_MODELS = {
 
   /**
    * SnipRadar draft generation — Claude Sonnet 4.6
-   * Best fit for creative high-quality X post generation.
+   * Creative high-quality X post generation.
    */
   snipradarDraftGeneration:
     process.env.OPENROUTER_SNIPRADAR_DRAFT_GENERATION_MODEL ?? 'anthropic/claude-sonnet-4.6',
 
   /**
    * SnipRadar tweet prediction — GPT-5.3 Chat
-   * Premium reasoning and robust structured scoring for predictor use cases.
+   * Premium reasoning for structured scoring.
    */
   snipradarPrediction:
     process.env.OPENROUTER_SNIPRADAR_PREDICTION_MODEL ?? 'openai/gpt-5.3-chat',
@@ -177,7 +179,7 @@ export const OPENROUTER_MODELS = {
 
   /**
    * SnipRadar research embeddings — text-embedding-3-small
-   * Cheap semantic retrieval embeddings with a dedicated embeddings endpoint.
+   * Cheap semantic retrieval embeddings.
    */
   snipradarResearchEmbeddings:
     process.env.OPENROUTER_SNIPRADAR_RESEARCH_EMBEDDING_MODEL ?? 'openai/text-embedding-3-small',
@@ -191,21 +193,21 @@ export const OPENROUTER_MODELS = {
 
   /**
    * SnipRadar templates remix — Claude Sonnet 4.6
-   * Creative personalization while preserving proven template structure.
+   * Creative personalization while preserving template structure.
    */
   snipradarTemplatesRemix:
     process.env.OPENROUTER_SNIPRADAR_TEMPLATES_REMIX_MODEL ?? 'anthropic/claude-sonnet-4.6',
 
   /**
    * SnipRadar style analysis — Claude Sonnet 4.6
-   * Stronger voice extraction from historical post corpora.
+   * Voice extraction from historical post corpora.
    */
   snipradarStyleAnalysis:
     process.env.OPENROUTER_SNIPRADAR_STYLE_ANALYSIS_MODEL ?? 'anthropic/claude-sonnet-4.6',
 
   /**
    * SnipRadar style rewrite — Claude Sonnet 4.6
-   * Creative but controlled voice transfer for rewrite flows.
+   * Creative but controlled voice transfer.
    */
   snipradarStyleRewrite:
     process.env.OPENROUTER_SNIPRADAR_STYLE_REWRITE_MODEL ?? 'anthropic/claude-sonnet-4.6',
@@ -219,47 +221,42 @@ export const OPENROUTER_MODELS = {
 
   /**
    * SnipRadar threads — Claude Sonnet 4.6
-   * Multi-part coherent thread generation with stronger creative control.
+   * Multi-part coherent thread generation.
    */
   snipradarThreads:
     process.env.OPENROUTER_SNIPRADAR_THREADS_MODEL ?? 'anthropic/claude-sonnet-4.6',
 
   /**
    * SnipRadar Assistant (RAG chatbot) — Gemini 3 Flash Preview
-   * Long-context grounding over KB chunks; structured, conversational answers.
-   * Gemini 3 Flash's 1M context window keeps retrieved chunks intact.
+   * Long-context grounding over KB chunks; 1M context window.
    */
   snipradarAssistant:
     process.env.OPENROUTER_SNIPRADAR_ASSISTANT_MODEL ?? 'google/gemini-3-flash-preview',
 
   /**
    * SnipRadar Growth Planner — GPT-5.3 Chat
-   * Personalized 3-phase X growth roadmap requiring complex multi-step reasoning
-   * over account state, niche, and 30-day analytics. Frontier quality needed.
+   * Personalized 3-phase X growth roadmap with complex reasoning.
    */
   snipradarGrowthPlanner:
     process.env.OPENROUTER_SNIPRADAR_GROWTH_PLANNER_MODEL ?? 'openai/gpt-5.3-chat',
 
   /**
    * SnipRadar Winner Loop — Claude Sonnet 4.6
-   * Generates follow-up thread expansions and repost variants from winning posts.
-   * Creative generation needs reliable multi-step output quality.
+   * Follow-up thread expansions and repost variants.
    */
   snipradarWinnerLoop:
     process.env.OPENROUTER_SNIPRADAR_WINNER_LOOP_MODEL ?? 'anthropic/claude-sonnet-4.6',
 
   /**
    * SnipRadar Growth Coach — GPT-5.3 Chat
-   * Weekly performance analysis with specific, data-driven recommendations.
-   * Needs strong reasoning over engagement data patterns.
+   * Weekly performance analysis with data-driven recommendations.
    */
   snipradarGrowthCoach:
     process.env.OPENROUTER_SNIPRADAR_GROWTH_COACH_MODEL ?? 'openai/gpt-5.3-chat',
 
   /**
    * SnipRadar Inbox Enrichment — Gemini 3.1 Flash Lite Preview
-   * Fast structured extraction of title, summary, labels from short X captures.
-   * Speed and cost matter more than frontier quality for this background task.
+   * Fast structured extraction of title, summary, labels from X captures.
    */
   snipradarInboxEnrichment:
     process.env.OPENROUTER_SNIPRADAR_INBOX_ENRICHMENT_MODEL ?? 'google/gemini-3.1-flash-lite-preview',
@@ -267,7 +264,6 @@ export const OPENROUTER_MODELS = {
   /**
    * SnipRadar Profile Audit — GPT-5.3 Chat
    * Deep profile analysis, bio rewrites, and 7-day execution plans.
-   * High-signal output requires frontier reasoning and creative quality.
    */
   snipradarProfileAudit:
     process.env.OPENROUTER_SNIPRADAR_PROFILE_AUDIT_MODEL ?? 'openai/gpt-5.3-chat',
@@ -275,11 +271,56 @@ export const OPENROUTER_MODELS = {
 
 export type OpenRouterModelKey = keyof typeof OPENROUTER_MODELS;
 
+const OPENROUTER_BACKUP_MODELS: Partial<Record<OpenRouterModelKey, string[]>> = {
+  videoIngest: [
+    'openai/gpt-4o-mini',
+    'qwen/qwen3.6-plus',
+    'google/gemini-3-flash-preview',
+  ],
+  highlights: [
+    'google/gemini-2.5-pro',
+    'qwen/qwen3.6-plus',
+    'openai/gpt-5.5',
+  ],
+  captions: [
+    'google/gemini-2.5-flash-lite',
+    'qwen/qwen3.6-plus',
+  ],
+  imagenPrompt: [
+    'google/gemini-2.5-flash-lite',
+    'qwen/qwen3.6-plus',
+  ],
+};
+
+export type OpenRouterFailure = {
+  model: string;
+  status?: number;
+  code?: string | number;
+  message: string;
+  provider?: string;
+  metadata?: unknown;
+};
+
+export class OpenRouterUpstreamError extends Error {
+  readonly feature: OpenRouterModelKey;
+  readonly failures: OpenRouterFailure[];
+
+  constructor(feature: OpenRouterModelKey, failures: OpenRouterFailure[]) {
+    super(
+      `OpenRouter failed for feature "${feature}". All fallback models failed. ` +
+        `Failures: ${JSON.stringify(summarizeOpenRouterFailures(failures))}`
+    );
+    this.name = 'OpenRouterUpstreamError';
+    this.feature = feature;
+    this.failures = failures;
+  }
+}
+
 /**
  * Get the active AI client based on feature flags.
- * Priority: OpenRouter → OpenAI → null (mock mode)
+ * Priority: OpenRouter only.
  *
- * @param openAIClient - Fallback OpenAI client
+ * @param openAIClient - Deprecated; ignored. Kept for compatibility with existing callers.
  * @param feature - Feature key for model routing (used when OpenRouter is active)
  */
 export function getActiveClient(
@@ -296,14 +337,8 @@ export function getActiveClient(
     };
   }
 
-  if (openAIClient) {
-    return {
-      client: openAIClient,
-      model: null, // caller uses their default model
-      provider: 'openai',
-    };
-  }
-
+  // Keep the legacy provider value so older hidden V2/V3 surfaces still type-check,
+  // but model generation helpers fail when provider is not OpenRouter.
   return { client: null, model: null, provider: 'mock' };
 }
 
@@ -334,35 +369,273 @@ export function getSnipRadarModelForPlan(planId: string): string {
 }
 
 /**
- * Helper: Make a chat completion with automatic OpenRouter/OpenAI routing.
+ * Helper: Make a chat completion through OpenRouter only.
  * Uses chat.completions API (standard OpenAI-compatible endpoint).
- *
- * Note: The current openai.ts uses the `responses` API (Responses API).
- * OpenRouter does NOT support the Responses API — it only supports chat.completions.
- * This helper uses chat.completions which is compatible with both.
  */
 export async function routedChatCompletion(
   openAIClient: OpenAI | null,
   feature: OpenRouterModelKey,
   openAIModel: string,
   messages: OpenAI.Chat.ChatCompletionMessageParam[],
-  options?: { maxTokens?: number; temperature?: number }
+  options?: { maxTokens?: number; temperature?: number; json?: boolean; disableReasoning?: boolean }
 ): Promise<string> {
-  const { client, model, provider } = getActiveClient(openAIClient, feature);
-
-  if (!client) {
-    throw new Error('No AI provider configured. Set OPENAI_API_KEY or OPENROUTER_API_KEY.');
+  if (!HAS_OPENROUTER_KEY) {
+    throw new Error('OpenRouter is not configured. Set OPENROUTER_API_KEY and OPENROUTER_ENABLED=true.');
   }
 
-  const selectedModel = model ?? openAIModel;
+  const selectedModel = OPENROUTER_MODELS[feature];
+  if (!selectedModel) {
+    throw new Error(`No OpenRouter model configured for feature "${feature}".`);
+  }
 
-  const response = await client.chat.completions.create({
-    model: selectedModel,
-    messages,
-    max_tokens: options?.maxTokens ?? 2048,
-    temperature: options?.temperature ?? 0.7,
-  });
+  const candidateModels = getOpenRouterCandidateModels(feature, selectedModel);
+  const failures: OpenRouterFailure[] = [];
 
-  const content = response.choices[0]?.message?.content ?? '';
-  return content;
+  for (const candidateModel of candidateModels) {
+    const result = await callOpenRouterModelWithTimeout(candidateModel, messages, {
+      maxTokens: options?.maxTokens ?? 2048,
+      temperature: options?.temperature ?? 0.7,
+    });
+
+    if (result.ok) {
+      return result.content;
+    }
+
+    failures.push(result.failure);
+    logger.warn('[OpenRouter] model failed', {
+      feature,
+      model: result.failure.model,
+      status: result.failure.status,
+      code: result.failure.code,
+      provider: result.failure.provider,
+      message: result.failure.message,
+    });
+  }
+
+  throw new OpenRouterUpstreamError(feature, failures);
+}
+
+async function callOpenRouterModelWithTimeout(
+  model: string,
+  messages: OpenAI.Chat.ChatCompletionMessageParam[],
+  options: { maxTokens: number; temperature: number }
+): Promise<{ ok: true; content: string } | { ok: false; failure: OpenRouterFailure }> {
+  const controller = new AbortController();
+  const timeout = setTimeout(
+    () => controller.abort(),
+    Number.isFinite(OPENROUTER_MODEL_TIMEOUT_MS) ? OPENROUTER_MODEL_TIMEOUT_MS : 15_000
+  );
+
+  try {
+    const response = await fetch(`${OPENROUTER_BASE_URL}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
+        'Content-Type': 'application/json',
+        'HTTP-Referer': SNIPRADAR_HTTP_REFERER,
+        'X-OpenRouter-Title': SNIPRADAR_X_TITLE,
+      },
+      body: JSON.stringify({
+        model,
+        messages,
+        temperature: options.temperature,
+        max_tokens: options.maxTokens,
+        provider: { allow_fallbacks: true },
+        stream: false,
+      }),
+      signal: controller.signal,
+    });
+
+    const parsed = await safeParseOpenRouterJson(response);
+    if (!response.ok) {
+      return {
+        ok: false,
+        failure: buildOpenRouterFailure(model, response.status, response.statusText, parsed),
+      };
+    }
+
+    if (parsed?.error) {
+      return {
+        ok: false,
+        failure: buildOpenRouterFailure(model, response.status, response.statusText, parsed),
+      };
+    }
+
+    const content = extractOpenRouterContent(parsed);
+    if (!content) {
+      return {
+        ok: false,
+        failure: {
+          model,
+          status: response.status,
+          message: parsed === null ? 'OpenRouter returned non-JSON response' : 'Empty response content',
+          provider: readProvider(parsed),
+          metadata: readProviderMetadata(parsed),
+        },
+      };
+    }
+
+    return { ok: true, content };
+  } catch (error) {
+    return {
+      ok: false,
+      failure: {
+        model,
+        message: error instanceof Error && error.name === 'AbortError'
+          ? 'Request timed out'
+          : error instanceof Error
+            ? error.message
+            : 'OpenRouter request failed',
+      },
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function safeParseOpenRouterJson(response: Response): Promise<any | null> {
+  const text = await response.text();
+  if (!text.trim()) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
+function buildOpenRouterFailure(
+  model: string,
+  status: number,
+  statusText: string,
+  body: any | null
+): OpenRouterFailure {
+  const error = body?.error;
+  return {
+    model,
+    status,
+    code: error?.code,
+    message: error?.message ?? statusText ?? 'OpenRouter request failed',
+    provider: readProvider(body),
+    metadata: error?.metadata ?? readProviderMetadata(body),
+  };
+}
+
+function readProvider(body: any | null): string | undefined {
+  return body?.provider ?? body?.error?.metadata?.provider_name ?? body?.error?.metadata?.provider;
+}
+
+function readProviderMetadata(body: any | null): unknown {
+  return body?.error?.metadata ?? body?.metadata;
+}
+
+export function summarizeOpenRouterFailures(failures: OpenRouterFailure[]) {
+  return failures.map((failure) => ({
+    model: failure.model,
+    status: failure.status,
+    code: failure.code,
+    message: failure.message,
+    provider: failure.provider,
+  }));
+}
+
+export function getOpenRouterFailureSummary(error: unknown) {
+  if (error instanceof OpenRouterUpstreamError) {
+    return summarizeOpenRouterFailures(error.failures);
+  }
+
+  return undefined;
+}
+
+export function getSafeOpenRouterErrorMessage(error: unknown): string {
+  if (error instanceof OpenRouterUpstreamError) {
+    return (
+      `OpenRouter failed for feature "${error.feature}". All fallback models failed. ` +
+      `Failures: ${JSON.stringify(summarizeOpenRouterFailures(error.failures))}`
+    );
+  }
+
+  return error instanceof Error ? error.message : 'OpenRouter request failed';
+}
+
+function getOpenRouterCandidateModels(feature: OpenRouterModelKey, primaryModel: string): string[] {
+  const fallbacksEnabled = process.env.OPENROUTER_MODEL_FALLBACKS_ENABLED !== 'false';
+  if (!fallbacksEnabled) {
+    return [primaryModel];
+  }
+
+  const featureEnvName = toEnvFeatureName(feature);
+  const envFallbacks = splitModelList(process.env[`OPENROUTER_${featureEnvName}_FALLBACK_MODELS`]);
+  const globalFallbacks = splitModelList(process.env.OPENROUTER_FALLBACK_MODELS);
+  const codedFallbacks = OPENROUTER_BACKUP_MODELS[feature] ?? [];
+
+  return Array.from(new Set([primaryModel, ...envFallbacks, ...codedFallbacks, ...globalFallbacks].filter(Boolean)));
+}
+
+function splitModelList(value: string | undefined): string[] {
+  return value
+    ? value
+        .split(',')
+        .map((model) => model.trim())
+        .filter(Boolean)
+    : [];
+}
+
+function toEnvFeatureName(feature: OpenRouterModelKey): string {
+  return feature.replace(/[A-Z]/g, (char) => `_${char}`).toUpperCase();
+}
+
+export function extractOpenRouterContent(response: unknown): string {
+  const choice = (response as any)?.choices?.[0];
+  const message = choice?.message;
+  const content = message?.content;
+
+  if (typeof content === 'string') {
+    return content.trim();
+  }
+
+  if (Array.isArray(content)) {
+    return content
+      .map((part) => {
+        if (typeof part === 'string') return part;
+        if (typeof part?.text === 'string') return part.text;
+        if (typeof part?.content === 'string') return part.content;
+        return '';
+      })
+      .join('')
+      .trim();
+  }
+
+  return '';
+}
+
+export function buildEmptyOpenRouterContentError(model: string, response: unknown): Error {
+  const responseError = (response as any)?.error;
+  if (responseError) {
+    const code = responseError.code ? ` (code: ${responseError.code})` : '';
+    const metadata = responseError.metadata ? ` Metadata: ${JSON.stringify(responseError.metadata)}.` : '';
+    return new Error(
+      `OpenRouter model "${model}" failed: ${responseError.message ?? 'Unknown OpenRouter error'}${code}.${metadata}`
+    );
+  }
+
+  const choice = (response as any)?.choices?.[0];
+  const message = choice?.message;
+  const details = {
+    finishReason: choice?.finish_reason,
+    nativeFinishReason: choice?.native_finish_reason,
+    hasReasoning: typeof message?.reasoning === 'string' && message.reasoning.length > 0,
+    reasoningLength: typeof message?.reasoning === 'string' ? message.reasoning.length : 0,
+    refusal: message?.refusal,
+    responseId: (response as any)?.id,
+    provider: (response as any)?.provider,
+  };
+
+  return new Error(
+    `OpenRouter model "${model}" returned no content. ` +
+      `Details: ${JSON.stringify(details)}. ` +
+      `Check model access, provider availability, and max token settings.`
+  );
 }

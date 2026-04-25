@@ -1,9 +1,7 @@
 import { TitleGeneratorInput, TitleVariation, POWER_WORDS } from "@/types/title";
-import { routedChatCompletion } from "@/lib/openrouter-client";
-import { openAIClient } from "@/lib/openai";
+import { routedChatCompletion, openRouterClient } from "@/lib/openrouter-client";
 
-const OPENAI_MODEL = process.env.OPENAI_MODEL?.trim() ?? "gpt-4o-mini";
-const client = openAIClient;
+const client = openRouterClient;
 
 /**
  * Smart truncate title at word boundary
@@ -265,7 +263,7 @@ Return ONLY a valid JSON array of 5 unique titles. No markdown, no extra text.`;
     const raw = await routedChatCompletion(
       client,
       'titles',
-      OPENAI_MODEL,
+      '',
       [{ role: "system", content: systemPrompt }],
       { maxTokens: 2000, temperature: 0.9 },
     );

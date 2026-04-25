@@ -3,7 +3,7 @@ export const revalidate = 0;
 
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import OpenAI from "openai";
+import { openRouterClient, OPENROUTER_MODELS } from "@/lib/openrouter-client";
 
 import { getCurrentUser } from "@/lib/auth";
 import { formatPlanName, getRuntimeSecondaryUsageLimit, resolvePlanTier } from "@/lib/billing/plans";
@@ -16,10 +16,7 @@ import { prisma } from "@/lib/prisma";
 import { NICHE_DATABASE } from "@/lib/niche-data";
 import type { NicheRecommendation, SkillLevel, ContentGoal, ShowFacePreference } from "@/lib/types/niche";
 
-const OPENAI_MODEL = process.env.OPENAI_MODEL?.trim() ?? "gpt-4o-mini";
-
-const hasApiKey = Boolean(process.env.OPENAI_API_KEY);
-const client = hasApiKey ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY }) : null;
+const client = openRouterClient;
 
 // Request validation schema
 const analyzeSchema = z.object({
@@ -137,7 +134,7 @@ export async function POST(request: Request) {
       recommendations = generateMockRecommendations(interests, skillLevel, showFace);
     } else {
       // Use OpenAI for analysis
-      logger.debug("[Niche Discovery] Using OpenAI model", { model: OPENAI_MODEL });
+      logger.debug("[Niche Discovery] Using OpenRouter model", { model: OPENROUTER_MODELS.nicheAnalysis });
 
       const userProfile = {
         interests,
@@ -182,7 +179,7 @@ IMPORTANT RULES:
 Return ONLY a valid JSON array of niche recommendations. No markdown, no explanation, just the JSON array.`;
 
       const response = await client.chat.completions.create({
-        model: OPENAI_MODEL,
+        model: OPENROUTER_MODELS.nicheAnalysis,
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: `User Profile:\n${JSON.stringify(userProfile, null, 2)}` },
@@ -191,7 +188,7 @@ Return ONLY a valid JSON array of niche recommendations. No markdown, no explana
         max_tokens: 4000,
       });
 
-      let text = response.choices[0]?.message?.content?.trim() ?? "[]";
+      let text = response.choices?.[0]?.message?.content?.trim() ?? "[]";
 
       // Clean up response if wrapped in markdown
       if (text.startsWith("```json")) {

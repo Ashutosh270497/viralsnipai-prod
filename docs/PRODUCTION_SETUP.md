@@ -119,11 +119,13 @@ OPENROUTER_SCRIPTS_MODEL="anthropic/claude-sonnet-4.6"
 
 Model routing rationale is documented in `docs/OPENROUTER_MODEL_ROUTING.md`.
 
-### OpenAI (Whisper + TTS + DALL-E)
+### OpenAI Media Endpoints
 
 1. Create a key at [platform.openai.com/api-keys](https://platform.openai.com/api-keys).
 2. Set `OPENAI_API_KEY`.
-3. Defaults: `OPENAI_MODEL=gpt-4o-mini`, `TTS_MODEL=tts-1`, `WHISPER_MODEL=whisper-1`.
+3. Defaults: `TTS_MODEL=tts-1`, `WHISPER_MODEL=whisper-1`.
+
+OpenAI is not used as a text/model fallback. V1 model generation is OpenRouter-only.
 
 ---
 

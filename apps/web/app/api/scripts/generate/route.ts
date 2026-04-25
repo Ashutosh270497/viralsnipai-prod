@@ -3,7 +3,7 @@ export const revalidate = 0;
 
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import OpenAI from "openai";
+import { openRouterClient, OPENROUTER_MODELS } from "@/lib/openrouter-client";
 import { recordActivationCheckpointSafe } from "@/lib/analytics/activation";
 import { getCurrentUser } from "@/lib/auth";
 import { checkRateLimit, rateLimitHeaders, RATE_LIMITS } from "@/lib/rate-limiter";
@@ -12,9 +12,7 @@ import { prisma } from "@/lib/prisma";
 import { logger } from "@/lib/logger";
 import { GenerateScriptRequest, ScriptSegmentStructured } from "@/lib/types/script";
 
-const openai = process.env.OPENAI_API_KEY
-  ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
-  : null;
+const openai = openRouterClient;
 
 const generateScriptSchema = z.object({
   contentIdeaId: z.string().optional(),
@@ -265,16 +263,16 @@ Return ONLY valid JSON in this exact format:
   if (openai) {
     try {
       const completion = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
+        model: OPENROUTER_MODELS.scripts,
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: "Generate the complete YouTube script." },
         ],
         temperature: 0.8,
-        response_format: { type: "json_object" },
       });
 
-      const content = completion.choices[0]?.message?.content;
+      const rawContent = completion.choices?.[0]?.message?.content;
+      const content = rawContent?.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
       if (!content) {
         throw new Error("No content generated");
       }

@@ -9,17 +9,13 @@
  */
 
 import { injectable } from 'inversify';
-import OpenAI from 'openai';
 import { logger } from '@/lib/logger';
 import { AppError } from '@/lib/utils/error-handler';
 import type { Clip } from '@/lib/types';
+import { openRouterClient, OPENROUTER_MODELS } from '@/lib/openrouter-client';
 
-const hasApiKey = Boolean(process.env.OPENAI_API_KEY);
-const client = hasApiKey
-  ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
-  : null;
-
-const SEARCH_MODEL = process.env.OPENAI_MODEL?.trim() || 'gpt-4o-mini';
+const client = openRouterClient;
+const SEARCH_MODEL = OPENROUTER_MODELS.highlights;
 
 export interface SearchQuery {
   query: string;
@@ -95,7 +91,7 @@ Return ONLY valid JSON matching this structure:
         response_format: { type: 'json_object' },
       });
 
-      const content = response.choices[0]?.message?.content;
+      const content = response.choices?.[0]?.message?.content;
       if (!content) {
         throw new Error('No response from AI');
       }

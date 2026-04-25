@@ -2,10 +2,16 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 import { z } from "zod";
+import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { fail, ok, parseJson } from "@/lib/api";
 import { promptGeneratorService } from "@/lib/services/prompt-generator.service";
 import { logger } from "@/lib/logger";
+import {
+  getOpenRouterFailureSummary,
+  getSafeOpenRouterErrorMessage,
+  OpenRouterUpstreamError,
+} from "@/lib/openrouter-client";
 
 const schema = z.object({
   transcript: z.string().min(20).max(15000),
@@ -50,6 +56,20 @@ export async function POST(request: Request) {
     return ok({ prompts });
   } catch (error) {
     logger.error('Failed to generate prompts', error instanceof Error ? error : { error });
-    return fail(500, error instanceof Error ? error.message : 'Failed to generate prompts');
+    if (error instanceof OpenRouterUpstreamError) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: {
+            code: 'AI_PROVIDER_UNAVAILABLE',
+            message: getSafeOpenRouterErrorMessage(error),
+            failures: getOpenRouterFailureSummary(error),
+          },
+        },
+        { status: 502, headers: { 'Cache-Control': 'no-store' } }
+      );
+    }
+
+    return fail(500, 'Failed to generate prompts');
   }
 }

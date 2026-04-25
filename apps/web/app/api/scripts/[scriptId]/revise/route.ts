@@ -3,14 +3,12 @@ export const revalidate = 0;
 
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import OpenAI from "openai";
+import { openRouterClient, OPENROUTER_MODELS } from "@/lib/openrouter-client";
 import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { logger } from "@/lib/logger";
 
-const openai = process.env.OPENAI_API_KEY
-  ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
-  : null;
+const openai = openRouterClient;
 
 const reviseScriptSchema = z.object({
   revision: z.enum(['more-engaging', 'shorten', 'lengthen', 'change-tone', 'add-examples', 'simplify', 'custom']),
@@ -165,7 +163,7 @@ Return ONLY valid JSON in this exact format:
   if (openai) {
     try {
       const completion = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
+        model: OPENROUTER_MODELS.scripts,
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: "Revise the script according to the instructions." },
@@ -174,7 +172,7 @@ Return ONLY valid JSON in this exact format:
         response_format: { type: "json_object" },
       });
 
-      const content = completion.choices[0]?.message?.content;
+      const content = completion.choices?.[0]?.message?.content;
       if (!content) {
         throw new Error("No content generated");
       }

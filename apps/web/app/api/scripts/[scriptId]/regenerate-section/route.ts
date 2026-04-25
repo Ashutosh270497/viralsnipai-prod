@@ -3,14 +3,12 @@ export const revalidate = 0;
 
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import OpenAI from "openai";
+import { openRouterClient, OPENROUTER_MODELS } from "@/lib/openrouter-client";
 import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { logger } from "@/lib/logger";
 
-const openai = process.env.OPENAI_API_KEY
-  ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
-  : null;
+const openai = openRouterClient;
 
 const regenerateSectionSchema = z.object({
   section: z.enum(['hook', 'intro', 'mainContent', 'conclusion', 'cta']),
@@ -187,7 +185,7 @@ Generate ONLY the new CTA text, no JSON or formatting.`,
   if (openai) {
     try {
       const completion = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
+        model: OPENROUTER_MODELS.scripts,
         messages: [
           {
             role: "system",
@@ -198,7 +196,7 @@ Generate ONLY the new CTA text, no JSON or formatting.`,
         temperature: 0.9,
       });
 
-      const content = completion.choices[0]?.message?.content;
+      const content = completion.choices?.[0]?.message?.content;
       if (!content) {
         throw new Error("No content generated");
       }

@@ -5,14 +5,10 @@
  * Provides 0-100 scoring with detailed factor breakdown.
  */
 
-import OpenAI from 'openai';
 import { logger } from '../logger';
 import type { TranscriptionSegment } from '../transcript';
 import { transcriptEnhancementService } from './transcript-enhancement.service';
-
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY
-});
+import { HAS_OPENROUTER_KEY, OPENROUTER_MODELS, openRouterClient } from '@/lib/openrouter-client';
 
 export interface ViralityFactors {
   hookStrength: number;      // 0-100: First 3 seconds grab attention
@@ -60,8 +56,12 @@ export class ViralityService {
         transcriptLength: transcript.length
       });
 
-      const response = await openai.chat.completions.create({
-        model: 'gpt-4o-mini', // Fast and cost-effective
+      if (process.env.OPENROUTER_ENABLED !== 'true' || !HAS_OPENROUTER_KEY || !openRouterClient) {
+        throw new Error('OpenRouter is not configured. Set OPENROUTER_API_KEY and OPENROUTER_ENABLED=true.');
+      }
+
+      const response = await openRouterClient.chat.completions.create({
+        model: OPENROUTER_MODELS.highlights,
         messages: [
           {
             role: 'system',
@@ -78,7 +78,7 @@ export class ViralityService {
 
       const content = response.choices[0]?.message?.content;
       if (!content) {
-        throw new Error('No response from OpenAI');
+        throw new Error('No response from OpenRouter');
       }
 
       const analysis = JSON.parse(content) as ViralityAnalysis;
@@ -100,9 +100,7 @@ export class ViralityService {
 
     } catch (error) {
       logger.error('Failed to analyze clip virality', error as Error);
-
-      // Return fallback analysis
-      return this.getFallbackAnalysis();
+      throw error;
     }
   }
 
@@ -300,28 +298,6 @@ Provide your virality analysis as JSON.`;
   }
 
   /**
-   * Fallback analysis when AI fails
-   */
-  private getFallbackAnalysis(): ViralityAnalysis {
-    return {
-      score: 50,
-      factors: {
-        hookStrength: 50,
-        emotionalPeak: 50,
-        storyArc: 50,
-        pacing: 50,
-        transcriptQuality: 50
-      },
-      reasoning: 'Virality analysis unavailable. This is a default score.',
-      improvements: [
-        'Ensure strong hook in first 3 seconds',
-        'Add emotional peaks or surprises',
-        'Maintain fast pacing throughout'
-      ]
-    };
-  }
-
-  /**
    * Batch analyze multiple clips
    */
   async analyzeClips(clips: Array<{
@@ -354,7 +330,7 @@ Provide your virality analysis as JSON.`;
             return { id: clip.id, analysis };
           } catch (error) {
             logger.error(`Failed to analyze clip ${clip.id}`, error as Error);
-            return { id: clip.id, analysis: this.getFallbackAnalysis() };
+            throw error;
           }
         })
       );

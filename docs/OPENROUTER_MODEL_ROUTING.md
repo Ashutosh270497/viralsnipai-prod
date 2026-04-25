@@ -41,7 +41,7 @@ When one of these IDs is selected, the auto-highlight API sends that exact model
 
 - Use `google/gemini-3.1-pro-preview` for the default V1 highlight detector because wrong clip timestamps waste user time.
 - Use `google/gemini-3-flash-preview` for future direct video/audio ingest metadata and when latency matters but the task still needs multimodal/context reasoning.
-- Use `qwen/qwen3.6-plus` when video-capable long-context analysis needs a lower-cost fallback than Gemini Pro.
+- Use `qwen/qwen3.6-plus` when video-capable long-context analysis needs a lower-cost alternative to Gemini Pro.
 - Use `xiaomi/mimo-v2.5` for experimental native audio/video understanding when broad media input matters more than premium reasoning.
 - Use `google/gemini-3.1-flash-lite-preview` for captions, short transforms, reply assist, and high-volume background enrichment.
 - Use `anthropic/claude-sonnet-4.6` for polished creative writing, style transfer, hooks, scripts, threads, and template remix.
@@ -50,3 +50,7 @@ When one of these IDs is selected, the auto-highlight API sends that exact model
 ## Current Limitation
 
 The V1 media pipeline still uploads and transcribes video through the existing app media flow. OpenRouter is currently used for transcript/highlight/caption intelligence, not as a direct raw-video ingestion replacement. The `OPENROUTER_VIDEO_INGEST_MODEL` key is in place for future direct multimodal ingest work.
+
+## Provider Policy
+
+Text/model generation is OpenRouter-only. If OpenRouter is not configured, returns no content, or returns invalid JSON for structured tasks, the request should fail clearly instead of falling back to OpenAI, Gemini, mock content, or deterministic model output.

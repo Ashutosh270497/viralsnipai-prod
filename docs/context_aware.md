@@ -30,7 +30,7 @@ Current repository state:
 - **Production UI is intentionally V1-only unless flags are enabled.** The default sidebar shows Dashboard, Projects, Create Clip, Exports, Brand Kit, Billing, and Settings.
 - **Disabled V2/V3 direct routes should not be treated as launch entry points.** Route gating redirects hidden ecosystem surfaces back to the V1 dashboard instead of exposing the module in navigation.
 - **Production deployment docs target Supabase PostgreSQL, Inngest, Razorpay, OpenRouter, and Coolify/VPS.**
-- **V1 production setup has a dedicated guide.** `docs/PRODUCTION_SETUP.md` documents Supabase PostgreSQL, NextAuth, Supabase/S3 storage, OpenRouter, OpenAI, Razorpay, Inngest, Vercel, Coolify/VPS, FFmpeg, and a production checklist.
+- **V1 production setup has a dedicated guide.** `docs/PRODUCTION_SETUP.md` documents Supabase PostgreSQL, NextAuth, Supabase/S3 storage, OpenRouter-only model routing, media endpoints, Razorpay, Inngest, Vercel, Coolify/VPS, FFmpeg, and a production checklist.
 - **V1 env template exists.** `.env.v1.example` keeps V1 launch flags on, V2/V3 flags off, storage set to S3, and Razorpay plan IDs scoped to starter/creator/studio.
 - **Local Docker Compose is stale for current DB reality**: it still starts MySQL, while `apps/web/prisma/schema.prisma` uses PostgreSQL and docs/env point to Supabase.
 
@@ -73,7 +73,8 @@ clippers/
 - **Auth**: NextAuth v4 JWT strategy with Google OAuth, credentials login, and development-only demo login.
 - **State/data fetching**: TanStack Query v5, React Context for cross-route workflows.
 - **Background jobs**: Inngest for product jobs and cron; `@clippers/jobs` in-memory queue for media render/ingest/voice translation.
-- **AI providers**: OpenRouter-first routing for most text/transcript intelligence flows, direct OpenAI for Whisper/TTS/DALL-E-compatible flows, Google Gemini/Imagen/Veo, ElevenLabs for voice features.
+- **AI model provider**: OpenRouter is the single text/model generation gateway. Direct OpenAI fallback for model generation has been removed from the V1 core generation helpers.
+- **Media endpoints**: existing Whisper/TTS-style media endpoints may still use provider-specific audio APIs; those are separate from text/model generation.
 - **OpenRouter model routing**: `apps/web/lib/openrouter-client.ts` is the source of truth; rationale is documented in `docs/OPENROUTER_MODEL_ROUTING.md`.
 - **Media**: FFmpeg/ffprobe through `ffmpeg-static`, `ffprobe-static`, or env overrides.
 - **Storage**: local disk or S3 via `apps/web/lib/storage.ts`; Supabase Storage helper for generated images.
@@ -392,7 +393,7 @@ V1 production baseline:
 - Schema apply path: `pnpm --filter web exec prisma generate` then `pnpm --filter web exec prisma db push`; `prisma migrate deploy` is preferred once migration history is formalized.
 - Auth: NextAuth with `NEXTAUTH_SECRET`, `NEXTAUTH_URL`, Google OAuth, and production redirect URI.
 - Storage: Supabase Storage through S3-compatible variables is recommended for V1 production.
-- AI: OpenRouter for text/transcript intelligence flows, OpenAI for Whisper/TTS/DALL-E-compatible paths.
+- AI: OpenRouter-only for text/model generation flows; media-specific endpoints are separate.
 - Current V1 OpenRouter defaults: `google/gemini-3.1-pro-preview` for auto-highlight detection, `google/gemini-3-flash-preview` for future direct video/audio ingest metadata, `google/gemini-3.1-flash-lite-preview` for caption refinement, and `anthropic/claude-sonnet-4.6` for hooks/scripts.
 - The Create Clip highlight detector selector is synced with the April 25, 2026 OpenRouter model catalog: Gemini 3.1 Pro remains the default best-overall detector; Gemini 3 Flash is the balanced video option; Qwen3.6 Plus and MiMo V2.5 are video/audio-capable alternatives; Gemini 3.1 Flash Lite is the fastest low-cost option; GPT-5.5 is retained for premium transcript/file QA rather than native video detection.
 - Billing: Razorpay live keys, webhook secret, and starter/creator/studio subscription plan IDs.
@@ -489,7 +490,7 @@ Important policy:
 
 - **X/Twitter API**: OAuth 2.0 PKCE, posting, tweet/user lookups, metrics.
 - **OpenRouter**: primary text-model gateway for many AI flows.
-- **OpenAI**: Whisper transcription, TTS, some direct model/image fallback paths.
+- **OpenAI**: media endpoint dependency for Whisper/TTS-style paths only; not a text/model fallback provider.
 - **Google Gemini/Imagen/Veo**: AI analysis, image generation, video generation.
 - **ElevenLabs**: voice profile/render/Voicer-related features.
 - **YouTube Data API**: keyword discovery and competitor channel/video data.

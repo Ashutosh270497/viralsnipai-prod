@@ -19,9 +19,8 @@ const ENV_SCHEMA: EnvVar[] = [
   // Google OAuth
   { key: 'GOOGLE_CLIENT_ID', required: false, description: 'Google OAuth client ID' },
   { key: 'GOOGLE_CLIENT_SECRET', required: false, description: 'Google OAuth client secret' },
-  // AI providers
-  { key: 'OPENAI_API_KEY', required: false, description: 'OpenAI API key (or set OPENROUTER_API_KEY)' },
-  { key: 'OPENROUTER_API_KEY', required: false, description: 'OpenRouter API key' },
+  // AI provider
+  { key: 'OPENROUTER_API_KEY', required: false, description: 'OpenRouter API key for all text/model generation' },
   // X / Twitter OAuth (required for SnipRadar core features)
   { key: 'X_CLIENT_ID', required: false, description: 'X OAuth 2.0 client ID — required for X account connection' },
   { key: 'X_CLIENT_SECRET', required: false, description: 'X OAuth 2.0 client secret — required for X account connection' },
@@ -55,9 +54,12 @@ export function validateEnv(): void {
     }
   }
 
-  // Check that at least one AI provider is configured
-  if (!process.env.OPENAI_API_KEY && !process.env.OPENROUTER_API_KEY) {
-    warnings.push('  ⚠️  No AI provider configured (OPENAI_API_KEY or OPENROUTER_API_KEY required for AI features)');
+  // Check that the single model provider is configured.
+  if (!process.env.OPENROUTER_API_KEY) {
+    warnings.push('  ⚠️  OPENROUTER_API_KEY: OpenRouter is required for all AI model generation');
+  }
+  if (process.env.OPENROUTER_ENABLED !== 'true') {
+    warnings.push('  ⚠️  OPENROUTER_ENABLED: set to "true" so model generation routes through OpenRouter');
   }
 
   // Production billing guardrails — warn loudly when Razorpay is partially configured.

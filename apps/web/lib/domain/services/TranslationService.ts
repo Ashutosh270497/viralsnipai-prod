@@ -1,14 +1,14 @@
 /**
  * Translation Service (Domain Layer)
  *
- * Handles translation of text and transcript segments using OpenAI GPT-4
+ * Handles translation of text and transcript segments using OpenRouter models
  * Preserves timing information for video synchronization
  *
  * @module TranslationService
  */
 
 import { injectable } from 'inversify';
-import { openAIClient } from '@/lib/openai';
+import { HAS_OPENROUTER_KEY, OPENROUTER_MODELS, openRouterClient } from '@/lib/openrouter-client';
 import { logger } from '@/lib/logger';
 import { AppError } from '@/lib/utils/error-handler';
 
@@ -47,8 +47,8 @@ export class TranslationService {
       throw AppError.badRequest('Text to translate cannot be empty');
     }
 
-    if (!openAIClient) {
-      throw AppError.internal('OpenAI client not configured');
+    if (process.env.OPENROUTER_ENABLED !== 'true' || !HAS_OPENROUTER_KEY || !openRouterClient) {
+      throw AppError.internal('OpenRouter is not configured');
     }
 
     logger.info('Translating text', {
@@ -64,8 +64,8 @@ export class TranslationService {
         context
       );
 
-      const response = await openAIClient.chat.completions.create({
-        model: 'gpt-4o',
+      const response = await openRouterClient.chat.completions.create({
+        model: OPENROUTER_MODELS.captions,
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: text },
@@ -73,10 +73,10 @@ export class TranslationService {
         temperature: 0.3, // Lower for consistent translations
       });
 
-      const translation = response.choices[0].message.content;
+      const translation = response.choices?.[0]?.message?.content;
 
       if (!translation) {
-        throw new Error('OpenAI returned empty translation');
+        throw new Error('OpenRouter returned empty translation');
       }
 
       logger.info('Translation completed', {
@@ -108,8 +108,8 @@ export class TranslationService {
       return [];
     }
 
-    if (!openAIClient) {
-      throw AppError.internal('OpenAI client not configured');
+    if (process.env.OPENROUTER_ENABLED !== 'true' || !HAS_OPENROUTER_KEY || !openRouterClient) {
+      throw AppError.internal('OpenRouter is not configured');
     }
 
     logger.info('Translating transcript segments', {
@@ -181,14 +181,13 @@ IMPORTANT RULES:
    * Detect language of given text
    */
   async detectLanguage(text: string): Promise<string> {
-    if (!openAIClient) {
-      logger.warn('OpenAI client not configured, defaulting to English');
-      return 'en';
+    if (process.env.OPENROUTER_ENABLED !== 'true' || !HAS_OPENROUTER_KEY || !openRouterClient) {
+      throw AppError.internal('OpenRouter is not configured');
     }
 
     try {
-      const response = await openAIClient.chat.completions.create({
-        model: 'gpt-4o',
+      const response = await openRouterClient.chat.completions.create({
+        model: OPENROUTER_MODELS.captions,
         messages: [
           {
             role: 'system',
@@ -204,10 +203,14 @@ IMPORTANT RULES:
         max_tokens: 5,
       });
 
-      return response.choices[0].message.content?.trim().toLowerCase() || 'en';
+      const detected = response.choices?.[0]?.message?.content?.trim().toLowerCase();
+      if (!detected) {
+        throw new Error('OpenRouter returned empty language detection');
+      }
+      return detected;
     } catch (error) {
-      logger.warn('Language detection failed, defaulting to English', { error });
-      return 'en';
+      logger.error('Language detection failed', { error });
+      throw error;
     }
   }
 }

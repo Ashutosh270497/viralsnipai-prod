@@ -5,11 +5,9 @@ import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { logger } from "@/lib/logger";
-import OpenAI from "openai";
+import { openRouterClient, OPENROUTER_MODELS } from "@/lib/openrouter-client";
 
-const openai = process.env.OPENAI_API_KEY
-  ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
-  : null;
+const openai = openRouterClient;
 
 /**
  * POST /api/content-calendar/ideas/[ideaId]/regenerate
@@ -71,7 +69,7 @@ Respond ONLY with valid JSON in this exact format:
 }`;
 
         const completion = await openai.chat.completions.create({
-          model: "gpt-4o-mini",
+          model: OPENROUTER_MODELS.contentCalendar,
           messages: [
             { role: "system", content: systemPrompt },
             { role: "user", content: "Generate the video idea." },
@@ -80,7 +78,7 @@ Respond ONLY with valid JSON in this exact format:
           response_format: { type: "json_object" },
         });
 
-        const content = completion.choices[0]?.message?.content;
+        const content = completion.choices?.[0]?.message?.content;
         if (!content) {
           throw new Error("No content generated");
         }

@@ -3,7 +3,7 @@ export const revalidate = 0;
 
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import OpenAI from "openai";
+import { openRouterClient, OPENROUTER_MODELS } from "@/lib/openrouter-client";
 import { addDays, format } from "date-fns";
 
 import { recordActivationCheckpointSafe } from "@/lib/analytics/activation";
@@ -20,9 +20,7 @@ import type {
   VideoType,
 } from "@/lib/types/content-calendar";
 
-const OPENAI_MODEL = process.env.OPENAI_MODEL?.trim() ?? "gpt-4o-mini";
-const hasApiKey = Boolean(process.env.OPENAI_API_KEY);
-const client = hasApiKey ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY }) : null;
+const client = openRouterClient;
 
 // Request validation schema
 const generateCalendarSchema = z.object({
@@ -186,7 +184,7 @@ Return JSON array only.`;
 
   try {
     const response = await client.chat.completions.create({
-      model: OPENAI_MODEL,
+      model: OPENROUTER_MODELS.contentCalendar,
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: userPrompt },
@@ -195,7 +193,7 @@ Return JSON array only.`;
       max_tokens: 6000,
     });
 
-    let text = response.choices[0]?.message?.content?.trim() ?? "[]";
+    let text = response.choices?.[0]?.message?.content?.trim() ?? "[]";
 
     // Clean up response if wrapped in markdown
     if (text.startsWith("```json")) {

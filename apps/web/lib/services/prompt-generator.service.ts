@@ -5,12 +5,10 @@
  * by analyzing the actual video transcript content.
  */
 
-import OpenAI from 'openai';
 import { logger } from '../logger';
+import { routedChatCompletion } from '@/lib/openrouter-client';
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY
-});
+const MAX_TRANSCRIPT_CHARS_FOR_PROMPTS = 15000;
 
 export interface TranscriptPromptInput {
   transcript: string;
@@ -33,28 +31,31 @@ export class PromptGeneratorService {
    */
   async generateFromTranscript(input: TranscriptPromptInput): Promise<GeneratedPrompts> {
     try {
+      const transcript = normalizeTranscript(input.transcript);
       logger.info('Generating prompts from transcript', {
-        transcriptLength: input.transcript.length,
+        transcriptLength: transcript.length,
         videoTitle: input.videoTitle,
         platform: input.platform,
       });
 
-      const response = await openai.chat.completions.create({
-        model: 'gpt-4o-mini',
-        messages: [
+      const content = await routedChatCompletion(
+        null,
+        'videoIngest',
+        '',
+        [
           { role: 'system', content: this.getTranscriptSystemPrompt() },
-          { role: 'user', content: this.buildTranscriptUserPrompt(input) },
+          { role: 'user', content: this.buildTranscriptUserPrompt({ ...input, transcript }) },
         ],
-        response_format: { type: 'json_object' },
-        temperature: 0.7,
-      });
+        { maxTokens: 2048, temperature: 0.35, json: true, disableReasoning: true }
+      );
 
-      const content = response.choices[0]?.message?.content;
-      if (!content) {
-        throw new Error('No response from OpenAI');
+      if (!content.trim()) {
+        throw new Error('OpenRouter returned an empty prompt response.');
       }
 
-      const generated = JSON.parse(content) as GeneratedPrompts;
+      const rawJson = extractJsonObject(content);
+      const generated = parseGeneratedPrompts(rawJson);
+      validateGeneratedPrompts(generated);
 
       logger.info('Transcript-based prompts generated', {
         briefLength: generated.brief.length,
@@ -63,7 +64,7 @@ export class PromptGeneratorService {
       return generated;
     } catch (error) {
       logger.error('Failed to generate transcript-based prompts', error as Error);
-      return this.getFallbackPrompts(input.platform);
+      throw error;
     }
   }
 
@@ -116,24 +117,62 @@ Return ONLY a JSON object:
     return parts.join('\n');
   }
 
-  private getFallbackPrompts(platform?: string): GeneratedPrompts {
-    const p = platform || 'YouTube Shorts';
-
-    return {
-      brief: 'Find clips with the strongest emotional peaks, surprising revelations, actionable advice, and contrarian takes. Prioritize moments with specific numbers, transformation stories, and "aha" insights that deliver immediate value.',
-      audience: `${p} viewers aged 18-45 seeking actionable insights and shareable moments`,
-      tone: 'High-energy with pattern interrupts. Bold claims with proof. No slow intros — straight to value',
-      callToAction: p === 'TikTok'
-        ? 'Like for part 2, follow for more, comment your results, stitch this'
-        : p === 'Instagram Reels'
-        ? 'Save this, share to story, DM me for full guide, tag someone who needs this'
-        : 'Like for part 2, subscribe for more, comment your takeaway, full video in description',
-      reasoning: 'Fallback prompts — transcript analysis was unavailable. These focus on universal viral mechanics.',
-    };
-  }
 }
 
 /**
  * Singleton instance
  */
 export const promptGeneratorService = new PromptGeneratorService();
+
+function extractJsonObject(content: string): string {
+  const stripped = content.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+  if (stripped.startsWith('{') && stripped.endsWith('}')) {
+    return stripped;
+  }
+
+  const firstBrace = stripped.indexOf('{');
+  const lastBrace = stripped.lastIndexOf('}');
+  if (firstBrace >= 0 && lastBrace > firstBrace) {
+    return stripped.slice(firstBrace, lastBrace + 1);
+  }
+
+  return stripped;
+}
+
+function normalizeTranscript(transcript: string): string {
+  const normalized = transcript.trim().replace(/\s+/g, ' ');
+  if (!normalized) {
+    throw new Error('Transcript is empty.');
+  }
+
+  if (normalized.length <= MAX_TRANSCRIPT_CHARS_FOR_PROMPTS) {
+    return normalized;
+  }
+
+  const head = normalized.slice(0, 9000);
+  const tail = normalized.slice(-5500);
+  return `${head}\n\n[Transcript truncated for prompt generation]\n\n${tail}`;
+}
+
+function parseGeneratedPrompts(rawJson: string): GeneratedPrompts {
+  try {
+    return JSON.parse(rawJson) as GeneratedPrompts;
+  } catch {
+    throw new Error('OpenRouter returned malformed prompt JSON.');
+  }
+}
+
+function validateGeneratedPrompts(value: GeneratedPrompts): void {
+  const requiredFields: Array<keyof GeneratedPrompts> = [
+    'brief',
+    'audience',
+    'tone',
+    'callToAction',
+    'reasoning',
+  ];
+
+  const missing = requiredFields.filter((field) => typeof value?.[field] !== 'string' || !value[field].trim());
+  if (missing.length > 0) {
+    throw new Error(`OpenRouter prompt response is missing required fields: ${missing.join(', ')}`);
+  }
+}

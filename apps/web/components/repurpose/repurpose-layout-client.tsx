@@ -223,7 +223,7 @@ function RepurposeLayoutInner({ children }: { children: React.ReactNode }) {
   const hasAsset  = !!primaryAsset;
 
   return (
-    <div className="-mx-4 -mt-4 lg:-mx-6 lg:-mt-6 min-h-screen">
+    <div className="-mx-4 -mt-4 min-h-screen w-full min-w-0 flex-1 lg:-mx-6 lg:-mt-6">
       {/* Step nav bar */}
       <StepNavBar projectId={projectId} hasAsset={hasAsset} clipCount={clipCount} />
 

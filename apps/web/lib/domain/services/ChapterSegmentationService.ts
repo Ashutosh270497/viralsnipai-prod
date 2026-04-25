@@ -9,16 +9,12 @@
  */
 
 import { injectable } from 'inversify';
-import OpenAI from 'openai';
 import { logger } from '@/lib/logger';
 import { AppError } from '@/lib/utils/error-handler';
+import { openRouterClient, OPENROUTER_MODELS } from '@/lib/openrouter-client';
 
-const hasApiKey = Boolean(process.env.OPENAI_API_KEY);
-const client = hasApiKey
-  ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
-  : null;
-
-const CHAPTER_MODEL = process.env.OPENAI_MODEL?.trim() || 'gpt-4o-mini';
+const client = openRouterClient;
+const CHAPTER_MODEL = OPENROUTER_MODELS.highlights;
 
 export interface Chapter {
   title: string;
@@ -159,7 +155,7 @@ Ensure chapters:
       response_format: { type: 'json_object' },
     });
 
-    const content = response.choices[0]?.message?.content;
+    const content = response.choices?.[0]?.message?.content;
     if (!content) {
       throw new Error('No response from AI');
     }
