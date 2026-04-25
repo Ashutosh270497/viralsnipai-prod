@@ -1,4 +1,9 @@
+import type { Metadata } from "next";
 import { ReactNode } from "react";
+
+export const metadata: Metadata = {
+  robots: { index: false, follow: false },
+};
 import Link from "next/link";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
@@ -38,40 +43,40 @@ export default async function WorkspaceLayout({ children }: { children: ReactNod
   };
 
   return (
-    <div className="flex min-h-screen bg-background">
-      {/* Desktop sidebar — slightly raised surface over deep background */}
-      <aside className="hidden w-60 shrink-0 flex-col border-r border-border/40 bg-card lg:flex">
-        {/* Logo area */}
-        <div className="flex h-14 items-center gap-3 border-b border-border/40 px-4">
+    <div className="flex min-h-screen bg-background text-foreground">
+      <aside className="hidden w-64 shrink-0 flex-col border-r border-border/70 bg-card/90 shadow-xl shadow-slate-950/5 backdrop-blur-xl lg:flex">
+        <div className="flex h-16 items-center gap-3 border-b border-border/70 px-4">
           <Link href={homeHref} className="flex items-center gap-2.5 group">
             <div
-              className="flex h-7 w-7 items-center justify-center rounded-lg"
+              className="flex h-9 w-9 items-center justify-center rounded-2xl"
               style={{
-                background: "linear-gradient(135deg, #10b981 0%, #34d399 100%)",
-                boxShadow: "0 0 12px hsl(263 72% 56% / 0.5)",
+                background: "linear-gradient(135deg, #10b981 0%, #06b6d4 100%)",
+                boxShadow: "0 14px 35px rgba(16, 185, 129, 0.22)",
               }}
             >
-              <Logo className="h-3.5 w-3.5 text-white" />
+              <Logo className="h-4 w-4 text-white" />
             </div>
-            <span className="text-[15px] font-bold tracking-tight text-foreground">
-              ViralSnip<span className="text-primary">AI</span>
-            </span>
+            <div>
+              <span className="block text-[15px] font-bold tracking-tight text-foreground">
+                ViralSnip<span className="text-primary">AI</span>
+              </span>
+              <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                Clip studio
+              </span>
+            </div>
           </Link>
         </div>
         <WorkspaceNav user={userForMenu} ecosystem={effectiveEcosystem} />
       </aside>
 
-      {/* Main area */}
       <div className="flex min-h-screen flex-1 flex-col overflow-hidden">
-        {/* Top header — subtle glass effect */}
-        <header className="sticky top-0 z-40 flex h-14 shrink-0 items-center gap-3 border-b border-border/40 bg-background/90 px-4 backdrop-blur-xl lg:px-6">
-          {/* Mobile trigger + logo */}
+        <header className="sticky top-0 z-40 flex h-16 shrink-0 items-center gap-3 border-b border-border/70 bg-background/82 px-4 backdrop-blur-xl lg:px-6">
           <div className="flex items-center gap-2 lg:hidden">
             <MobileSidebar user={userForMenu} ecosystem={effectiveEcosystem} />
             <Link href={homeHref} className="flex items-center gap-2">
               <div
-                className="flex h-6 w-6 items-center justify-center rounded-md"
-                style={{ background: "linear-gradient(135deg, #10b981 0%, #34d399 100%)" }}
+                className="flex h-8 w-8 items-center justify-center rounded-xl"
+                style={{ background: "linear-gradient(135deg, #10b981 0%, #06b6d4 100%)" }}
               >
                 <Logo className="h-3.5 w-3.5 text-white" />
               </div>
@@ -81,7 +86,6 @@ export default async function WorkspaceLayout({ children }: { children: ReactNod
             </Link>
           </div>
 
-          {/* Right side */}
           <div className="ml-auto flex items-center gap-1">
             <EcosystemSwitcher ecosystem={effectiveEcosystem} />
             <ThemeToggle />
@@ -89,11 +93,10 @@ export default async function WorkspaceLayout({ children }: { children: ReactNod
           </div>
         </header>
 
-        {/* Page content */}
-        <main className="flex flex-1 flex-col bg-background">
+        <main className="flex flex-1 flex-col">
           <EcosystemRouteGate ecosystem={effectiveEcosystem}>
             <WorkflowProvider>
-              <div className="flex-1 p-4 lg:p-6">{children}</div>
+              <div className="mx-auto flex w-full max-w-[1480px] flex-1 p-4 sm:p-5 lg:p-7">{children}</div>
             </WorkflowProvider>
           </EcosystemRouteGate>
         </main>

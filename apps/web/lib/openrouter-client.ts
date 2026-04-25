@@ -43,19 +43,21 @@ export const openRouterClient = HAS_OPENROUTER_KEY
  *
  * Selection rationale:
  *   gemini-3.1-pro-preview        — best OpenRouter fit for long transcript/video reasoning and structured highlights.
- *   gemini-3-flash-preview        — balanced multimodal model for fast structured extraction and analysis.
+ *   gemini-3-flash-preview        — balanced multimodal model for fast structured extraction and ingest metadata.
+ *   qwen3.6-plus                  — cost-efficient video-capable fallback with long context.
+ *   mimo-v2.5                     — native audio/video fallback for media-understanding experiments.
  *   gemini-3.1-flash-lite-preview — high-volume, low-latency transforms, captions, replies, and ingest metadata.
  *   claude-sonnet-4.6             — strongest default for polished creative writing and style transfer.
- *   gpt-5.3-chat                  — premium reasoning/scoring where correctness matters more than cost.
+ *   gpt-5.5                       — premium transcript/file reasoning where correctness matters more than cost.
  */
 export const OPENROUTER_MODELS = {
   /**
-   * Video ingest analysis — Gemini 3.1 Flash Lite Preview
+   * Video ingest analysis — Gemini 3 Flash Preview
    * Used for future direct-video/audio metadata extraction. Current V1 ingest still
    * transcribes media through the existing media pipeline, then routes transcript
    * analysis through the highlight model below.
    */
-  videoIngest: process.env.OPENROUTER_VIDEO_INGEST_MODEL ?? 'google/gemini-3.1-flash-lite-preview',
+  videoIngest: process.env.OPENROUTER_VIDEO_INGEST_MODEL ?? 'google/gemini-3-flash-preview',
 
   /**
    * Hook generation — Claude Sonnet 4.6

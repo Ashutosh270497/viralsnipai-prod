@@ -84,7 +84,7 @@ export default function RepurposeEditorPage() {
       <GlassCard title="Project unavailable" description="The selected project could not be loaded. Pick another project to continue.">
         <button
           onClick={() => setProjectId("")}
-          className="mt-4 flex items-center gap-2 px-4 py-2 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10 text-sm font-medium transition-colors"
+          className="mt-4 flex items-center gap-2 px-4 py-2 rounded-lg border border-border/50 bg-muted/40 hover:bg-muted/60 text-sm font-medium transition-colors text-foreground"
         >
           <ArrowLeft className="h-4 w-4" />
           Back to Ingest & Detect
@@ -97,7 +97,7 @@ export default function RepurposeEditorPage() {
       <GlassCard title="No media found" description="Ingest a YouTube video or upload a file to start editing clips.">
         <Link
           href={isProjectSelected ? `/repurpose?projectId=${project.id}` : "/repurpose"}
-          className="mt-4 inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-purple-500 to-pink-500 text-white font-medium text-sm transition-all hover:shadow-lg hover:shadow-purple-500/25"
+          className="mt-4 inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground font-medium text-sm transition-colors"
         >
           <ArrowLeft className="h-4 w-4" />
           Go to Ingest & Detect
@@ -117,7 +117,7 @@ export default function RepurposeEditorPage() {
         <GlassCard title="No clips detected yet" description="Run auto-detect highlights on the Ingest page to generate clips.">
           <Link
             href={`/repurpose?projectId=${project.id}`}
-            className="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10 text-sm font-medium transition-colors"
+            className="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-border/50 bg-muted/40 hover:bg-muted/60 text-sm font-medium transition-colors text-foreground"
           >
             <ArrowLeft className="h-4 w-4" />
             Go to Ingest & Detect
@@ -190,7 +190,7 @@ export default function RepurposeEditorPage() {
                   selectedClipIds.length === clips.length ? [] : clips.map((c) => c.id)
                 )
               }
-              className="px-4 py-2 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10 text-sm font-medium transition-colors"
+              className="px-4 py-2 rounded-lg border border-border/50 bg-muted/40 hover:bg-muted/60 text-sm font-medium transition-colors text-foreground"
             >
               {selectedClipIds.length === clips.length
                 ? "Deselect all"
@@ -200,7 +200,7 @@ export default function RepurposeEditorPage() {
           {selectedClipIds.length > 0 && (
             <Link
               href={`/repurpose/export?projectId=${project.id}`}
-              className="flex items-center gap-1.5 px-5 py-2 rounded-lg bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white font-medium text-sm transition-all hover:shadow-lg hover:shadow-purple-500/25"
+              className="flex items-center gap-1.5 px-5 py-2 rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground font-medium text-sm transition-colors shadow-sm shadow-primary/20"
             >
               Export {selectedClipIds.length} clip{selectedClipIds.length > 1 ? "s" : ""}
               <ArrowRight className="h-3.5 w-3.5" />
@@ -222,7 +222,7 @@ export default function RepurposeEditorPage() {
             </span>
           </div>
 
-          <div className="max-h-[calc(100vh-260px)] space-y-1.5 overflow-y-auto rounded-2xl border border-white/10 bg-gradient-to-br from-white/5 to-transparent p-2">
+          <div className="max-h-[calc(100vh-260px)] space-y-1.5 overflow-y-auto rounded-2xl border border-border/40 bg-card/30 p-2">
             {clips.map((clip, index) => {
               const isActive   = activeClip?.id === clip.id;
               const isSelected = selectedClipIds.includes(clip.id);
@@ -236,8 +236,8 @@ export default function RepurposeEditorPage() {
                   className={cn(
                     "group w-full text-left rounded-xl border overflow-hidden transition-all",
                     isActive
-                      ? "border-purple-500/40 shadow-sm shadow-purple-500/10"
-                      : "border-white/[0.08] hover:border-white/20"
+                      ? "border-primary/40 shadow-sm"
+                      : "border-border/40 hover:border-border"
                   )}
                 >
                   {/* ── Thumbnail ─────────────────────────────────────────── */}
@@ -252,13 +252,13 @@ export default function RepurposeEditorPage() {
                       />
                     ) : (
                       <div className="flex h-full items-center justify-center">
-                        <Film className="h-8 w-8 text-white/10" />
+                        <Film className="h-8 w-8 text-muted-foreground/20" />
                       </div>
                     )}
 
                     {/* Active glow overlay */}
                     {isActive && (
-                      <div className="absolute inset-0 bg-gradient-to-br from-purple-500/20 to-pink-500/10 pointer-events-none" />
+                      <div className="absolute inset-0 bg-primary/15 pointer-events-none" />
                     )}
 
                     {/* Viral score — top right */}
@@ -287,7 +287,7 @@ export default function RepurposeEditorPage() {
                       className={cn(
                         "absolute top-1.5 left-1.5 h-5 w-5 rounded flex items-center justify-center transition-all",
                         isSelected
-                          ? "bg-purple-500 text-white shadow-sm shadow-purple-500/40"
+                          ? "bg-primary text-primary-foreground"
                           : "bg-black/50 text-white/0 group-hover:text-white/70 hover:bg-white/20 hover:text-white"
                       )}
                       title={isSelected ? "Deselect clip" : "Select for export"}
@@ -302,8 +302,8 @@ export default function RepurposeEditorPage() {
                   <div className={cn(
                     "px-3 py-2.5 transition-colors",
                     isActive
-                      ? "bg-gradient-to-br from-purple-500/10 to-pink-500/[0.06]"
-                      : "bg-white/[0.02] group-hover:bg-white/[0.04]"
+                      ? "bg-primary/10"
+                      : "bg-transparent group-hover:bg-muted/30"
                   )}>
                     {/* Title + delete */}
                     <div className="flex items-start justify-between gap-1.5">
@@ -337,7 +337,7 @@ export default function RepurposeEditorPage() {
                         <button
                           onClick={(e) => { e.stopPropagation(); handleGenerateCaptions(clip.id); }}
                           disabled={captionLoading === clip.id}
-                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded border border-dashed border-white/20 text-[9px] font-medium text-muted-foreground/50 hover:text-white hover:border-white/40 transition-colors"
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded border border-dashed border-border/50 text-[9px] font-medium text-muted-foreground/50 hover:text-foreground hover:border-border transition-colors"
                         >
                           {captionLoading === clip.id ? (
                             <Loader2 className="h-2.5 w-2.5 animate-spin" />
@@ -358,9 +358,9 @@ export default function RepurposeEditorPage() {
         {/* ── Active clip editor ───────────────────────────────────────────── */}
         <div>
           {activeClip ? (
-            <div className="rounded-2xl border border-white/10 bg-gradient-to-br from-white/5 to-transparent overflow-hidden">
+            <div className="rounded-2xl border border-border/60 bg-card/60 overflow-hidden">
               {/* Clip meta bar */}
-              <div className="flex items-center justify-between gap-3 px-5 py-4 border-b border-white/10">
+              <div className="flex items-center justify-between gap-3 px-5 py-4 border-b border-border/40">
                 <div className="min-w-0 flex-1">
                   <h3 className="text-base font-semibold truncate">
                     {activeClip.title || "Untitled Clip"}
@@ -389,7 +389,7 @@ export default function RepurposeEditorPage() {
                         </span>
                         {/* Mini score bar */}
                         <div className="flex items-center gap-1">
-                          <div className="w-16 h-1 rounded-full bg-white/10 overflow-hidden">
+                          <div className="w-16 h-1 rounded-full bg-muted/60 overflow-hidden">
                             <div
                               className={cn(
                                 "h-full rounded-full transition-all",
@@ -412,8 +412,8 @@ export default function RepurposeEditorPage() {
                   className={cn(
                     "shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-all",
                     selectedClipIds.includes(activeClip.id)
-                      ? "bg-gradient-to-r from-purple-500 to-pink-500 text-white"
-                      : "border border-white/10 bg-white/5 hover:bg-white/10 text-foreground"
+                      ? "bg-primary text-primary-foreground"
+                      : "border border-border/50 bg-muted/40 hover:bg-muted/60 text-foreground"
                   )}
                 >
                   <CheckSquare className="h-3.5 w-3.5" />
@@ -422,8 +422,8 @@ export default function RepurposeEditorPage() {
               </div>
 
               {(activeQualitySignals || activePortraitPlan) && (
-                <div className="grid gap-3 border-b border-white/10 px-5 py-4 md:grid-cols-3">
-                  <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
+                <div className="grid gap-3 border-b border-border/40 px-5 py-4 md:grid-cols-3">
+                  <div className="rounded-xl border border-border/50 bg-muted/30 p-3">
                     <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-widest text-muted-foreground/55">
                       <Waves className="h-3.5 w-3.5 text-cyan-400" />
                       Clip Quality
@@ -438,7 +438,7 @@ export default function RepurposeEditorPage() {
                     </p>
                   </div>
 
-                  <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
+                  <div className="rounded-xl border border-border/50 bg-muted/30 p-3">
                     <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-widest text-muted-foreground/55">
                       <AlertTriangle className="h-3.5 w-3.5 text-amber-400" />
                       Cut Risk
@@ -453,9 +453,9 @@ export default function RepurposeEditorPage() {
                     </p>
                   </div>
 
-                  <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
+                  <div className="rounded-xl border border-border/50 bg-muted/30 p-3">
                     <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-widest text-muted-foreground/55">
-                      <Crop className="h-3.5 w-3.5 text-purple-400" />
+                      <Crop className="h-3.5 w-3.5 text-primary" />
                       9:16 Reframe
                     </div>
                     <p className="mt-2 text-lg font-semibold">
@@ -486,7 +486,7 @@ export default function RepurposeEditorPage() {
 
               {/* AI summary */}
               {activeClip.summary && (
-                <div className="border-t border-white/10 px-5 py-4">
+                <div className="border-t border-border/40 px-5 py-4">
                   <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/40 mb-1.5">
                     AI Summary
                   </p>
@@ -500,7 +500,7 @@ export default function RepurposeEditorPage() {
               )}
             </div>
           ) : (
-            <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-white/10 bg-white/[0.02] p-16 text-center">
+            <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-border/40 bg-muted/20 p-16 text-center">
               <Scissors className="h-10 w-10 text-muted-foreground/15 mb-3" />
               <p className="text-sm font-medium text-muted-foreground/50">Select a clip to edit</p>
               <p className="text-xs text-muted-foreground/30 mt-1">
@@ -549,9 +549,9 @@ function GlassCard({
   children?: React.ReactNode;
 }) {
   return (
-    <div className="rounded-2xl border border-white/10 bg-gradient-to-br from-white/5 to-transparent p-8">
+    <div className="rounded-2xl border border-border/60 bg-card/60 p-8">
       <div className="flex items-center gap-2 mb-1">
-        {loading && <Loader2 className="h-4 w-4 animate-spin text-purple-400" />}
+        {loading && <Loader2 className="h-4 w-4 animate-spin text-primary" />}
         <h3 className="text-base font-semibold">{title}</h3>
       </div>
       <p className="text-sm text-muted-foreground">{description}</p>
@@ -562,7 +562,7 @@ function GlassCard({
 
 function EmptyState({ message }: { message: string }) {
   return (
-    <div className="flex min-h-[200px] items-center justify-center rounded-2xl border border-dashed border-white/10 bg-white/[0.02] p-10 text-center text-sm text-muted-foreground">
+    <div className="flex min-h-[200px] items-center justify-center rounded-2xl border border-dashed border-border/40 bg-muted/20 p-10 text-center text-sm text-muted-foreground">
       {message}
     </div>
   );

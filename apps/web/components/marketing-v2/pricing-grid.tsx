@@ -52,30 +52,30 @@ export function PricingGrid({ currency, onSelectPlan }: PricingGridProps) {
   }
 
   return (
-    <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
+    <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
       {formattedPlans.map((plan) => (
         <Card
           key={plan.id}
           className={cn(
-            "relative flex h-full flex-col gap-6 rounded-3xl border border-slate-200 bg-white p-8 text-left shadow-xl shadow-slate-200/70 transition hover:-translate-y-1 hover:shadow-2xl dark:border-slate-800 dark:bg-slate-900",
-            plan.isFeatured && "border-brand-500/70 shadow-[#4C8EFF]/30"
+            "relative flex h-full flex-col gap-6 overflow-hidden rounded-3xl border border-slate-200 bg-white p-8 text-left shadow-sm shadow-slate-950/5 transition hover:-translate-y-1 hover:border-cyan-300 hover:shadow-2xl hover:shadow-cyan-950/10 dark:border-white/10 dark:bg-[#0f1d1f]",
+            plan.isFeatured && "border-emerald-400 shadow-2xl shadow-emerald-950/15 dark:border-emerald-300/50"
           )}
         >
           {plan.isFeatured ? (
-            <span className="absolute -top-4 left-1/2 inline-flex -translate-x-1/2 items-center rounded-full bg-gradient-to-r from-[#4C8EFF] to-[#9777FF] px-4 py-1 text-xs font-semibold uppercase tracking-wider text-white shadow-lg">
-              Popular
+            <span className="absolute right-6 top-6 inline-flex items-center rounded-full bg-gradient-to-r from-emerald-500 to-cyan-500 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-white shadow-lg shadow-emerald-900/20">
+              Recommended
             </span>
           ) : null}
           <div className="space-y-3">
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#4C8EFF]">Monthly pricing</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-600 dark:text-emerald-300">Monthly pricing</p>
             <div>
-              <h3 className="text-2xl font-semibold text-[#0E172C] dark:text-white">{plan.name}</h3>
-              <p className="mt-1 text-sm text-slate-500 dark:text-slate-300">{plan.tagline}</p>
+              <h3 className="text-2xl font-semibold text-slate-950 dark:text-white">{plan.name}</h3>
+              <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">{plan.tagline}</p>
             </div>
             <div className="space-y-1">
               <div className="flex items-baseline gap-2">
-                <span className="text-4xl font-bold text-[#0E172C] dark:text-white">{formatPrice(plan.price, currency)}</span>
-                <span className="text-sm font-medium text-slate-500 dark:text-slate-300">/month</span>
+                <span className="text-4xl font-semibold tracking-tight text-slate-950 dark:text-white">{formatPrice(plan.price, currency)}</span>
+                <span className="text-sm font-medium text-slate-500 dark:text-slate-300">/mo</span>
               </div>
               <p className="text-xs text-slate-400 dark:text-slate-500">Razorpay checkout. Cancel at period end.</p>
             </div>
@@ -83,16 +83,21 @@ export function PricingGrid({ currency, onSelectPlan }: PricingGridProps) {
           <ul className="flex flex-1 flex-col gap-2 text-sm text-slate-600 dark:text-slate-300">
             {plan.features.map((feature) => (
               <li key={feature} className="flex items-start gap-2">
-                <Check className="mt-0.5 h-4 w-4 text-[#4C8EFF]" aria-hidden />
+                <Check className="mt-0.5 h-4 w-4 text-emerald-500" aria-hidden />
                 <span>{feature}</span>
               </li>
             ))}
           </ul>
           <Button
-            className="w-full rounded-full bg-gradient-to-r from-[#4C8EFF] to-[#9777FF] text-white shadow-lg"
+            className={cn(
+              "w-full rounded-full font-semibold shadow-lg",
+              plan.isFeatured
+                ? "bg-gradient-to-r from-emerald-500 to-cyan-500 text-white shadow-emerald-900/20 hover:from-emerald-400 hover:to-cyan-400"
+                : "bg-slate-950 text-white hover:bg-slate-800 dark:bg-white dark:text-slate-950 dark:hover:bg-emerald-50"
+            )}
             onClick={() => handlePlanSelect(plan.id)}
           >
-            Choose {plan.name}
+            {plan.id === "free" ? "Start free" : `Choose ${plan.name}`}
             <ArrowRight className="ml-2 h-4 w-4" aria-hidden />
           </Button>
         </Card>

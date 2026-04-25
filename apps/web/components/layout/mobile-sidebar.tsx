@@ -29,7 +29,7 @@ export function MobileSidebar({ user, ecosystem }: MobileSidebarProps) {
       <Button
         variant="ghost"
         size="sm"
-        className="h-9 w-9 p-0"
+        className="h-9 w-9 rounded-xl p-0"
         onClick={() => setOpen(true)}
         aria-label="Open navigation"
       >
@@ -37,15 +37,15 @@ export function MobileSidebar({ user, ecosystem }: MobileSidebarProps) {
       </Button>
 
       <Sheet open={open} onOpenChange={setOpen}>
-        <SheetContent className="left-0 right-auto w-64 translate-x-0 p-0 data-[state=closed]:-translate-x-full data-[state=open]:translate-x-0">
+        <SheetContent className="left-0 right-auto w-72 translate-x-0 border-border/70 bg-card p-0 data-[state=closed]:-translate-x-full data-[state=open]:translate-x-0">
           <SheetTitle className="sr-only">Navigation</SheetTitle>
-          <div className="flex h-16 items-center gap-2.5 border-b border-border/60 px-5">
+          <div className="flex h-16 items-center gap-2.5 border-b border-border/70 px-5">
             <Link
               href={homeHref}
               className="flex items-center gap-2.5"
               onClick={() => setOpen(false)}
             >
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary shadow-sm">
+              <div className="flex h-9 w-9 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-500 to-cyan-500 shadow-lg shadow-emerald-900/20">
                 <Logo className="h-4 w-4 text-primary-foreground" />
               </div>
               <span className="text-base font-bold tracking-tight">

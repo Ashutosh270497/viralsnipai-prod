@@ -115,52 +115,28 @@ export function BillingWorkspace({ initialState, initialRegion }: BillingWorkspa
   const usageRows = useMemo<UsageRow[]>(
     () => [
       {
-        label: "Tracked accounts",
+        label: "Video uploads",
         used: state.usage.trackedAccounts,
         limit: state.limits.trackedAccounts,
         value: formatUsageValue(state.usage.trackedAccounts, state.limits.trackedAccounts),
       },
       {
-        label: "Drafts",
+        label: "Clip exports",
         used: state.usage.drafts,
         limit: state.limits.drafts,
         value: formatUsageValue(state.usage.drafts, state.limits.drafts),
       },
       {
-        label: "Viral fetches",
+        label: "AI detections",
         used: state.usage.viralFeedFetches,
         limit: state.limits.viralFeedFetches,
         value: formatUsageValue(state.usage.viralFeedFetches, state.limits.viralFeedFetches),
       },
       {
-        label: "Hook generations",
+        label: "Hook suggestions",
         used: state.usage.hookGenerations,
         limit: state.limits.hookGenerations,
         value: formatUsageValue(state.usage.hookGenerations, state.limits.hookGenerations),
-      },
-      {
-        label: "Scheduled posts",
-        used: state.usage.scheduledPosts,
-        limit: state.limits.scheduling === false ? "locked" : state.limits.scheduling.monthlyPosts,
-        value:
-          state.limits.scheduling === false
-            ? "Locked"
-            : formatUsageValue(state.usage.scheduledPosts, state.limits.scheduling.monthlyPosts),
-      },
-      {
-        label: "Engagement opportunities",
-        used: state.usage.engagementOpps,
-        limit:
-          state.limits.engagementFinder === false
-            ? "locked"
-            : state.limits.engagementFinder.monthlyOpportunities,
-        value:
-          state.limits.engagementFinder === false
-            ? "Locked"
-            : formatUsageValue(
-                state.usage.engagementOpps,
-                state.limits.engagementFinder.monthlyOpportunities,
-              ),
       },
     ],
     [state.limits, state.usage],
@@ -169,27 +145,27 @@ export function BillingWorkspace({ initialState, initialRegion }: BillingWorkspa
   const accessRows = useMemo(
     () => [
       {
-        label: "Analytics",
-        value: state.limits.analytics === false ? "Locked" : state.limits.analytics,
+        label: "AI clip detection",
+        value: "Included",
       },
       {
-        label: "Variant Lab",
-        value: state.limits.variantLab ? "Included" : "Locked",
+        label: "Auto captions",
+        value: "Included",
       },
       {
-        label: "Research Copilot",
-        value: state.limits.researchCopilot ? "Included" : "Locked",
+        label: "Brand kit",
+        value: state.plan.id === "free" ? "Locked" : "Included",
       },
       {
-        label: "Growth Planner AI",
-        value: state.limits.growthPlanAI ? "Included" : "Locked",
+        label: "Watermark removal",
+        value: state.plan.id === "free" ? "Locked" : "Included",
       },
       {
-        label: "Relationships",
-        value: state.limits.relationships ? "Included" : "Locked",
+        label: "9:16 MP4 exports",
+        value: "Included",
       },
     ],
-    [state.limits],
+    [state.plan.id],
   );
 
   async function refreshState() {
@@ -410,15 +386,14 @@ function FreeCustomerView({
     <div className="space-y-8">
       <section className="space-y-8">
         <div className="mx-auto flex max-w-4xl flex-col items-center gap-5 pt-4 text-center">
-          <SectionEyebrow>Launch SnipRadar</SectionEyebrow>
+          <SectionEyebrow>V1 beta billing</SectionEyebrow>
           <div className="space-y-3">
             <h3 className="max-w-4xl text-4xl font-semibold tracking-[-0.05em] text-white sm:text-5xl lg:text-7xl">
-              Start <span className="font-serif italic font-normal text-white/95">building and monetizing</span> your X audience
+              Turn long videos into <span className="font-serif italic font-normal text-white/95">branded short clips</span>
             </h3>
             <p className="mx-auto max-w-2xl text-base leading-7 text-[#94a3b8]">
-              Pick the plan that matches your publishing speed. Your live SnipRadar limits,
-              features, and billing actions stay exactly the same, just presented with a cleaner
-              acquisition flow.
+              Pick the plan that matches your repurposing volume. Free, Plus, and Pro focus on
+              uploads, clip generation, captions, branded exports, and usage limits.
             </p>
           </div>
 
@@ -427,8 +402,8 @@ function FreeCustomerView({
               Special offer
             </div>
             <p className="text-lg leading-8 text-[#cbd5e1]">
-              Start on the free plan, then unlock higher limits, scheduling, analytics, and
-              deeper X workflows the moment you are ready to scale.
+              Start on the free plan, then unlock higher upload and export limits, watermark-free
+              rendering, and stronger brand controls when you are ready to scale.
             </p>
           </div>
         </div>
@@ -578,7 +553,7 @@ function FreeCustomerView({
                 Start with your plan
               </Button>
               <p className="text-sm text-[#64748b]">
-                Create your SnipRadar setup, then choose the plan that fits your publishing speed.
+                Create your first clip project, then choose the plan that fits your publishing volume.
               </p>
             </div>
           </div>
@@ -893,7 +868,7 @@ function PlanCatalog({
             ? "Try the core workflow"
             : plan.id === "plus"
               ? "For active solo operators"
-              : "For full SnipRadar access";
+              : "For high-volume video repurposing";
 
         let buttonLabel = "Current plan";
         let buttonDisabled = true;
@@ -1126,7 +1101,7 @@ function getPlanMarketingMeta(planId: BillingPlanId) {
   if (planId === "plus") {
     return {
       icon: Rocket,
-      description: "Scale your X workflow with full Discover, Create, and publishing velocity.",
+      description: "For creators repurposing long-form videos every week with branded exports.",
       badge: "Top choice",
     };
   }
@@ -1134,14 +1109,14 @@ function getPlanMarketingMeta(planId: BillingPlanId) {
   if (planId === "pro") {
     return {
       icon: Gem,
-      description: "Run the complete SnipRadar operating system with analytics, AI, and relationships.",
+      description: "For agencies, podcasters, and teams producing higher clip volume.",
       badge: null,
     };
   }
 
   return {
     icon: Compass,
-    description: "Start building your audience with the core SnipRadar workflow and safe limits.",
+    description: "Try the core upload, clip detection, caption, and export workflow.",
     badge: null,
   };
 }

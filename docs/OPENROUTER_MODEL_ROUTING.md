@@ -15,7 +15,7 @@ This is the current model-routing baseline for ViralSnipAI. The source of truth 
 
 | Product task | Env override | Default model | Why |
 |---|---|---|---|
-| Video/audio ingest metadata | `OPENROUTER_VIDEO_INGEST_MODEL` | `google/gemini-3.1-flash-lite-preview` | Fast, low-cost multimodal model for future direct ingest metadata and extraction. |
+| Video/audio ingest metadata | `OPENROUTER_VIDEO_INGEST_MODEL` | `google/gemini-3-flash-preview` | Balanced multimodal model for future direct ingest metadata and extraction. |
 | Auto-highlight detection | `OPENROUTER_HIGHLIGHTS_MODEL` | `google/gemini-3.1-pro-preview` | Best fit for long transcript/video reasoning, 1M context, multimodal input, and structured clip JSON. |
 | Caption refinement | `OPENROUTER_CAPTIONS_MODEL` | `google/gemini-3.1-flash-lite-preview` | High-volume transform task where speed and cost matter. |
 | Hooks | `OPENROUTER_HOOKS_MODEL` | `anthropic/claude-sonnet-4.6` | Strong creative copy quality. |
@@ -30,20 +30,22 @@ The V1 Create Clip flow now accepts OpenRouter model IDs directly:
 
 - `google/gemini-3.1-pro-preview`
 - `google/gemini-3-flash-preview`
+- `qwen/qwen3.6-plus`
+- `xiaomi/mimo-v2.5`
 - `google/gemini-3.1-flash-lite-preview`
-- `openai/gpt-5.3-chat`
-- `openai/gpt-5.3-codex`
+- `openai/gpt-5.5`
 
 When one of these IDs is selected, the auto-highlight API sends that exact model to OpenRouter. Older direct Google Gemini model names still route through the direct Google Gemini path when `GOOGLE_GEMINI_API_KEY` is configured.
 
 ## Practical Routing Guidance
 
 - Use `google/gemini-3.1-pro-preview` for the default V1 highlight detector because wrong clip timestamps waste user time.
-- Use `google/gemini-3-flash-preview` when latency matters but the task still needs multimodal/context reasoning.
-- Use `google/gemini-3.1-flash-lite-preview` for ingest metadata, captions, short transforms, reply assist, and high-volume background enrichment.
+- Use `google/gemini-3-flash-preview` for future direct video/audio ingest metadata and when latency matters but the task still needs multimodal/context reasoning.
+- Use `qwen/qwen3.6-plus` when video-capable long-context analysis needs a lower-cost fallback than Gemini Pro.
+- Use `xiaomi/mimo-v2.5` for experimental native audio/video understanding when broad media input matters more than premium reasoning.
+- Use `google/gemini-3.1-flash-lite-preview` for captions, short transforms, reply assist, and high-volume background enrichment.
 - Use `anthropic/claude-sonnet-4.6` for polished creative writing, style transfer, hooks, scripts, threads, and template remix.
-- Use `openai/gpt-5.3-chat` for premium scoring, prediction, audits, and strategic planning.
-- Reserve `openai/gpt-5.3-codex` for expensive deep QA or manual debugging of highlight quality, not as the default production path.
+- Use `openai/gpt-5.5` for premium transcript/file QA and manual review of highlight quality. It is not the default video detector because the current OpenRouter listing exposes text/image/file input, not native video input.
 
 ## Current Limitation
 

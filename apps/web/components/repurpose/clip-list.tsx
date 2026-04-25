@@ -297,7 +297,7 @@ function SortableClipCard({
               </Badge>
             )}
             {clip.viralityFactors.enhancement.energyProfile === "consistent" && (
-              <Badge variant="outline" className="border-purple-500 text-purple-700 dark:text-purple-400">
+              <Badge variant="outline" className="border-primary/50 text-primary">
                 ⚡ Consistent Energy
               </Badge>
             )}

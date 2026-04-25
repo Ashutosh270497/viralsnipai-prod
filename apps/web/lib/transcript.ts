@@ -33,7 +33,7 @@ export type TranscriptionResult = {
 
 const DEFAULT_MODEL = process.env.WHISPER_MODEL ?? "gpt-4o-mini-transcribe";
 const MAX_ATTEMPTS = Number(process.env.TRANSCRIBE_MAX_ATTEMPTS ?? 3);
-const RETRY_DELAY_BASE_MS = Number(process.env.TRANSCRIBE_RETRY_DELAY_MS ?? 1500);
+const RETRY_DELAY_BASE_MS = Number(process.env.TRANSCRIBE_RETRY_DELAY_MS ?? 4000);
 const MAX_DIRECT_UPLOAD_BYTES = Number(process.env.TRANSCRIBE_MAX_DIRECT_BYTES ?? 24 * 1024 * 1024);
 const TIMING_FALLBACK_MODEL = process.env.TRANSCRIBE_TIMING_FALLBACK_MODEL ?? "whisper-1";
 const AUDIO_EXTENSIONS = new Set([".mp3", ".m4a", ".aac", ".wav", ".webm", ".ogg", ".oga", ".flac"]);
@@ -145,6 +145,16 @@ export async function transcribeFile(filePath: string): Promise<TranscriptionRes
         continue;
       }
 
+      // On retryable connection errors (ECONNRESET, timeouts) continue to the
+      // next plan instead of throwing immediately — the fallback model or format
+      // may succeed where the primary one did not.
+      if (formatError && isRetryableTranscriptionError(formatError)) {
+        console.warn(
+          `[Transcribe] Plan ${plan.model}/${plan.format} failed with retryable error (${parseErrorMessage(formatError)}). Trying next fallback plan.`
+        );
+        continue;
+      }
+
       if (formatError) {
         throw formatError;
       }
@@ -238,7 +248,7 @@ function isRetryableTranscriptionError(error: unknown) {
   if (!error || typeof error !== "object") {
     return false;
   }
-  const err = error as { status?: number; code?: string | number; message?: string };
+  const err = error as { status?: number; code?: string | number; message?: string; cause?: unknown };
   const status = err.status ?? (typeof err.code === "number" ? err.code : undefined);
   const message = parseErrorMessage(error);
   if (status && [408, 409, 425, 429, 500, 502, 503, 504].includes(status)) {
@@ -253,6 +263,15 @@ function isRetryableTranscriptionError(error: unknown) {
       lower.includes("econnreset") ||
       lower.includes("rate limit")
     ) {
+      return true;
+    }
+  }
+  // APIConnectionError wraps the underlying FetchError in `cause` — check it
+  // directly so ECONNRESET is always caught even if the top-level message
+  // changes between OpenAI SDK versions.
+  if (err.cause && typeof err.cause === "object") {
+    const cause = err.cause as { code?: string; errno?: string };
+    if (cause.code === "ECONNRESET" || cause.errno === "ECONNRESET") {
       return true;
     }
   }

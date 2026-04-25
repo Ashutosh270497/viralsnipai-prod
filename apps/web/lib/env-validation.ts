@@ -15,7 +15,7 @@ const ENV_SCHEMA: EnvVar[] = [
   { key: 'NEXTAUTH_SECRET', required: true, description: 'NextAuth JWT secret (must be rotated from default)' },
   { key: 'NEXTAUTH_URL', required: true, description: 'Public app URL for NextAuth callbacks' },
   // Database
-  { key: 'DATABASE_URL', required: true, description: 'MySQL/PostgreSQL connection string' },
+  { key: 'DATABASE_URL', required: true, description: 'PostgreSQL / Supabase direct connection string' },
   // Google OAuth
   { key: 'GOOGLE_CLIENT_ID', required: false, description: 'Google OAuth client ID' },
   { key: 'GOOGLE_CLIENT_SECRET', required: false, description: 'Google OAuth client secret' },
@@ -58,6 +58,30 @@ export function validateEnv(): void {
   // Check that at least one AI provider is configured
   if (!process.env.OPENAI_API_KEY && !process.env.OPENROUTER_API_KEY) {
     warnings.push('  ⚠️  No AI provider configured (OPENAI_API_KEY or OPENROUTER_API_KEY required for AI features)');
+  }
+
+  // Production billing guardrails — warn loudly when Razorpay is partially configured.
+  // Billing features degrade gracefully in dev but must be fully wired in production.
+  if (process.env.NODE_ENV === 'production') {
+    const razorpayKeys = [
+      'RAZORPAY_KEY_ID',
+      'RAZORPAY_KEY_SECRET',
+      'RAZORPAY_WEBHOOK_SECRET',
+      'NEXT_PUBLIC_RAZORPAY_KEY_ID',
+    ];
+    const missingRazorpay = razorpayKeys.filter((k) => !process.env[k]);
+    if (missingRazorpay.length > 0 && missingRazorpay.length < razorpayKeys.length) {
+      // Partially configured — more dangerous than fully absent
+      missing.push(
+        ...missingRazorpay.map((k) => `  ❌ ${k}: Razorpay is partially configured — all four keys required in production`)
+      );
+    }
+    if (!process.env.RAZORPAY_PLAN_ID_PLUS_INR && !process.env.RAZORPAY_PLAN_ID_PRO_INR) {
+      warnings.push('  ⚠️  RAZORPAY_PLAN_ID_PLUS_INR / RAZORPAY_PLAN_ID_PRO_INR: No INR plan IDs set — subscription checkout will fail for IN region');
+    }
+    if (!process.env.RAZORPAY_PLAN_ID_PLUS_USD && !process.env.RAZORPAY_PLAN_ID_PRO_USD) {
+      warnings.push('  ⚠️  RAZORPAY_PLAN_ID_PLUS_USD / RAZORPAY_PLAN_ID_PRO_USD: No USD plan IDs set — subscription checkout will fail for GLOBAL region');
+    }
   }
 
   if (warnings.length > 0 && process.env.NODE_ENV !== 'test') {

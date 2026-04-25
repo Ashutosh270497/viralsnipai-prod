@@ -331,13 +331,13 @@ export function ExportPanel({
 
   return (
     <div className="space-y-4">
-      <div className="rounded-xl border border-white/[0.07] bg-black/20 p-4">
+      <div className="rounded-2xl border border-border bg-muted/25 p-4">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div className="grid gap-1.5">
             <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground/45">
               Output Ratio
             </p>
-            <label className="flex items-center gap-3 rounded-xl border border-white/[0.07] bg-white/[0.02] px-4 py-3">
+            <label className="flex items-center gap-3 rounded-xl border border-border bg-background/60 px-4 py-3">
               <select
                 value={selectedPreset}
                 onChange={(event) => onPresetChange(event.target.value)}
@@ -353,7 +353,7 @@ export function ExportPanel({
             <p className="text-xs text-muted-foreground/55">{selectedPresetConfig.description}</p>
           </div>
 
-          <div className="flex min-w-[260px] items-center justify-between gap-4 rounded-xl border border-white/[0.07] bg-black/20 px-4 py-3.5">
+          <div className="flex min-w-[260px] items-center justify-between gap-4 rounded-xl border border-border bg-background/60 px-4 py-3.5">
             <div className="min-w-0">
               <p className="text-sm font-medium">Burn captions on video</p>
               <p className="text-xs text-muted-foreground/50 mt-0.5">
@@ -375,8 +375,8 @@ export function ExportPanel({
         className={cn(
           "w-full h-11 rounded-xl font-semibold text-sm flex items-center justify-center gap-2 transition-all",
           isBusy || selectedClipIds.length === 0
-            ? "bg-white/5 text-white/25 cursor-not-allowed"
-            : "bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white hover:shadow-lg hover:shadow-purple-500/20"
+            ? "bg-muted text-muted-foreground/45 cursor-not-allowed"
+            : "bg-gradient-to-r from-emerald-500 to-cyan-500 text-white hover:shadow-lg hover:shadow-emerald-900/20"
         )}
       >
         {isBusy
@@ -392,7 +392,7 @@ export function ExportPanel({
             ? "border-emerald-500/20 bg-emerald-500/[0.06]"
             : latestExport.status === "failed" || latestExport.status === "cancelled"
               ? "border-red-500/20 bg-red-500/[0.06]"
-              : "border-purple-500/20 bg-purple-500/[0.06]"
+              : "border-primary/20 bg-primary/[0.06]"
         )}>
           <div className="flex items-start gap-3">
             <div className="shrink-0 pt-0.5">
@@ -403,7 +403,7 @@ export function ExportPanel({
               ) : runtime?.stage === "retrying" || latestExport.status === "retryable" ? (
                 <RefreshCw className="h-4 w-4 animate-spin text-amber-400" />
               ) : (
-                <Loader2 className="h-4 w-4 animate-spin text-purple-400" />
+                <Loader2 className="h-4 w-4 animate-spin text-primary" />
               )}
             </div>
 
@@ -418,7 +418,7 @@ export function ExportPanel({
                         ? "text-red-400"
                         : runtime?.stage === "retrying"
                           ? "text-amber-400"
-                          : "text-purple-400"
+                          : "text-primary"
                   )}>
                     {formatStatus(latestExport.status)}
                   </p>
@@ -461,7 +461,7 @@ export function ExportPanel({
                     href={latestExport.outputPath}
                     target="_blank"
                     rel="noreferrer"
-                    className="flex items-center gap-1.5 rounded-lg bg-white/5 px-3 py-1.5 text-[11px] font-semibold text-white/50 transition-colors hover:bg-white/10"
+                    className="flex items-center gap-1.5 rounded-lg bg-muted px-3 py-1.5 text-[11px] font-semibold text-muted-foreground transition-colors hover:bg-muted/80"
                   >
                     <Eye className="h-3 w-3" /> Preview
                   </a>
@@ -477,7 +477,7 @@ export function ExportPanel({
           <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/35 mb-2 px-0.5">
             Export History
           </p>
-          <div className="divide-y divide-white/[0.04]">
+          <div className="divide-y divide-border/40">
             {exports.slice(0, 5).map((exp) => {
               const preset = EXPORT_PRESETS.find((p) => p.id === exp.preset);
               return (
@@ -486,10 +486,10 @@ export function ExportPanel({
                     "w-1.5 h-1.5 rounded-full shrink-0 mt-0.5",
                     isCompletedStatus(exp.status) ? "bg-emerald-400"
                     : exp.status === "failed" ? "bg-red-400"
-                    : "bg-purple-400 animate-pulse"
+                    : "bg-primary/60 animate-pulse"
                   )} />
                   <div className="flex-1 min-w-0">
-                    <p className="text-[12px] font-medium text-white/80 truncate">{preset?.label ?? exp.preset}</p>
+                    <p className="text-[12px] font-medium text-foreground truncate">{preset?.label ?? exp.preset}</p>
                     <p className="text-[10px] text-muted-foreground/40 mt-0.5">
                       {exp.includeCaptions
                         ? "with captions"
@@ -502,7 +502,7 @@ export function ExportPanel({
                     "text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0",
                     isCompletedStatus(exp.status) ? "bg-emerald-500/15 text-emerald-400"
                     : exp.status === "failed" ? "bg-red-500/15 text-red-400"
-                    : "bg-purple-500/15 text-purple-400"
+                    : "bg-primary/15 text-primary"
                   )}>
                     {isCompletedStatus(exp.status) ? "Done"
                       : exp.status === "failed" ? "Failed"
@@ -514,7 +514,7 @@ export function ExportPanel({
                       download
                       className="opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
                     >
-                      <Download className="h-3.5 w-3.5 text-muted-foreground/40 hover:text-white transition-colors" />
+                      <Download className="h-3.5 w-3.5 text-muted-foreground/40 hover:text-foreground transition-colors" />
                     </a>
                   )}
                 </div>

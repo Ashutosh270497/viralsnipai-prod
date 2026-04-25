@@ -2,186 +2,176 @@
 
 import Link from "next/link";
 import Script from "next/script";
-import { useEffect, useMemo, useState } from "react";
-import type { ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowRight,
-  Check,
-  Sparkles,
-  Zap,
-  Users,
-  BarChart3,
-  Video,
-  Scissors,
-  Wand2,
-  Globe,
-  Clock,
-  TrendingUp,
+  BadgeCheck,
+  BookOpen,
+  Captions,
+  CheckCircle2,
+  CreditCard,
+  Download,
+  FileVideo,
+  Layers3,
   MessageSquare,
-  Shield,
-  Rocket,
+  Mic2,
+  Palette,
   Play,
-  Star,
-  CheckCircle2
+  Presentation,
+  Ratio,
+  Scissors,
+  Sparkles,
+  TrendingUp,
+  Upload,
+  UserRound,
+  Users,
+  Wand2,
+  Zap,
 } from "lucide-react";
-import { motion, useReducedMotion, useInView } from "framer-motion";
-import { useRef } from "react";
+import { motion, useInView, useReducedMotion } from "framer-motion";
 
-import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { trackEvent } from "@/lib/analytics";
-import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
 import { PricingGrid } from "@/components/marketing-v2/pricing-grid";
 import {
   PRICING_PLANS,
+  getMonthlyPrice,
   type SupportedCurrency,
-  getMonthlyPrice
 } from "@/components/marketing-v2/pricing-config";
+import { trackEvent } from "@/lib/analytics";
+import { cn } from "@/lib/utils";
 
-const features = [
-  {
-    icon: Sparkles,
-    title: "AI-Powered Clipping",
-    description: "Automatically identify and extract viral moments from your long-form content with advanced AI analysis.",
-    color: "from-blue-500 to-cyan-500"
-  },
-  {
-    icon: Scissors,
-    title: "Smart Editing",
-    description: "One-click editing with auto-captions, face tracking, and dynamic layouts optimized for each platform.",
-    color: "from-purple-500 to-pink-500"
-  },
-  {
-    icon: Globe,
-    title: "Multi-Platform Export",
-    description: "Export perfectly sized content for YouTube Shorts, TikTok, Instagram Reels, and more - all at once.",
-    color: "from-orange-500 to-red-500"
-  },
-  {
-    icon: Wand2,
-    title: "Brand Customization",
-    description: "Apply your brand colors, fonts, logos, and watermarks consistently across all your clips.",
-    color: "from-green-500 to-emerald-500"
-  },
-  {
-    icon: Clock,
-    title: "Scheduled Publishing",
-    description: "Plan and schedule your content calendar. Post automatically at the perfect time for maximum engagement.",
-    color: "from-indigo-500 to-blue-500"
-  },
-  {
-    icon: TrendingUp,
-    title: "Analytics Dashboard",
-    description: "Track performance, identify trends, and optimize your content strategy with detailed analytics.",
-    color: "from-pink-500 to-rose-500"
-  }
-];
-
-const stats = [
-  { number: "20M+", label: "Active Creators", icon: Users },
-  { number: "500M+", label: "Clips Generated", icon: Video },
-  { number: "4.9/5", label: "User Rating", icon: Star },
-  { number: "150+", label: "Countries", icon: Globe }
-];
-
-const testimonials = [
-  {
-    name: "Alex Rivera",
-    role: "Content Creator",
-    avatar: "AR",
-    content: "ViralSnipAI transformed my workflow. I went from spending 8 hours editing to just 30 minutes. My productivity increased 15x!",
-    metric: "15x productivity boost",
-    gradient: "from-blue-500 to-cyan-500"
-  },
-  {
-    name: "Sarah Chen",
-    role: "YouTube Educator",
-    avatar: "SC",
-    content: "The AI understands context so well. It picks the exact moments my audience loves. My engagement rate doubled in 3 months.",
-    metric: "2x engagement increase",
-    gradient: "from-purple-500 to-pink-500"
-  },
-  {
-    name: "Marcus Johnson",
-    role: "Podcast Producer",
-    avatar: "MJ",
-    content: "I run a clipping service for 15 podcasters now. ViralSnipAI made it possible to scale my business without hiring a team.",
-    metric: "$25K monthly revenue",
-    gradient: "from-orange-500 to-red-500"
-  }
-];
+const trustItems = ["3 free uploads/month", "No credit card required", "Cancel anytime"];
 
 const workflow = [
   {
-    step: "1",
-    title: "Upload Your Content",
-    description: "Drop your video link or upload directly. Supports YouTube, Vimeo, and local files up to 4 hours.",
-    icon: Video
+    title: "Upload long video",
+    description: "Drop in a podcast, webinar, interview, tutorial, or founder recording.",
+    icon: Upload,
+    cue: "MP4, MOV, WebM",
   },
   {
-    step: "2",
-    title: "AI Analyzes & Extracts",
-    description: "Our AI scans your content, identifies viral moments, and creates optimized clips automatically.",
-    icon: Sparkles
+    title: "AI finds high-retention moments",
+    description: "ViralSnipAI transcribes the source and ranks moments by hook strength.",
+    icon: Sparkles,
+    cue: "8 clips detected",
   },
   {
-    step: "3",
-    title: "Customize & Brand",
-    description: "Apply your style, add captions, adjust timing, and preview across different platforms.",
-    icon: Wand2
+    title: "Edit hooks, captions, and brand style",
+    description: "Review clip boundaries, tune captions, and apply your brand kit.",
+    icon: Wand2,
+    cue: "Hook score 92",
   },
   {
-    step: "4",
-    title: "Export & Publish",
-    description: "Download or schedule direct publishing to all your social channels with one click.",
-    icon: Rocket
-  }
+    title: "Export platform-ready clips",
+    description: "Render short-form MP4s ready for Shorts, Reels, LinkedIn, and feeds.",
+    icon: Download,
+    cue: "9:16 export ready",
+  },
 ];
 
-const templatePacks = [
+const useCases = [
   {
-    name: "Podcast Clips",
-    description: "Auto jump cuts, speaker captions, and quote callouts tuned for long-form podcasts.",
-    icon: MessageSquare
+    name: "Podcasts",
+    description: "Pull the strongest ideas, stories, and guest moments out of long episodes.",
+    icon: Mic2,
   },
   {
-    name: "Educational Shorts",
-    description: "Lecture-style framing, key-point highlights, and clean subtitle themes for tutorials.",
-    icon: BarChart3
+    name: "Webinars & demos",
+    description: "Turn product explainers and Q&A segments into crisp short-form clips.",
+    icon: Presentation,
   },
   {
-    name: "Founder Updates",
-    description: "Personal-brand layouts with punchy hook overlays designed for LinkedIn and X.",
-    icon: Rocket
-  }
+    name: "Founder videos",
+    description: "Repurpose POVs, launches, and thought leadership into repeatable content.",
+    icon: UserRound,
+  },
+  {
+    name: "Tutorials & courses",
+    description: "Break dense lessons into standalone clips that drive attention back.",
+    icon: BookOpen,
+  },
+  {
+    name: "Interviews",
+    description: "Find quote-worthy answers and package them with captions in minutes.",
+    icon: MessageSquare,
+  },
+  {
+    name: "Agency client content",
+    description: "Process client recordings without rebuilding captions and brand style each time.",
+    icon: Users,
+  },
+];
+
+const v1Features = [
+  {
+    title: "AI clip detection",
+    description: "Finds promising moments automatically and ranks them for review.",
+    icon: Scissors,
+  },
+  {
+    title: "Auto captions",
+    description: "Creates timestamped captions you can edit before export.",
+    icon: Captions,
+  },
+  {
+    title: "Hook suggestions",
+    description: "Surfaces stronger framing for the first seconds of each clip.",
+    icon: Zap,
+  },
+  {
+    title: "Brand kit",
+    description: "Apply fonts, colors, logo, and caption style consistently.",
+    icon: Palette,
+  },
+  {
+    title: "9:16 exports",
+    description: "Ship vertical clips for Shorts, Reels, TikTok, and LinkedIn.",
+    icon: Ratio,
+  },
+  {
+    title: "Download-ready MP4",
+    description: "Export rendered clips that are ready to post or hand off.",
+    icon: FileVideo,
+  },
+  {
+    title: "Usage limits and billing",
+    description: "Free, Plus, and Pro limits are clear and enforced server-side.",
+    icon: CreditCard,
+  },
 ];
 
 const faqItems = [
   {
-    question: "How does AI clipping work?",
-    answer: "Our AI analyzes audio, visual elements, and engagement patterns to identify the most shareable moments in your content. It considers factors like pacing, emotional peaks, and topic relevance to select clips that resonate with your audience."
+    question: "What kind of videos work best?",
+    answer:
+      "Podcasts, webinars, interviews, tutorials, course lessons, founder videos, and demos work best because they contain enough context for the AI to identify strong moments.",
   },
   {
-    question: "Can I edit the AI-generated clips?",
-    answer: "Absolutely! All AI clips are fully editable. You can adjust timing, add transitions, modify captions, change layouts, and apply your brand styling. Think of AI as your first draft - you have complete creative control."
+    question: "Can I use it for YouTube Shorts and Instagram Reels?",
+    answer:
+      "Yes. V1 focuses on short-form repurposing, including vertical exports for YouTube Shorts, Instagram Reels, TikTok, and LinkedIn-style clips.",
   },
   {
-    question: "Which platforms are supported?",
-    answer: "We support YouTube Shorts, TikTok, Instagram Reels, Facebook Stories, LinkedIn, Twitter/X, and Pinterest. Each export is optimized for the platform's specific requirements including aspect ratios, duration limits, and quality settings."
+    question: "Does it guarantee virality?",
+    answer:
+      "No. ViralSnipAI improves your starting point by finding stronger moments, hooks, captions, and formats. Actual performance still depends on the content, audience, timing, and distribution.",
   },
   {
-    question: "Is there a free plan?",
-    answer: "Yes. The free workspace is designed for evaluation: limited ideas, scripts, titles, thumbnails, and niche discovery so you can test the workflow before moving to a paid plan."
+    question: "Can I remove watermark?",
+    answer:
+      "Free exports include a ViralSnipAI watermark. Plus and Pro plans are designed for watermark-free branded exports.",
   },
   {
-    question: "How long does processing take?",
-    answer: "Most videos are analyzed and clipped within 2-5 minutes depending on length. You'll receive a notification when your clips are ready. Processing happens in the background so you can continue working on other projects."
+    question: "Do I need editing experience?",
+    answer:
+      "No. The flow is built for creators and teams who want AI to do the first pass. You can still review clips, edit captions, adjust style, and choose what to export.",
   },
   {
-    question: "Can teams collaborate?",
-    answer: "Current self-serve billing is optimized for individual operators. Pro unlocks the highest limits, analytics depth, and developer access. Team billing and deeper collaboration controls are handled separately from this Razorpay cutover."
-  }
+    question: "What happens to my uploaded videos?",
+    answer:
+      "Uploaded videos are stored so ViralSnipAI can process clips, captions, and exports for your account. Your projects and exports are protected by server-side ownership checks.",
+  },
 ];
 
 export function MarketingPageV3() {
@@ -193,19 +183,16 @@ export function MarketingPageV3() {
       "@context": "https://schema.org",
       "@type": "Product",
       name: "ViralSnipAI",
-      description: "AI-powered video clipping platform that transforms long-form content into viral short-form videos for social media.",
-      brand: {
-        "@type": "Organization",
-        name: "ViralSnipAI",
-        url: "https://viralsnipai.com"
-      },
-      offers: PRICING_PLANS.map((plan) => ({
+      description:
+        "ViralSnipAI turns long videos into viral-ready short clips with AI hooks, captions, and branded exports.",
+      brand: { "@type": "Organization", name: "ViralSnipAI", url: "https://viralsnipai.com" },
+      offers: PRICING_PLANS.filter((plan) => plan.id !== "free").map((plan) => ({
         "@type": "Offer",
         name: plan.name,
         priceCurrency: currency,
         price: String(getMonthlyPrice(plan, currency)),
-        url: "https://viralsnipai.com/pricing"
-      }))
+        url: "https://viralsnipai.com/pricing",
+      })),
     }),
     [currency]
   );
@@ -217,40 +204,41 @@ export function MarketingPageV3() {
       mainEntity: faqItems.map((item) => ({
         "@type": "Question",
         name: item.question,
-        acceptedAnswer: {
-          "@type": "Answer",
-          text: item.answer
-        }
-      }))
+        acceptedAnswer: { "@type": "Answer", text: item.answer },
+      })),
     }),
     []
   );
 
   useEffect(() => {
-    trackEvent({ name: "marketing_v3_view" });
+    trackEvent({ name: "marketing_landing_view" });
   }, []);
 
   return (
     <>
-      <main className="flex flex-1 flex-col overflow-hidden bg-white text-foreground dark:bg-black">
+      <main className="flex flex-1 flex-col overflow-hidden bg-[#f8fbfb] text-slate-950 dark:bg-[#081111] dark:text-white">
         <HeroSection prefersReducedMotion={prefersReducedMotion} />
-        <StatsSection />
-        <FeaturesSection prefersReducedMotion={prefersReducedMotion} />
-        <TemplateSection />
         <WorkflowSection />
-        <TestimonialsSection />
+        <UseCasesSection />
+        <FeaturesSection />
         <PricingSection currency={currency} setCurrency={setCurrency} />
         <FaqSection />
         <CtaSection />
       </main>
+
       <div className="fixed inset-x-4 bottom-4 z-40 md:hidden">
-        <Button asChild size="lg" className="h-12 w-full shadow-lg">
+        <Button
+          asChild
+          size="lg"
+          className="h-12 w-full rounded-full bg-gradient-to-r from-emerald-500 to-cyan-500 text-white shadow-xl shadow-emerald-900/20"
+        >
           <Link href="/signup">
-            Start Creating Free
+            Start free
             <ArrowRight className="ml-1 h-4 w-4" />
           </Link>
         </Button>
       </div>
+
       <Script id="product-schema" type="application/ld+json" strategy="afterInteractive">
         {JSON.stringify(productSchema)}
       </Script>
@@ -263,347 +251,218 @@ export function MarketingPageV3() {
 
 function HeroSection({ prefersReducedMotion }: { prefersReducedMotion: boolean }) {
   return (
-    <section id="hero" className="relative overflow-hidden bg-gradient-to-br from-gray-50 via-white to-blue-50 dark:from-neutral-950 dark:via-black dark:to-blue-950/20">
-      {/* Animated background elements */}
-      <div className="absolute inset-0 overflow-hidden">
-        <motion.div
-          className="absolute -top-1/2 -right-1/4 h-[800px] w-[800px] rounded-full bg-gradient-to-br from-blue-400/20 to-cyan-400/20 blur-3xl"
-          animate={prefersReducedMotion ? {} : {
-            scale: [1, 1.2, 1],
-            rotate: [0, 90, 0],
-          }}
-          transition={{
-            duration: 20,
-            repeat: Infinity,
-            ease: "linear"
-          }}
-        />
-        <motion.div
-          className="absolute -bottom-1/2 -left-1/4 h-[600px] w-[600px] rounded-full bg-gradient-to-br from-purple-400/20 to-pink-400/20 blur-3xl"
-          animate={prefersReducedMotion ? {} : {
-            scale: [1.2, 1, 1.2],
-            rotate: [90, 0, 90],
-          }}
-          transition={{
-            duration: 25,
-            repeat: Infinity,
-            ease: "linear"
-          }}
-        />
-      </div>
+    <section className="relative isolate overflow-hidden px-6 pb-20 pt-20 sm:pb-28 sm:pt-28 lg:px-8">
+      <div className="absolute inset-0 -z-10 bg-[radial-gradient(circle_at_50%_0%,rgba(20,184,166,0.22),transparent_34%),radial-gradient(circle_at_85%_20%,rgba(59,130,246,0.18),transparent_28%),linear-gradient(180deg,#ffffff_0%,#f5fbfa_58%,#eef9fb_100%)] dark:bg-[radial-gradient(circle_at_50%_0%,rgba(20,184,166,0.24),transparent_34%),radial-gradient(circle_at_82%_18%,rgba(79,70,229,0.18),transparent_30%),linear-gradient(180deg,#0d1918_0%,#081111_66%,#0c181f_100%)]" />
+      <div className="absolute left-1/2 top-24 -z-10 h-72 w-[56rem] -translate-x-1/2 rounded-full bg-cyan-300/20 blur-3xl dark:bg-cyan-400/10" />
 
-      <div className="relative mx-auto max-w-7xl px-6 py-24 sm:py-32 lg:px-8">
+      <div className="mx-auto max-w-7xl">
         <div className="mx-auto max-w-4xl text-center">
-          {/* Trust badge */}
           <motion.div
-            initial={prefersReducedMotion ? { opacity: 1 } : { opacity: 0, y: 20 }}
+            initial={prefersReducedMotion ? false : { opacity: 0, y: 18 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5 }}
-            className="mb-8 inline-flex"
+            transition={{ duration: 0.45 }}
           >
-            <Badge className="gap-2 border-blue-200 bg-blue-50 px-6 py-2 text-sm font-semibold text-blue-700 dark:border-blue-900 dark:bg-blue-950 dark:text-blue-300">
-              <Zap className="h-4 w-4" />
-              AI Workflow For Creators, Teams, And Agencies
+            <Badge className="mb-7 gap-2 rounded-full border-emerald-500/25 bg-white/75 px-4 py-2 text-sm font-semibold text-emerald-700 shadow-sm shadow-emerald-950/5 backdrop-blur dark:bg-white/[0.08] dark:text-emerald-200">
+              <Sparkles className="h-4 w-4" />
+              V1 beta for video repurposing
             </Badge>
           </motion.div>
 
-          {/* Main headline */}
           <motion.h1
-            initial={prefersReducedMotion ? { opacity: 1 } : { opacity: 0, y: 20 }}
+            initial={prefersReducedMotion ? false : { opacity: 0, y: 18 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, delay: 0.1 }}
-            className="mb-6 text-5xl font-bold leading-tight tracking-tight text-gray-900 sm:text-6xl lg:text-7xl dark:text-white"
+            transition={{ duration: 0.55, delay: 0.05 }}
+            className="text-balance text-5xl font-semibold tracking-tight text-slate-950 sm:text-6xl lg:text-7xl dark:text-white"
           >
-            Transform Long Videos Into
-            <span className="relative mx-3 inline-block">
-              <span className="relative z-10 bg-gradient-to-r from-blue-600 to-cyan-600 bg-clip-text text-transparent dark:from-blue-400 dark:to-cyan-400">
-                Publish-Ready Shorts
-              </span>
-              <motion.span
-                className="absolute inset-0 -z-10 bg-gradient-to-r from-blue-400/30 to-cyan-400/30 blur-xl"
-                animate={prefersReducedMotion ? {} : {
-                  scale: [1, 1.1, 1],
-                  opacity: [0.5, 0.8, 0.5],
-                }}
-                transition={{
-                  duration: 3,
-                  repeat: Infinity,
-                  ease: "easeInOut"
-                }}
-              />
+            Turn long videos into{" "}
+            <span className="bg-gradient-to-r from-emerald-500 via-cyan-500 to-blue-500 bg-clip-text text-transparent">
+              viral-ready clips
             </span>
-            In Minutes
           </motion.h1>
 
-          {/* Subheadline */}
           <motion.p
-            initial={prefersReducedMotion ? { opacity: 1 } : { opacity: 0, y: 20 }}
+            initial={prefersReducedMotion ? false : { opacity: 0, y: 18 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, delay: 0.2 }}
-            className="mx-auto mb-10 max-w-2xl text-xl leading-relaxed text-gray-600 dark:text-neutral-400"
+            transition={{ duration: 0.55, delay: 0.12 }}
+            className="mx-auto mt-6 max-w-3xl text-pretty text-lg leading-8 text-slate-700 sm:text-xl dark:text-slate-300"
           >
-            Upload once and let AI find hooks, cut highlights, add brand-safe captions, and export for TikTok, Reels, Shorts, LinkedIn, and X.
+            Upload podcasts, webinars, interviews, or tutorials. ViralSnipAI finds the
+            strongest moments, adds branded captions, and exports short-form clips ready to post.
           </motion.p>
 
-          {/* CTA Buttons */}
           <motion.div
-            initial={prefersReducedMotion ? { opacity: 1 } : { opacity: 0, y: 20 }}
+            initial={prefersReducedMotion ? false : { opacity: 0, y: 18 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, delay: 0.3 }}
-            className="flex flex-col items-center justify-center gap-4 sm:flex-row"
+            transition={{ duration: 0.55, delay: 0.18 }}
+            className="mt-9 flex flex-col items-center justify-center gap-3 sm:flex-row"
           >
             <Button
               asChild
               size="lg"
-              className="group h-14 gap-2 rounded-xl bg-gradient-to-r from-blue-600 to-cyan-600 px-8 text-lg font-semibold text-white shadow-lg shadow-blue-500/25 transition-all hover:shadow-xl hover:shadow-blue-500/40 dark:from-blue-500 dark:to-cyan-500"
+              className="group h-14 rounded-full bg-gradient-to-r from-emerald-500 to-cyan-500 px-8 text-base font-semibold text-white shadow-2xl shadow-emerald-600/25 hover:from-emerald-400 hover:to-cyan-400 focus-visible:ring-2 focus-visible:ring-emerald-400 focus-visible:ring-offset-2 dark:ring-offset-[#081111]"
+              onClick={() => trackEvent({ name: "cta_start_free", payload: { source: "hero" } })}
             >
               <Link href="/signup">
-                Start Creating Free
-                <ArrowRight className="h-5 w-5 transition-transform group-hover:translate-x-1" />
+                Start free
+                <ArrowRight className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-1" />
               </Link>
             </Button>
             <Button
               asChild
               size="lg"
               variant="outline"
-              className="h-14 gap-2 rounded-xl border-2 border-gray-300 bg-white px-8 text-lg font-semibold text-gray-700 hover:bg-gray-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-200 dark:hover:bg-neutral-800"
+              className="h-14 rounded-full border-slate-300 bg-white/70 px-8 text-base font-semibold text-slate-900 shadow-sm backdrop-blur hover:bg-white focus-visible:ring-2 focus-visible:ring-cyan-400 dark:border-white/15 dark:bg-white/[0.08] dark:text-white dark:hover:bg-white/[0.12]"
             >
-              <Link href="#demo">
-                <Play className="h-5 w-5" />
-                Watch Demo
+              <Link href="#how-it-works">
+                <Play className="mr-2 h-4 w-4" />
+                See how it works
               </Link>
             </Button>
           </motion.div>
 
-          {/* Trust indicators */}
           <motion.div
-            initial={prefersReducedMotion ? { opacity: 1 } : { opacity: 0 }}
+            initial={prefersReducedMotion ? false : { opacity: 0 }}
             animate={{ opacity: 1 }}
-            transition={{ duration: 0.6, delay: 0.4 }}
-            className="mt-10 flex flex-wrap items-center justify-center gap-8 text-sm text-gray-600 dark:text-neutral-400"
+            transition={{ duration: 0.55, delay: 0.24 }}
+            className="mt-8 flex flex-wrap items-center justify-center gap-x-6 gap-y-3 text-sm font-medium text-slate-700 dark:text-slate-300"
           >
-            <div className="flex items-center gap-2">
-              <CheckCircle2 className="h-5 w-5 text-green-600 dark:text-green-400" />
-              <span>Free forever plan</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <CheckCircle2 className="h-5 w-5 text-green-600 dark:text-green-400" />
-              <span>No credit card required</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <CheckCircle2 className="h-5 w-5 text-green-600 dark:text-green-400" />
-              <span>Cancel anytime</span>
-            </div>
+            {trustItems.map((item) => (
+              <span key={item} className="inline-flex items-center gap-2">
+                <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+                {item}
+              </span>
+            ))}
           </motion.div>
+        </div>
 
-          {/* Demo video placeholder */}
-          <motion.div
-            id="demo"
-            initial={prefersReducedMotion ? { opacity: 1 } : { opacity: 0, y: 40 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.8, delay: 0.5 }}
-            className="mt-16"
-          >
-            <div className="relative mx-auto max-w-5xl">
-              <div className="overflow-hidden rounded-2xl border-4 border-white bg-gradient-to-br from-gray-900 to-gray-800 shadow-2xl dark:border-neutral-800">
-                <div className="aspect-video bg-gradient-to-br from-blue-500/20 to-purple-500/20 p-12">
-                  <div className="flex h-full items-center justify-center">
-                    <div className="text-center">
-                      <div className="mb-4 inline-flex h-20 w-20 items-center justify-center rounded-full bg-white/10 backdrop-blur-sm">
-                        <Play className="h-10 w-10 text-white" />
+        <ProductMockup prefersReducedMotion={prefersReducedMotion} />
+      </div>
+    </section>
+  );
+}
+
+function ProductMockup({ prefersReducedMotion }: { prefersReducedMotion: boolean }) {
+  return (
+    <motion.div
+      initial={prefersReducedMotion ? false : { opacity: 0, y: 34 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.7, delay: 0.28 }}
+      className="relative mx-auto mt-16 max-w-6xl"
+    >
+      <div className="absolute inset-x-10 -top-8 -z-10 h-40 rounded-full bg-gradient-to-r from-emerald-400/25 via-cyan-400/20 to-blue-500/20 blur-3xl" />
+      <div className="relative overflow-hidden rounded-[2rem] border border-white/80 bg-white/80 p-2 shadow-2xl shadow-slate-900/10 backdrop-blur dark:border-white/10 dark:bg-white/[0.08] dark:shadow-black/40">
+        <div className="overflow-hidden rounded-[1.5rem] border border-slate-200 bg-slate-950 dark:border-white/10">
+          <div className="flex items-center justify-between border-b border-white/10 bg-slate-900 px-4 py-3">
+            <div className="flex items-center gap-2">
+              <span className="h-3 w-3 rounded-full bg-red-400" />
+              <span className="h-3 w-3 rounded-full bg-amber-400" />
+              <span className="h-3 w-3 rounded-full bg-emerald-400" />
+            </div>
+            <div className="hidden rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-medium text-slate-300 sm:block">
+              Project: Founder interview - Q2 launch
+            </div>
+          </div>
+
+          <div className="grid min-h-[460px] gap-0 lg:grid-cols-[1.05fr_0.95fr]">
+            <div className="relative bg-[radial-gradient(circle_at_30%_22%,rgba(20,184,166,0.22),transparent_28%),linear-gradient(135deg,#172033,#0b1220)] p-5 sm:p-8">
+              <div className="aspect-video overflow-hidden rounded-3xl border border-white/10 bg-slate-900 shadow-2xl">
+                <div className="flex h-full flex-col justify-between bg-[linear-gradient(135deg,rgba(20,184,166,0.28),rgba(37,99,235,0.14)_40%,rgba(15,23,42,0.92)),url('/api/og?path=landing')] bg-cover bg-center p-5">
+                  <div className="flex items-center justify-between">
+                    <Badge className="border-white/15 bg-black/30 text-white backdrop-blur">00:18 - 00:43</Badge>
+                    <Badge className="border-emerald-300/30 bg-emerald-400/15 text-emerald-100">Hook score: 92</Badge>
+                  </div>
+                  <div className="rounded-2xl bg-black/40 p-4 text-left backdrop-blur">
+                    <p className="text-lg font-semibold text-white">&ldquo;This is the moment your audience rewatches.&rdquo;</p>
+                    <p className="mt-2 text-sm text-slate-300">Caption style: Bold clean, emerald highlight</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-5 grid grid-cols-4 gap-2">
+                {[82, 92, 76, 88].map((score, index) => (
+                  <div key={score} className="rounded-2xl border border-white/10 bg-white/[0.08] p-3">
+                    <div className="mb-2 h-12 rounded-xl bg-gradient-to-br from-cyan-400/30 to-blue-500/20" />
+                    <p className="text-xs font-semibold text-white">Clip {index + 1}</p>
+                    <p className="text-[11px] text-slate-400">Score {score}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="border-t border-white/10 bg-slate-900/95 p-5 sm:p-8 lg:border-l lg:border-t-0">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-sm font-semibold text-emerald-300">AI clip queue</p>
+                  <h2 className="mt-2 text-2xl font-semibold text-white">8 clips detected</h2>
+                </div>
+                <div className="rounded-full bg-emerald-400/15 px-3 py-1 text-xs font-semibold text-emerald-200">
+                  Ready
+                </div>
+              </div>
+
+              <div className="mt-8 space-y-3">
+                {[
+                  ["Captions added", "Timestamped SRT generated", "100%"],
+                  ["Brand kit applied", "Logo, color, font", "100%"],
+                  ["Platform preset", "Shorts/Reels/LinkedIn", "Ready"],
+                ].map(([title, subtitle, value]) => (
+                  <div key={title} className="rounded-2xl border border-white/10 bg-white/[0.06] p-4">
+                    <div className="flex items-center justify-between gap-4">
+                      <div>
+                        <p className="font-semibold text-white">{title}</p>
+                        <p className="mt-1 text-sm text-slate-400">{subtitle}</p>
                       </div>
-                      <p className="text-lg font-semibold text-white">Watch How It Works</p>
+                      <span className="text-sm font-semibold text-cyan-200">{value}</span>
                     </div>
                   </div>
-                </div>
+                ))}
               </div>
-              {/* Floating elements */}
-              <motion.div
-                className="absolute -right-4 top-1/4 rounded-xl border border-white bg-white p-4 shadow-xl dark:border-neutral-700 dark:bg-neutral-900"
-                animate={prefersReducedMotion ? {} : {
-                  y: [-10, 10, -10],
-                }}
-                transition={{
-                  duration: 4,
-                  repeat: Infinity,
-                  ease: "easeInOut"
-                }}
-              >
-                <div className="flex items-center gap-3">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-green-100 dark:bg-green-950">
-                    <Check className="h-6 w-6 text-green-600 dark:text-green-400" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-semibold text-gray-900 dark:text-white">Clip Ready!</p>
-                    <p className="text-xs text-gray-600 dark:text-neutral-400">2.3 seconds</p>
-                  </div>
-                </div>
-              </motion.div>
-              <motion.div
-                className="absolute -left-4 bottom-1/4 rounded-xl border border-white bg-white p-4 shadow-xl dark:border-neutral-700 dark:bg-neutral-900"
-                animate={prefersReducedMotion ? {} : {
-                  y: [10, -10, 10],
-                }}
-                transition={{
-                  duration: 5,
-                  repeat: Infinity,
-                  ease: "easeInOut"
-                }}
-              >
-                <div className="flex items-center gap-3">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-100 dark:bg-blue-950">
-                    <Sparkles className="h-6 w-6 text-blue-600 dark:text-blue-400" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-semibold text-gray-900 dark:text-white">12 Clips Found</p>
-                    <p className="text-xs text-gray-600 dark:text-neutral-400">AI Analysis</p>
-                  </div>
-                </div>
-              </motion.div>
+
+              <div className="mt-8 rounded-2xl border border-cyan-300/20 bg-cyan-400/10 p-4">
+                <p className="text-sm font-semibold text-cyan-100">Suggested hook</p>
+                <p className="mt-2 text-sm leading-6 text-slate-300">
+                  Start with the surprising claim, then show the proof in the first five seconds.
+                </p>
+              </div>
             </div>
-          </motion.div>
+          </div>
         </div>
+
+        <FloatingBadge className="-left-2 top-16 sm:-left-8" icon={BadgeCheck} title="8 clips detected" subtitle="Ranked by hook strength" />
+        <FloatingBadge className="-right-2 top-36 sm:-right-8" icon={Captions} title="Captions added" subtitle="Brand colors applied" />
+        <FloatingBadge className="bottom-8 left-6 sm:left-12" icon={TrendingUp} title="Hook score: 92" subtitle="High-retention moment" />
+        <FloatingBadge className="bottom-20 right-4 hidden sm:flex" icon={Layers3} title="Ready for Shorts/Reels/LinkedIn" subtitle="Platform-ready exports" />
       </div>
-    </section>
+    </motion.div>
   );
 }
 
-function StatsSection() {
-  const ref = useRef(null);
-  const isInView = useInView(ref, { once: true, margin: "-100px" });
-
+function FloatingBadge({
+  icon: Icon,
+  title,
+  subtitle,
+  className,
+}: {
+  icon: typeof Sparkles;
+  title: string;
+  subtitle: string;
+  className?: string;
+}) {
   return (
-    <section ref={ref} className="border-y border-gray-200 bg-white py-16 dark:border-neutral-800 dark:bg-black">
-      <div className="mx-auto max-w-7xl px-6 lg:px-8">
-        <div className="grid gap-8 sm:grid-cols-2 lg:grid-cols-4">
-          {stats.map((stat, index) => (
-            <motion.div
-              key={stat.label}
-              initial={{ opacity: 0, y: 20 }}
-              animate={isInView ? { opacity: 1, y: 0 } : { opacity: 0, y: 20 }}
-              transition={{ duration: 0.5, delay: index * 0.1 }}
-              className="flex flex-col items-center text-center"
-            >
-              <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-500 to-cyan-500 shadow-lg">
-                <stat.icon className="h-8 w-8 text-white" />
-              </div>
-              <div className="text-4xl font-bold text-gray-900 dark:text-white">{stat.number}</div>
-              <div className="mt-2 text-sm font-medium text-gray-600 dark:text-neutral-400">{stat.label}</div>
-            </motion.div>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function FeaturesSection({ prefersReducedMotion }: { prefersReducedMotion: boolean }) {
-  const ref = useRef(null);
-  const isInView = useInView(ref, { once: true, margin: "-100px" });
-
-  return (
-    <section id="features" ref={ref} className="bg-gradient-to-b from-white to-gray-50 py-24 dark:from-black dark:to-neutral-950">
-      <div className="mx-auto max-w-7xl px-6 lg:px-8">
-        <div className="mx-auto max-w-2xl text-center">
-          <Badge className="mb-6 gap-2 border-blue-200 bg-blue-50 px-4 py-2 text-sm font-semibold text-blue-700 dark:border-blue-900 dark:bg-blue-950 dark:text-blue-300">
-            <Sparkles className="h-4 w-4" />
-            Powerful Features
-          </Badge>
-          <h2 className="mb-4 text-4xl font-bold tracking-tight text-gray-900 sm:text-5xl dark:text-white">
-            Everything you need to create viral content
-          </h2>
-          <p className="text-lg leading-relaxed text-gray-600 dark:text-neutral-400">
-            Professional video editing tools powered by AI. No experience needed.
-          </p>
-        </div>
-
-        <div className="mt-16 grid gap-8 md:grid-cols-2 lg:grid-cols-3">
-          {features.map((feature, index) => (
-            <motion.div
-              key={feature.title}
-              initial={{ opacity: 0, y: 20 }}
-              animate={isInView ? { opacity: 1, y: 0 } : { opacity: 0, y: 20 }}
-              transition={{ duration: 0.5, delay: index * 0.1 }}
-            >
-              <Card className="group h-full border-2 border-gray-200 transition-all hover:border-blue-300 hover:shadow-xl dark:border-neutral-800 dark:hover:border-blue-700">
-                <CardHeader>
-                  <div className={cn(
-                    "mb-4 inline-flex h-14 w-14 items-center justify-center rounded-xl bg-gradient-to-br shadow-lg transition-transform group-hover:scale-110",
-                    feature.color
-                  )}>
-                    <feature.icon className="h-7 w-7 text-white" />
-                  </div>
-                  <CardTitle className="text-xl font-bold text-gray-900 dark:text-white">
-                    {feature.title}
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <CardDescription className="text-base leading-relaxed text-gray-600 dark:text-neutral-400">
-                    {feature.description}
-                  </CardDescription>
-                </CardContent>
-              </Card>
-            </motion.div>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function TemplateSection() {
-  const ref = useRef(null);
-  const isInView = useInView(ref, { once: true, margin: "-100px" });
-
-  return (
-    <section id="marketplace" ref={ref} className="bg-white py-24 dark:bg-black">
-      <div className="mx-auto max-w-7xl px-6 lg:px-8">
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={isInView ? { opacity: 1, y: 0 } : { opacity: 0, y: 20 }}
-          transition={{ duration: 0.5 }}
-          className="mx-auto max-w-2xl text-center"
-        >
-          <Badge className="mb-6 gap-2 border-indigo-200 bg-indigo-50 px-4 py-2 text-sm font-semibold text-indigo-700 dark:border-indigo-900 dark:bg-indigo-950 dark:text-indigo-300">
-            <Wand2 className="h-4 w-4" />
-            Template Marketplace
-          </Badge>
-          <h2 className="mb-4 text-4xl font-bold tracking-tight text-gray-900 sm:text-5xl dark:text-white">
-            Start with proven clip styles
-          </h2>
-          <p className="text-lg leading-relaxed text-gray-600 dark:text-neutral-400">
-            Pick a layout pack by content type and ship consistent posts faster.
-          </p>
-        </motion.div>
-
-        <div className="mt-14 grid gap-6 md:grid-cols-3">
-          {templatePacks.map((pack, index) => (
-            <motion.div
-              key={pack.name}
-              initial={{ opacity: 0, y: 20 }}
-              animate={isInView ? { opacity: 1, y: 0 } : { opacity: 0, y: 20 }}
-              transition={{ duration: 0.45, delay: index * 0.08 }}
-            >
-              <Card className="h-full border-2 border-gray-200 transition-all hover:border-indigo-300 hover:shadow-xl dark:border-neutral-800 dark:hover:border-indigo-700">
-                <CardHeader>
-                  <div className="mb-3 inline-flex h-12 w-12 items-center justify-center rounded-lg bg-gradient-to-br from-indigo-500 to-blue-500 shadow">
-                    <pack.icon className="h-6 w-6 text-white" />
-                  </div>
-                  <CardTitle className="text-xl font-bold text-gray-900 dark:text-white">
-                    {pack.name}
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <CardDescription className="text-base leading-relaxed text-gray-600 dark:text-neutral-400">
-                    {pack.description}
-                  </CardDescription>
-                </CardContent>
-              </Card>
-            </motion.div>
-          ))}
-        </div>
-      </div>
-    </section>
+    <div
+      className={cn(
+        "absolute hidden max-w-[230px] items-center gap-3 rounded-2xl border border-white/70 bg-white/90 p-3 shadow-xl shadow-slate-900/10 backdrop-blur md:flex dark:border-white/10 dark:bg-slate-900/90",
+        className
+      )}
+    >
+      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-400 to-cyan-500 text-white">
+        <Icon className="h-5 w-5" />
+      </span>
+      <span>
+        <span className="block text-sm font-semibold text-slate-950 dark:text-white">{title}</span>
+        <span className="block text-xs text-slate-600 dark:text-slate-400">{subtitle}</span>
+      </span>
+    </div>
   );
 }
 
@@ -612,109 +471,108 @@ function WorkflowSection() {
   const isInView = useInView(ref, { once: true, margin: "-100px" });
 
   return (
-    <section id="workflow" ref={ref} className="bg-white py-24 dark:bg-black">
-      <div className="mx-auto max-w-7xl px-6 lg:px-8">
-        <div className="mx-auto max-w-2xl text-center">
-          <h2 className="mb-4 text-4xl font-bold tracking-tight text-gray-900 sm:text-5xl dark:text-white">
-            How it works
-          </h2>
-          <p className="text-lg leading-relaxed text-gray-600 dark:text-neutral-400">
-            From upload to viral clip in 4 simple steps
-          </p>
-        </div>
-
-        <div className="mt-16 grid gap-12 lg:grid-cols-4">
-          {workflow.map((step, index) => (
-            <motion.div
-              key={step.step}
-              initial={{ opacity: 0, x: -20 }}
-              animate={isInView ? { opacity: 1, x: 0 } : { opacity: 0, x: -20 }}
-              transition={{ duration: 0.5, delay: index * 0.15 }}
-              className="relative"
-            >
-              {/* Connector line */}
-              {index < workflow.length - 1 && (
-                <div className="absolute left-1/2 top-16 hidden h-full w-0.5 bg-gradient-to-b from-blue-500 to-cyan-500 lg:block" style={{ transform: "translateX(-50%)" }} />
-              )}
-              
-              <div className="relative flex flex-col items-center text-center">
-                <div className="relative mb-6">
-                  <div className="flex h-20 w-20 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-500 to-cyan-500 shadow-xl">
-                    <step.icon className="h-10 w-10 text-white" />
-                  </div>
-                  <div className="absolute -right-2 -top-2 flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-purple-500 to-pink-500 text-sm font-bold text-white shadow-lg">
-                    {step.step}
-                  </div>
-                </div>
-                <h3 className="mb-3 text-xl font-bold text-gray-900 dark:text-white">{step.title}</h3>
-                <p className="text-base leading-relaxed text-gray-600 dark:text-neutral-400">{step.description}</p>
+    <section id="how-it-works" ref={ref} className="px-6 py-24 lg:px-8">
+      <SectionHeading
+        eyebrow="How it works"
+        title="From long-form recording to short-form assets"
+        description="A focused V1 workflow for turning raw video into clips your team can review, export, and publish."
+      />
+      <div className="mx-auto mt-14 grid max-w-7xl gap-4 md:grid-cols-2 xl:grid-cols-4">
+        {workflow.map((step, index) => (
+          <motion.div
+            key={step.title}
+            initial={{ opacity: 0, y: 18 }}
+            animate={isInView ? { opacity: 1, y: 0 } : {}}
+            transition={{ duration: 0.45, delay: index * 0.08 }}
+            className="group relative overflow-hidden rounded-3xl border border-slate-200 bg-white p-6 shadow-sm shadow-slate-950/5 transition hover:-translate-y-1 hover:border-emerald-300 hover:shadow-xl hover:shadow-emerald-950/10 dark:border-white/10 dark:bg-white/[0.055] dark:hover:border-emerald-300/30"
+          >
+            <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-emerald-400 via-cyan-400 to-blue-500 opacity-80" />
+            <div className="mb-8 flex items-center justify-between">
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600 ring-1 ring-emerald-200 dark:bg-emerald-400/10 dark:text-emerald-200 dark:ring-emerald-300/15">
+                <step.icon className="h-6 w-6" />
               </div>
-            </motion.div>
-          ))}
-        </div>
+              <span className="text-sm font-semibold text-slate-400">0{index + 1}</span>
+            </div>
+            <h3 className="text-xl font-semibold text-slate-950 dark:text-white">{step.title}</h3>
+            <p className="mt-3 text-sm leading-6 text-slate-700 dark:text-slate-300">
+              {step.description}
+            </p>
+            <div className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-800 dark:border-white/10 dark:bg-white/[0.06] dark:text-slate-200">
+              {step.cue}
+            </div>
+          </motion.div>
+        ))}
       </div>
     </section>
   );
 }
 
-function TestimonialsSection() {
+function UseCasesSection() {
   const ref = useRef(null);
   const isInView = useInView(ref, { once: true, margin: "-100px" });
 
   return (
-    <section ref={ref} className="bg-gradient-to-b from-gray-50 to-white py-24 dark:from-neutral-950 dark:to-black">
-      <div className="mx-auto max-w-7xl px-6 lg:px-8">
-        <div className="mx-auto max-w-2xl text-center">
-          <Badge className="mb-6 gap-2 border-green-200 bg-green-50 px-4 py-2 text-sm font-semibold text-green-700 dark:border-green-900 dark:bg-green-950 dark:text-green-300">
-            <MessageSquare className="h-4 w-4" />
-            Success Stories
-          </Badge>
-          <h2 className="mb-4 text-4xl font-bold tracking-tight text-gray-900 sm:text-5xl dark:text-white">
-            Loved by creators worldwide
-          </h2>
-          <p className="text-lg leading-relaxed text-gray-600 dark:text-neutral-400">
-            Real stories from real creators achieving real results
-          </p>
-        </div>
+    <section className="border-y border-slate-200/80 bg-white/70 px-6 py-24 dark:border-white/10 dark:bg-white/[0.035] lg:px-8">
+      <SectionHeading
+        eyebrow="Built for creators and teams"
+        title="One workflow for the content you already record"
+        description="ViralSnipAI is intentionally focused on long video repurposing for the V1 beta."
+      />
+      <div ref={ref} className="mx-auto mt-14 grid max-w-7xl gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {useCases.map((item, index) => (
+          <motion.div
+            key={item.name}
+            initial={{ opacity: 0, y: 18 }}
+            animate={isInView ? { opacity: 1, y: 0 } : {}}
+            transition={{ duration: 0.42, delay: index * 0.06 }}
+            className="group rounded-3xl border border-slate-200 bg-white p-6 shadow-sm shadow-slate-950/5 transition hover:-translate-y-1 hover:border-cyan-300 hover:shadow-xl hover:shadow-cyan-950/10 dark:border-white/10 dark:bg-[#0f1d1f] dark:hover:border-cyan-300/30"
+          >
+            <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-2xl bg-cyan-50 text-cyan-700 ring-1 ring-cyan-200 transition group-hover:scale-105 dark:bg-cyan-400/10 dark:text-cyan-200 dark:ring-cyan-300/15">
+              <item.icon className="h-6 w-6" />
+            </div>
+            <h3 className="text-lg font-semibold text-slate-950 dark:text-white">{item.name}</h3>
+            <p className="mt-3 text-sm leading-6 text-slate-700 dark:text-slate-300">{item.description}</p>
+          </motion.div>
+        ))}
+      </div>
+    </section>
+  );
+}
 
-        <div className="mt-16 grid gap-8 lg:grid-cols-3">
-          {testimonials.map((testimonial, index) => (
-            <motion.div
-              key={testimonial.name}
-              initial={{ opacity: 0, y: 20 }}
-              animate={isInView ? { opacity: 1, y: 0 } : { opacity: 0, y: 20 }}
-              transition={{ duration: 0.5, delay: index * 0.1 }}
-            >
-              <Card className="h-full border-2 border-gray-200 shadow-lg transition-all hover:shadow-2xl dark:border-neutral-800">
-                <CardHeader>
-                  <div className="flex items-center gap-4">
-                    <div className={cn(
-                      "flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br text-2xl font-bold text-white shadow-lg",
-                      testimonial.gradient
-                    )}>
-                      {testimonial.avatar}
-                    </div>
-                    <div>
-                      <CardTitle className="text-lg font-bold text-gray-900 dark:text-white">
-                        {testimonial.name}
-                      </CardTitle>
-                      <p className="text-sm text-gray-600 dark:text-neutral-400">{testimonial.role}</p>
-                    </div>
-                  </div>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <p className="text-base leading-relaxed text-gray-700 dark:text-neutral-300">
-                    &ldquo;{testimonial.content}&rdquo;
-                  </p>
-                  <div className="inline-flex items-center gap-2 rounded-full bg-green-50 px-4 py-2 text-sm font-semibold text-green-700 dark:bg-green-950 dark:text-green-400">
-                    <TrendingUp className="h-4 w-4" />
-                    {testimonial.metric}
-                  </div>
-                </CardContent>
-              </Card>
-            </motion.div>
-          ))}
-        </div>
+function FeaturesSection() {
+  const ref = useRef(null);
+  const isInView = useInView(ref, { once: true, margin: "-100px" });
+
+  return (
+    <section id="features" className="px-6 py-24 lg:px-8">
+      <SectionHeading
+        eyebrow="What's included in V1"
+        title="Launch-ready video repurposing features"
+        description="No scheduling suite, competitor tracker, or automation OS here. V1 stays focused on upload, clips, captions, brand, export, and billing."
+      />
+      <div ref={ref} className="mx-auto mt-14 grid max-w-7xl gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {v1Features.map((feature, index) => (
+          <motion.div
+            key={feature.title}
+            initial={{ opacity: 0, y: 18 }}
+            animate={isInView ? { opacity: 1, y: 0 } : {}}
+            transition={{ duration: 0.42, delay: index * 0.05 }}
+            className={cn(
+              "rounded-3xl border border-slate-200 bg-white p-6 shadow-sm shadow-slate-950/5 dark:border-white/10 dark:bg-white/[0.055]",
+              index === 0 && "lg:col-span-1"
+            )}
+          >
+            <div className="flex items-start gap-4">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-400 to-cyan-500 text-white shadow-lg shadow-emerald-900/20">
+                <feature.icon className="h-5 w-5" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-slate-950 dark:text-white">{feature.title}</h3>
+                <p className="mt-2 text-sm leading-6 text-slate-700 dark:text-slate-300">{feature.description}</p>
+              </div>
+            </div>
+          </motion.div>
+        ))}
       </div>
     </section>
   );
@@ -731,64 +589,49 @@ function PricingSection({
   const isInView = useInView(ref, { once: true, margin: "-100px" });
 
   return (
-    <section ref={ref} id="pricing" className="bg-gradient-to-b from-white to-gray-50 py-24 dark:from-black dark:to-neutral-950">
-      <div className="mx-auto max-w-7xl px-6 lg:px-8">
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={isInView ? { opacity: 1, y: 0 } : { opacity: 0, y: 20 }}
-          transition={{ duration: 0.5 }}
-          className="mx-auto max-w-2xl text-center"
-        >
-          <Badge className="mb-6 gap-2 border-purple-200 bg-purple-50 px-4 py-2 text-sm font-semibold text-purple-700 dark:border-purple-900 dark:bg-purple-950 dark:text-purple-300">
-            <Shield className="h-4 w-4" />
-            Simple Pricing
-          </Badge>
-          <h2 className="mb-4 text-4xl font-bold tracking-tight text-gray-900 sm:text-5xl dark:text-white">
-            Choose your plan
-          </h2>
-          <p className="mb-8 text-lg leading-relaxed text-gray-600 dark:text-neutral-400">
-            Start free. Scale as you grow. Cancel anytime.
-          </p>
-
-          {/* Toggle controls */}
-          <div className="flex flex-wrap items-center justify-center gap-4">
-            <div className="inline-flex items-center gap-2 rounded-xl border-2 border-gray-200 bg-white p-1.5 shadow-sm dark:border-neutral-800 dark:bg-neutral-900">
-              {(["USD", "INR"] as SupportedCurrency[]).map((curr) => (
-                <button
-                  key={curr}
-                  type="button"
-                  onClick={() => setCurrency(curr)}
-                  className={cn(
-                    "rounded-lg px-6 py-2.5 text-sm font-semibold transition-all",
-                    currency === curr
-                      ? "bg-gradient-to-r from-blue-600 to-cyan-600 text-white shadow-md"
-                      : "text-gray-600 hover:bg-gray-50 dark:text-neutral-400 dark:hover:bg-neutral-800"
-                  )}
-                >
-                  {curr}
-                </button>
-              ))}
-            </div>
-            <span className="inline-flex items-center rounded-xl border-2 border-gray-200 bg-white px-6 py-2.5 text-sm font-semibold text-gray-600 shadow-sm dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-300">
-              Monthly only
-            </span>
+    <section
+      ref={ref}
+      id="pricing"
+      className="border-y border-slate-200/80 bg-[linear-gradient(180deg,#ffffff_0%,#eef9fb_100%)] px-6 py-24 dark:border-white/10 dark:bg-[linear-gradient(180deg,#0b1718_0%,#0c1720_100%)] lg:px-8"
+    >
+      <motion.div
+        initial={{ opacity: 0, y: 18 }}
+        animate={isInView ? { opacity: 1, y: 0 } : {}}
+        transition={{ duration: 0.45 }}
+      >
+        <SectionHeading
+          eyebrow="Pricing"
+          title="Start free. Upgrade when clips become a workflow."
+          description="Free, Plus, and Pro stay focused on the V1 repurposing product. India-friendly INR pricing is available."
+        />
+        <div className="mt-8 flex justify-center">
+          <div className="inline-flex rounded-full border border-slate-200 bg-white p-1 shadow-sm dark:border-white/10 dark:bg-white/[0.06]">
+            {(["USD", "INR"] as SupportedCurrency[]).map((item) => (
+              <button
+                key={item}
+                type="button"
+                onClick={() => setCurrency(item)}
+                className={cn(
+                  "rounded-full px-5 py-2 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400",
+                  currency === item
+                    ? "bg-slate-950 text-white shadow-sm dark:bg-white dark:text-slate-950"
+                    : "text-slate-700 hover:text-slate-950 dark:text-slate-300 dark:hover:text-white"
+                )}
+              >
+                {item}
+              </button>
+            ))}
           </div>
-        </motion.div>
-
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={isInView ? { opacity: 1, y: 0 } : { opacity: 0, y: 20 }}
-          transition={{ duration: 0.5, delay: 0.2 }}
-          className="mt-16"
-        >
+        </div>
+        <div className="mx-auto mt-14 max-w-7xl">
           <PricingGrid
             currency={currency}
             onSelectPlan={(planId) =>
-              trackEvent({ name: "pricing_select", payload: { plan: planId, cycle: "monthly", currency } })
+              trackEvent({ name: "pricing_select", payload: { plan: planId, currency } })
             }
           />
-        </motion.div>
-      </div>
+        </div>
+      </motion.div>
     </section>
   );
 }
@@ -796,68 +639,47 @@ function PricingSection({
 function FaqSection() {
   const ref = useRef(null);
   const isInView = useInView(ref, { once: true, margin: "-100px" });
-  const [openIndex, setOpenIndex] = useState<number | null>(null);
+  const [openIndex, setOpenIndex] = useState<number | null>(0);
 
   return (
-    <section id="faq" ref={ref} className="bg-white py-24 dark:bg-black">
-      <div className="mx-auto max-w-3xl px-6 lg:px-8">
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={isInView ? { opacity: 1, y: 0 } : { opacity: 0, y: 20 }}
-          transition={{ duration: 0.5 }}
-          className="mb-16 text-center"
-        >
-          <h2 className="mb-4 text-4xl font-bold tracking-tight text-gray-900 sm:text-5xl dark:text-white">
-            Frequently asked questions
-          </h2>
-          <p className="text-lg leading-relaxed text-gray-600 dark:text-neutral-400">
-            Everything you need to know about ViralSnipAI
-          </p>
-        </motion.div>
-
-        <div className="space-y-4">
-          {faqItems.map((faq, index) => (
-            <motion.div
-              key={index}
-              initial={{ opacity: 0, y: 10 }}
-              animate={isInView ? { opacity: 1, y: 0 } : { opacity: 0, y: 10 }}
-              transition={{ duration: 0.3, delay: index * 0.05 }}
+    <section id="faq" ref={ref} className="px-6 py-24 lg:px-8">
+      <SectionHeading
+        eyebrow="FAQ"
+        title="Straight answers before beta"
+        description="V1 is intentionally narrow: upload long video, generate clips, edit captions, apply brand, export."
+      />
+      <div className="mx-auto mt-12 max-w-3xl space-y-3">
+        {faqItems.map((item, index) => (
+          <motion.div
+            key={item.question}
+            initial={{ opacity: 0, y: 12 }}
+            animate={isInView ? { opacity: 1, y: 0 } : {}}
+            transition={{ duration: 0.35, delay: index * 0.04 }}
+          >
+            <button
+              type="button"
+              onClick={() => setOpenIndex(openIndex === index ? null : index)}
+              className="w-full rounded-3xl border border-slate-200 bg-white p-6 text-left shadow-sm shadow-slate-950/5 transition hover:border-emerald-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 dark:border-white/10 dark:bg-white/[0.055] dark:hover:border-emerald-300/30"
             >
-              <button
-                onClick={() => setOpenIndex(openIndex === index ? null : index)}
-                className="w-full rounded-xl border-2 border-gray-200 bg-white p-6 text-left transition-all hover:border-blue-300 hover:shadow-lg dark:border-neutral-800 dark:bg-neutral-900 dark:hover:border-blue-700"
+              <div className="flex items-start justify-between gap-4">
+                <h3 className="text-base font-semibold text-slate-950 sm:text-lg dark:text-white">
+                  {item.question}
+                </h3>
+                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-emerald-50 text-lg font-semibold text-emerald-700 dark:bg-emerald-400/10 dark:text-emerald-200">
+                  {openIndex === index ? "-" : "+"}
+                </span>
+              </div>
+              <motion.div
+                initial={false}
+                animate={{ height: openIndex === index ? "auto" : 0, opacity: openIndex === index ? 1 : 0 }}
+                transition={{ duration: 0.25 }}
+                className="overflow-hidden"
               >
-                <div className="flex items-start justify-between gap-4">
-                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-                    {faq.question}
-                  </h3>
-                  <motion.div
-                    animate={{ rotate: openIndex === index ? 45 : 0 }}
-                    transition={{ duration: 0.2 }}
-                    className="flex-shrink-0"
-                  >
-                    <div className="flex h-6 w-6 items-center justify-center rounded-full bg-blue-100 dark:bg-blue-950">
-                      <span className="text-sm font-bold text-blue-600 dark:text-blue-400">+</span>
-                    </div>
-                  </motion.div>
-                </div>
-                <motion.div
-                  initial={false}
-                  animate={{
-                    height: openIndex === index ? "auto" : 0,
-                    opacity: openIndex === index ? 1 : 0,
-                  }}
-                  transition={{ duration: 0.3 }}
-                  className="overflow-hidden"
-                >
-                  <p className="mt-4 text-base leading-relaxed text-gray-600 dark:text-neutral-400">
-                    {faq.answer}
-                  </p>
-                </motion.div>
-              </button>
-            </motion.div>
-          ))}
-        </div>
+                <p className="mt-4 text-sm leading-7 text-slate-700 dark:text-slate-300">{item.answer}</p>
+              </motion.div>
+            </button>
+          </motion.div>
+        ))}
       </div>
     </section>
   );
@@ -865,68 +687,54 @@ function FaqSection() {
 
 function CtaSection() {
   return (
-    <section className="relative overflow-hidden bg-gradient-to-br from-blue-600 via-blue-700 to-cyan-600 py-24 dark:from-blue-800 dark:via-blue-900 dark:to-cyan-800">
-      {/* Background pattern */}
-      <div className="absolute inset-0 opacity-20">
-        <div className="absolute -top-24 -left-24 h-96 w-96 rounded-full bg-white blur-3xl" />
-        <div className="absolute -bottom-24 -right-24 h-96 w-96 rounded-full bg-white blur-3xl" />
-      </div>
-
-      <div className="relative mx-auto max-w-4xl px-6 text-center lg:px-8">
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5 }}
-          viewport={{ once: true }}
-        >
-          <Badge className="mb-6 gap-2 border-white/30 bg-white/10 px-4 py-2 text-sm font-semibold text-white backdrop-blur-sm">
-            <Rocket className="h-4 w-4" />
-            Join 20M+ Creators
-          </Badge>
-          <h2 className="mb-6 text-4xl font-bold text-white sm:text-5xl lg:text-6xl">
-            Ready to go viral?
+    <section className="px-6 pb-24 lg:px-8">
+      <div className="relative mx-auto max-w-6xl overflow-hidden rounded-[2rem] border border-white/70 bg-slate-950 px-6 py-16 text-center shadow-2xl shadow-slate-950/20 dark:border-white/10">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_0%,rgba(20,184,166,0.34),transparent_34%),radial-gradient(circle_at_75%_20%,rgba(59,130,246,0.25),transparent_28%)]" />
+        <div className="relative mx-auto max-w-3xl">
+          <Badge className="mb-6 border-white/15 bg-white/10 text-emerald-100">V1 beta is open</Badge>
+          <h2 className="text-balance text-4xl font-semibold tracking-tight text-white sm:text-5xl">
+            Ready to turn your next long video into clips?
           </h2>
-          <p className="mb-10 text-xl leading-relaxed text-blue-50">
-            Start creating engaging short-form content today. No credit card required.
+          <p className="mx-auto mt-5 max-w-2xl text-lg leading-8 text-slate-300">
+            Upload your next podcast, demo, tutorial, or interview and leave with short-form clips ready to review and export.
           </p>
-
-          <div className="flex flex-col items-center justify-center gap-4 sm:flex-row">
-            <Button
-              asChild
-              size="lg"
-              className="group h-14 gap-2 rounded-xl bg-white px-8 text-lg font-semibold text-blue-600 shadow-2xl transition-all hover:bg-blue-50 hover:shadow-blue-900/50"
-            >
-              <Link href="/signup">
-                Start Creating Free
-                <ArrowRight className="h-5 w-5 transition-transform group-hover:translate-x-1" />
-              </Link>
-            </Button>
-            <Button
-              asChild
-              size="lg"
-              variant="outline"
-              className="h-14 gap-2 rounded-xl border-2 border-white bg-transparent px-8 text-lg font-semibold text-white hover:bg-white/10"
-            >
-              <Link href="#pricing">View Pricing</Link>
-            </Button>
-          </div>
-
-          <div className="mt-10 flex flex-wrap items-center justify-center gap-8 text-sm text-blue-50">
-            <div className="flex items-center gap-2">
-              <CheckCircle2 className="h-5 w-5" />
-              <span>10 free clips monthly</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <CheckCircle2 className="h-5 w-5" />
-              <span>No credit card required</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <CheckCircle2 className="h-5 w-5" />
-              <span>Setup in 2 minutes</span>
-            </div>
-          </div>
-        </motion.div>
+          <Button
+            asChild
+            size="lg"
+            className="mt-9 rounded-full bg-white px-8 font-semibold text-slate-950 shadow-xl hover:bg-emerald-50 focus-visible:ring-2 focus-visible:ring-emerald-300"
+            onClick={() => trackEvent({ name: "cta_start_free", payload: { source: "final_cta" } })}
+          >
+            <Link href="/signup">
+              Start free
+              <ArrowRight className="ml-2 h-4 w-4" />
+            </Link>
+          </Button>
+        </div>
       </div>
     </section>
+  );
+}
+
+function SectionHeading({
+  eyebrow,
+  title,
+  description,
+}: {
+  eyebrow: string;
+  title: string;
+  description: string;
+}) {
+  return (
+    <div className="mx-auto max-w-3xl text-center">
+      <p className="text-sm font-semibold uppercase tracking-[0.22em] text-emerald-600 dark:text-emerald-300">
+        {eyebrow}
+      </p>
+      <h2 className="mt-4 text-balance text-3xl font-semibold tracking-tight text-slate-950 sm:text-5xl dark:text-white">
+        {title}
+      </h2>
+      <p className="mx-auto mt-5 max-w-2xl text-pretty text-base leading-7 text-slate-700 sm:text-lg dark:text-slate-300">
+        {description}
+      </p>
+    </div>
   );
 }

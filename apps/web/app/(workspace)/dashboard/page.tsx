@@ -11,6 +11,7 @@ import {
   Sparkles,
   Upload,
   XCircle,
+  Zap,
 } from "lucide-react";
 
 import { getCurrentUser, getCurrentSession } from "@/lib/auth";
@@ -19,6 +20,13 @@ import { resolvePlanTier, formatPlanName } from "@/lib/billing/plans";
 import { formatDate } from "@/lib/utils";
 import { NewProjectDialog } from "@/components/projects/new-project-dialog";
 import { cn } from "@/lib/utils";
+import {
+  AppCard,
+  EmptyState as ProductEmptyState,
+  PageHeader,
+  StatusBadge,
+  UsageMeter as ProductUsageMeter,
+} from "@/components/product-ui/primitives";
 
 type ExportStatusSummary = {
   id: string;
@@ -144,7 +152,7 @@ export default async function DashboardPage() {
         where: {
           project: { userId: user.id },
           createdAt: { gte: startOfMonth },
-          status: { in: ["complete", "completed"] },
+          status: { in: ["done", "complete", "completed"] },
         },
       });
     })(),
@@ -179,68 +187,61 @@ export default async function DashboardPage() {
   const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
 
   return (
-    <div className="space-y-6 pb-10 animate-enter">
-      {/* ── Hero header ─────────────────────────────────────────── */}
-      <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-        <div>
-          <p className="mb-1 text-xs font-medium uppercase tracking-widest text-muted-foreground/50">
-            {greeting}
-          </p>
-          <h1 className="text-2xl font-bold tracking-tight text-foreground">
-            {firstName}&apos;s studio
-          </h1>
-          <p className="mt-1 max-w-xl text-sm text-muted-foreground/70">
-            Upload a long video, let ViralSnipAI find the strongest moments, and export
-            branded short-form clips ready to publish.
-          </p>
-        </div>
-        {hasProjects ? (
+    <div className="w-full space-y-6 pb-10 animate-enter">
+      <AppCard className="relative overflow-hidden p-6 sm:p-8">
+        <div className="absolute inset-y-0 right-0 hidden w-1/2 bg-[radial-gradient(circle_at_80%_30%,rgba(16,185,129,0.18),transparent_32%),radial-gradient(circle_at_55%_70%,rgba(6,182,212,0.16),transparent_28%)] lg:block" />
+        <div className="relative flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
+          <PageHeader
+            eyebrow={greeting}
+            title={`${firstName}'s studio`}
+            description="Upload long videos, let ViralSnipAI find the strongest moments, and export branded short-form clips ready to publish."
+            icon={Sparkles}
+          />
           <div className="flex flex-wrap items-center gap-2">
             <Link
               href="/projects"
-              className="inline-flex items-center gap-1.5 rounded-lg border border-border/60 bg-card/60 px-3 py-2 text-xs font-semibold text-foreground/80 transition-all hover:border-border hover:bg-card"
+              className="inline-flex h-10 items-center gap-2 rounded-full border border-border/70 bg-card px-4 text-sm font-semibold text-foreground transition hover:border-primary/35"
             >
-              <FolderKanban className="h-3.5 w-3.5" />
-              All projects
+              <FolderKanban className="h-4 w-4" />
+              View projects
             </Link>
-            <NewProjectDialog
-              triggerLabel="Create new clip"
-              triggerSize="sm"
-              onSuccessRedirect="/repurpose"
-            />
+            <NewProjectDialog triggerLabel="Create new clip" triggerSize="sm" onSuccessRedirect="/repurpose" />
           </div>
-        ) : null}
-      </div>
+        </div>
+      </AppCard>
 
-      {/* ── Empty state ─────────────────────────────────────────── */}
       {!hasProjects ? (
         <EmptyState />
       ) : (
-        <div className="grid gap-5 lg:grid-cols-3">
-          {/* Left: recent projects */}
-          <div className="space-y-5 lg:col-span-2">
-            <section>
-              <div className="mb-3 flex items-center justify-between">
-                <div>
-                  <h2 className="text-sm font-semibold text-foreground">Recent projects</h2>
-                  <p className="text-xs text-muted-foreground/60">
-                    Continue a project or start a new clip from a long video.
-                  </p>
-                </div>
-                <Link
-                  href="/projects"
-                  className="text-xs font-medium text-primary/80 hover:text-primary"
-                >
-                  View all →
-                </Link>
-              </div>
+        <>
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <Metric title="Projects" value={summarizedProjects.length} icon={FolderKanban} />
+            <Metric title="Clips generated" value={summarizedProjects.reduce((sum, item) => sum + item.clipCount, 0)} icon={Scissors} />
+            <Metric title="Exports this month" value={monthlyUsage} icon={Download} />
+            <Metric title="Credits remaining" value={creditsRemaining >= 999_000 ? "Unlimited" : creditsRemaining} icon={Zap} />
+          </div>
 
-              <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
+            <div className="space-y-5">
+              <AppCard className="p-5">
+                <div className="mb-5 flex items-center justify-between">
+                  <div>
+                    <h2 className="text-base font-semibold text-foreground">Recent projects</h2>
+                    <p className="text-sm text-muted-foreground">
+                      Continue a project or start a new clip from long-form video.
+                    </p>
+                  </div>
+                  <Link href="/projects" className="text-sm font-semibold text-primary hover:underline">
+                    View all
+                  </Link>
+                </div>
+
+                <div className="grid gap-3 md:grid-cols-2">
                 {summarizedProjects.map((project) => (
                   <Link
                     key={project.id}
                     href={`/repurpose?projectId=${project.id}`}
-                    className="group rounded-xl border border-border/50 bg-card/60 p-4 transition-all hover:border-border hover:bg-card"
+                    className="group rounded-2xl border border-border/70 bg-background/60 p-4 transition-all hover:-translate-y-0.5 hover:border-primary/35 hover:bg-card hover:shadow-lg hover:shadow-emerald-950/10"
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0 flex-1">
@@ -251,14 +252,7 @@ export default async function DashboardPage() {
                           Updated {formatDate(project.updatedAt)}
                         </p>
                       </div>
-                      <div
-                        className={cn(
-                          "flex h-8 w-8 items-center justify-center rounded-lg ring-1",
-                          project.primaryAssetType
-                            ? "bg-primary/10 text-primary ring-primary/20"
-                            : "bg-muted/30 text-muted-foreground/50 ring-border/40",
-                        )}
-                      >
+                      <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-primary/10 text-primary ring-1 ring-primary/20">
                         <FileVideo className="h-4 w-4" />
                       </div>
                     </div>
@@ -273,15 +267,7 @@ export default async function DashboardPage() {
                       </span>
                     </div>
                     {project.latestExportStatus ? (
-                      <div
-                        className={cn(
-                          "mt-3 inline-flex items-center gap-1.5 rounded-md border px-1.5 py-0.5 text-[10px] font-semibold",
-                          statusTone(project.latestExportStatus),
-                        )}
-                      >
-                        <StatusIcon status={project.latestExportStatus} />
-                        {statusLabel(project.latestExportStatus)}
-                      </div>
+                      <StatusBadge status={statusLabel(project.latestExportStatus)} className="mt-3" />
                     ) : null}
                     <div className="mt-4 flex items-center gap-1.5 text-xs font-semibold text-primary/80 transition-colors group-hover:text-primary">
                       Open project
@@ -289,42 +275,33 @@ export default async function DashboardPage() {
                     </div>
                   </Link>
                 ))}
-              </div>
-            </section>
-
-            <section>
-              <div className="mb-3 flex items-center justify-between">
-                <div>
-                  <h2 className="text-sm font-semibold text-foreground">Export status</h2>
-                  <p className="text-xs text-muted-foreground/60">
-                    Recent renders across your projects.
-                  </p>
                 </div>
-                <Link
-                  href="/repurpose/export"
-                  className="text-xs font-medium text-primary/80 hover:text-primary"
-                >
-                  All exports →
-                </Link>
-              </div>
+              </AppCard>
 
+              <AppCard className="p-5">
+                <div className="mb-5 flex items-center justify-between">
+                  <div>
+                    <h2 className="text-base font-semibold text-foreground">Export status</h2>
+                    <p className="text-sm text-muted-foreground">Recent renders across your projects.</p>
+                  </div>
+                  <Link href="/repurpose/export" className="text-sm font-semibold text-primary hover:underline">
+                    All exports
+                  </Link>
+                </div>
               {exportStatusRows.length === 0 ? (
-                <div className="rounded-xl border border-dashed border-border/40 bg-white/[0.02] p-6 text-center text-xs text-muted-foreground/60">
+                <div className="rounded-2xl border border-dashed border-border/70 bg-muted/30 p-8 text-center text-sm text-muted-foreground">
                   No exports yet. Finish editing clips to queue a render.
                 </div>
               ) : (
-                <div className="divide-y divide-border/40 overflow-hidden rounded-xl border border-border/50 bg-card/40">
+                <div className="space-y-3">
                   {exportStatusRows.map((row) => (
                     <Link
                       key={row.id}
                       href={`/repurpose/export?projectId=${row.projectId}`}
-                      className="flex items-center gap-3 px-4 py-3 text-sm transition-colors hover:bg-white/[0.02]"
+                      className="flex items-center gap-3 rounded-2xl border border-border/70 bg-background/60 px-4 py-3 text-sm transition hover:border-primary/35"
                     >
                       <div
-                        className={cn(
-                          "flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border",
-                          statusTone(row.status),
-                        )}
+                        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-primary/20 bg-primary/10 text-primary"
                       >
                         <StatusIcon status={row.status} />
                       </div>
@@ -337,23 +314,24 @@ export default async function DashboardPage() {
                       <span className="text-[11px] text-muted-foreground/60">
                         {formatDate(row.updatedAt)}
                       </span>
+                      <StatusBadge status={row.status} />
                     </Link>
                   ))}
                 </div>
               )}
-            </section>
-          </div>
+              </AppCard>
+            </div>
 
-          {/* Right: usage + plan */}
-          <div className="space-y-4">
+            <div className="space-y-4">
             <UsageCard
               planLabel={formatPlanName(tier)}
               creditsRemaining={creditsRemaining}
               exportsThisMonth={monthlyUsage}
             />
             <QuickHelp />
+            </div>
           </div>
-        </div>
+        </>
       )}
     </div>
   );
@@ -361,79 +339,31 @@ export default async function DashboardPage() {
 
 function EmptyState() {
   return (
-    <div className="rounded-2xl border border-dashed border-border/50 bg-gradient-to-br from-primary/[0.06] via-background to-background p-8 sm:p-12">
-      <div className="mx-auto max-w-2xl text-center">
-        <div
-          className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl"
-          style={{
-            background: "linear-gradient(135deg, #10b981 0%, #34d399 100%)",
-            boxShadow: "0 0 24px hsl(160 84% 39% / 0.45)",
-          }}
-        >
-          <Upload className="h-6 w-6 text-white" />
-        </div>
-        <h2 className="mt-5 text-2xl font-bold tracking-tight text-foreground">
-          Upload your first long video and turn it into viral-ready clips.
-        </h2>
-        <p className="mx-auto mt-2 max-w-xl text-sm text-muted-foreground/70">
-          Best for podcasts, webinars, tutorials, interviews, and long-form videos. We&apos;ll
-          find the strongest moments and prepare clips for short-form platforms.
-        </p>
-
-        <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
-          <NewProjectDialog
-            triggerLabel="Create first clip"
-            triggerSize="lg"
-            onSuccessRedirect="/repurpose"
-          />
-          <Link
-            href="/brand-kit"
-            className="inline-flex items-center gap-1.5 rounded-xl border border-border/60 bg-card/60 px-4 py-2.5 text-sm font-semibold text-foreground/80 transition-all hover:border-border hover:bg-card"
-          >
-            Set up brand kit
-            <ArrowRight className="h-3.5 w-3.5" />
-          </Link>
-        </div>
-
-        <div className="mt-8 grid gap-3 sm:grid-cols-3">
-          <EmptyTile
-            icon={<Upload className="h-4 w-4" />}
-            title="Upload or paste a URL"
-            description="MP4, MOV, WebM, MP3, or WAV — up to 4 GB."
-          />
-          <EmptyTile
-            icon={<Sparkles className="h-4 w-4" />}
-            title="AI finds the best moments"
-            description="Auto-detected highlights scored for virality."
-          />
-          <EmptyTile
-            icon={<Download className="h-4 w-4" />}
-            title="Branded export, ready to post"
-            description="Captions, brand kit, and aspect ratios applied."
-          />
-        </div>
-      </div>
-    </div>
+    <ProductEmptyState
+      icon={Upload}
+      title="Upload your first long video and turn it into clips"
+      description="Best for podcasts, webinars, tutorials, interviews, and founder videos. ViralSnipAI finds the strongest moments and prepares short-form exports."
+      secondary={{ label: "Set up brand kit", href: "/brand-kit" }}
+      className="min-h-[420px]"
+    >
+      <NewProjectDialog triggerLabel="Create first clip" triggerSize="lg" onSuccessRedirect="/repurpose" />
+    </ProductEmptyState>
   );
 }
 
-function EmptyTile({
-  icon,
-  title,
-  description,
-}: {
-  icon: React.ReactNode;
-  title: string;
-  description: string;
-}) {
+function Metric({ title, value, icon: Icon }: { title: string; value: string | number; icon: typeof Sparkles }) {
   return (
-    <div className="rounded-xl border border-border/40 bg-white/[0.02] p-4 text-left">
-      <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary/10 text-primary">
-        {icon}
+    <AppCard className="p-5" interactive>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <p className="text-sm font-medium text-muted-foreground">{title}</p>
+          <p className="mt-2 text-3xl font-semibold tracking-tight text-foreground">{value}</p>
+        </div>
+        <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-500/14 to-cyan-500/14 text-primary ring-1 ring-primary/20">
+          <Icon className="h-5 w-5" />
+        </div>
       </div>
-      <p className="mt-3 text-sm font-semibold text-foreground">{title}</p>
-      <p className="mt-0.5 text-xs text-muted-foreground/70">{description}</p>
-    </div>
+    </AppCard>
   );
 }
 
@@ -452,7 +382,7 @@ function UsageCard({
     : creditsRemaining.toLocaleString();
 
   return (
-    <div className="rounded-xl border border-border/50 bg-card/60 p-5">
+    <AppCard className="p-5">
       <div className="flex items-center justify-between">
         <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground/60">
           Your plan
@@ -467,13 +397,12 @@ function UsageCard({
       <p className="mt-2 text-lg font-bold text-foreground">{planLabel}</p>
 
       <div className="mt-4 space-y-3">
-        <div className="flex items-center justify-between text-sm">
-          <span className="text-muted-foreground/70">Credits remaining</span>
-          <span className="font-semibold text-foreground">{creditsDisplay}</span>
-        </div>
-        <div className="flex items-center justify-between text-sm">
-          <span className="text-muted-foreground/70">Exports this month</span>
-          <span className="font-semibold text-foreground">{exportsThisMonth}</span>
+        <ProductUsageMeter label="Exports this month" value={exportsThisMonth} max={tierLimit(planLabel)} />
+        <div className="rounded-2xl border border-border/70 bg-muted/30 p-3 text-sm">
+          <div className="flex items-center justify-between">
+            <span className="text-muted-foreground">Credits remaining</span>
+            <span className="font-semibold text-foreground">{creditsDisplay}</span>
+          </div>
         </div>
       </div>
 
@@ -483,13 +412,13 @@ function UsageCard({
       >
         Upgrade plan
       </Link>
-    </div>
+    </AppCard>
   );
 }
 
 function QuickHelp() {
   return (
-    <div className="rounded-xl border border-border/50 bg-card/60 p-5">
+    <AppCard className="p-5">
       <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground/60">
         Tips
       </p>
@@ -498,6 +427,12 @@ function QuickHelp() {
         <li>Set your brand kit once — colours, fonts, and captions flow to every export.</li>
         <li>Use the target platform in each project to get the right aspect ratio.</li>
       </ul>
-    </div>
+    </AppCard>
   );
+}
+
+function tierLimit(planLabel: string) {
+  if (/pro/i.test(planLabel)) return 250;
+  if (/plus|starter|creator/i.test(planLabel)) return 50;
+  return 5;
 }

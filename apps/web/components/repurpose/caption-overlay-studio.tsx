@@ -96,11 +96,11 @@ export function CaptionOverlayStudio({
   return (
     <div className="space-y-4">
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
-        <section className="rounded-xl border border-white/10 bg-black/20 p-4">
+        <section className="rounded-xl border border-border/40 bg-muted/30 p-4">
           <div className="mb-3 flex items-center gap-2">
             <Type className="h-4 w-4 text-violet-400" />
             <div>
-              <p className="text-sm font-semibold text-white">Caption theme</p>
+              <p className="text-sm font-semibold text-foreground">Caption theme</p>
               <p className="text-xs text-muted-foreground/55">
                 Style burned captions for exports and live preview.
               </p>
@@ -124,10 +124,10 @@ export function CaptionOverlayStudio({
                   "rounded-lg border px-3 py-2 text-left transition-colors",
                   value.presetId === style.id
                     ? "border-violet-500/40 bg-violet-500/10"
-                    : "border-white/8 bg-white/[0.02] hover:bg-white/[0.05]"
+                    : "border-border/40 bg-muted/20 hover:bg-muted/40"
                 )}
               >
-                <p className="text-sm font-medium text-white">{style.name}</p>
+                <p className="text-sm font-medium text-foreground">{style.name}</p>
                 <p className="mt-1 text-xs text-muted-foreground/55">{style.description}</p>
               </button>
             ))}
@@ -138,7 +138,7 @@ export function CaptionOverlayStudio({
               <input
                 value={value.fontFamily}
                 onChange={(event) => onChange({ ...value, fontFamily: event.target.value })}
-                className="h-10 w-full rounded-lg border border-white/10 bg-black/20 px-3 text-sm outline-none focus:border-violet-500/50"
+                className="h-10 w-full rounded-lg border border-border/50 bg-background px-3 text-sm outline-none focus:border-primary/50"
                 placeholder="Arial"
               />
             </Field>
@@ -222,13 +222,13 @@ export function CaptionOverlayStudio({
           </div>
         </section>
 
-        <section className="rounded-xl border border-white/10 bg-black/20 p-4">
-          <p className="text-sm font-semibold text-white">Live preview</p>
+        <section className="rounded-xl border border-border/40 bg-muted/30 p-4">
+          <p className="text-sm font-semibold text-foreground">Live preview</p>
           <p className="mt-1 text-xs text-muted-foreground/55">
             Real clip preview with live caption and hook overlay styling.
           </p>
 
-          <div className="relative mt-4 overflow-hidden rounded-xl border border-white/10 bg-zinc-950 aspect-[9/16]">
+          <div className="relative mt-4 overflow-hidden rounded-xl border border-border/40 bg-zinc-950 aspect-[9/16]">
             {previewPath ? (
               <video
                 ref={videoRef}
@@ -278,17 +278,17 @@ export function CaptionOverlayStudio({
             <div className="absolute inset-x-0 bottom-0 h-28 bg-gradient-to-t from-black/40 to-transparent" />
           </div>
 
-          <div className="mt-3 rounded-lg border border-white/8 bg-white/[0.02] px-3 py-2 text-xs text-muted-foreground/60">
+          <div className="mt-3 rounded-lg border border-border/40 bg-muted/20 px-3 py-2 text-xs text-muted-foreground/60">
             {selectedStyle.name} preset · {value.hookOverlays.length} hook overlay
             {value.hookOverlays.length === 1 ? "" : "s"}
           </div>
         </section>
       </div>
 
-      <section className="rounded-xl border border-white/10 bg-black/20 p-4">
+      <section className="rounded-xl border border-border/40 bg-muted/30 p-4">
         <div className="mb-3 flex items-center justify-between gap-3">
           <div>
-            <p className="text-sm font-semibold text-white">Hook overlays</p>
+            <p className="text-sm font-semibold text-foreground">Hook overlays</p>
             <p className="text-xs text-muted-foreground/55">
               Timed text callouts that appear on top of the clip during export.
             </p>
@@ -309,15 +309,15 @@ export function CaptionOverlayStudio({
         </div>
 
         {value.hookOverlays.length === 0 ? (
-          <div className="rounded-lg border border-dashed border-white/10 px-4 py-6 text-sm text-muted-foreground/45">
+          <div className="rounded-lg border border-dashed border-border/40 px-4 py-6 text-sm text-muted-foreground/45">
             No hook overlay yet. Add one for intro punch, CTA, or quote emphasis.
           </div>
         ) : (
           <div className="space-y-3">
             {value.hookOverlays.map((overlay, index) => (
-              <div key={overlay.id} className="rounded-lg border border-white/8 bg-white/[0.02] p-3">
+              <div key={overlay.id} className="rounded-lg border border-border/40 bg-muted/20 p-3">
                 <div className="mb-3 flex items-center justify-between gap-2">
-                  <p className="text-sm font-medium text-white">Hook {index + 1}</p>
+                  <p className="text-sm font-medium text-foreground">Hook {index + 1}</p>
                   <button
                     type="button"
                     onClick={() =>
@@ -338,7 +338,7 @@ export function CaptionOverlayStudio({
                     <input
                       value={overlay.text}
                       onChange={(event) => updateOverlay(overlay.id, { text: event.target.value })}
-                      className="h-10 w-full rounded-lg border border-white/10 bg-black/20 px-3 text-sm outline-none focus:border-violet-500/50"
+                      className="h-10 w-full rounded-lg border border-border/50 bg-background px-3 text-sm outline-none focus:border-primary/50"
                       placeholder="What should appear on screen?"
                     />
                   </Field>
@@ -351,7 +351,7 @@ export function CaptionOverlayStudio({
                       onChange={(event) =>
                         updateOverlay(overlay.id, { startMs: Number(event.target.value) || 0 })
                       }
-                      className="h-10 w-full rounded-lg border border-white/10 bg-black/20 px-3 text-sm outline-none focus:border-violet-500/50"
+                      className="h-10 w-full rounded-lg border border-border/50 bg-background px-3 text-sm outline-none focus:border-primary/50"
                     />
                   </Field>
                   <Field label="End ms">
@@ -363,7 +363,7 @@ export function CaptionOverlayStudio({
                       onChange={(event) =>
                         updateOverlay(overlay.id, { endMs: Number(event.target.value) || overlay.endMs })
                       }
-                      className="h-10 w-full rounded-lg border border-white/10 bg-black/20 px-3 text-sm outline-none focus:border-violet-500/50"
+                      className="h-10 w-full rounded-lg border border-border/50 bg-background px-3 text-sm outline-none focus:border-primary/50"
                     />
                   </Field>
                 </div>
@@ -491,8 +491,8 @@ function TogglePill({
       className={cn(
         "rounded-full border px-3 py-1.5 text-xs font-medium transition-colors",
         active
-          ? "border-violet-500/40 bg-violet-500/15 text-white"
-          : "border-white/10 bg-white/[0.03] text-muted-foreground/70 hover:bg-white/[0.06]"
+          ? "border-primary/40 bg-primary/15 text-primary"
+          : "border-border/50 bg-muted/30 text-muted-foreground/70 hover:bg-muted/50"
       )}
     >
       {label}
@@ -511,14 +511,14 @@ function ColorField({
 }) {
   return (
     <Field label={label}>
-      <label className="flex h-10 items-center gap-2 rounded-lg border border-white/10 bg-black/20 px-3">
+      <label className="flex h-10 items-center gap-2 rounded-lg border border-border/50 bg-background px-3">
         <input
           type="color"
           value={value}
           onChange={(event) => onChange(event.target.value.toUpperCase())}
           className="h-5 w-5 rounded border-0 bg-transparent"
         />
-        <span className="text-xs text-white/80">{value}</span>
+        <span className="text-xs text-foreground/80">{value}</span>
       </label>
     </Field>
   );

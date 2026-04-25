@@ -248,7 +248,7 @@ The expected degraded behavior is explicit job failure with actionable status, n
 
 ---
 
-## AI Model Upgrade: 3-Tier Strategy
+## AI Model Upgrade: OpenRouter Video Routing
 
 ### Current (Outdated)
 ```typescript
@@ -259,24 +259,28 @@ The expected degraded behavior is explicit job failure with actionable status, n
 { value: "gpt-4.1-mini",        label: "OpenAI GPT-4.1 Mini" },
 ```
 
-### New (3-Tier)
+### Current OpenRouter Selector
 ```typescript
 export const HIGHLIGHT_MODEL_OPTIONS = [
-  { value: "gemini-3-pro",     label: "Gemini 3 Pro (Recommended)" },
-  { value: "gpt-5.2",          label: "GPT-5.2 (Highest Accuracy)" },
-  { value: "gemini-2.5-flash", label: "Gemini 2.5 Flash (Fast & Cheap)" },
-  { value: "gemini-2.5-pro",   label: "Gemini 2.5 Pro (Reliable)" },
+  { value: "google/gemini-3.1-pro-preview", label: "Gemini 3.1 Pro (Best overall)" },
+  { value: "google/gemini-3-flash-preview", label: "Gemini 3 Flash (Balanced video)" },
+  { value: "qwen/qwen3.6-plus", label: "Qwen3.6 Plus (Cost-efficient video)" },
+  { value: "xiaomi/mimo-v2.5", label: "MiMo V2.5 (Native audio/video)" },
+  { value: "google/gemini-3.1-flash-lite-preview", label: "Gemini 3.1 Flash Lite (Fastest)" },
+  { value: "openai/gpt-5.5", label: "GPT-5.5 (Premium transcript QA)" },
 ] as const;
 ```
 
-| Tier | Model | Video-MMMU | Cost/1M Input | Best For |
-|------|-------|-----------|---------------|----------|
-| Default | Gemini 3 Pro | 87.6% | ~$1.25 | Native video frame analysis + 1M context |
-| Premium | GPT-5.2 | 90.5% | ~$1.25 | Highest accuracy for important content |
-| Budget | Gemini 2.5 Flash | ~80% | $0.30 | Fast inference, batch processing |
-| Legacy | Gemini 2.5 Pro | 84.8% | ~$1.25 | Backward compatibility |
+| Tier | Model | Best For |
+|------|-------|----------|
+| Default | Gemini 3.1 Pro Preview | Long transcript/video reasoning and structured highlight JSON |
+| Balanced | Gemini 3 Flash Preview | Faster multimodal detection and future ingest metadata |
+| Cost fallback | Qwen3.6 Plus | Lower-cost video-capable long-context analysis |
+| Media fallback | MiMo V2.5 | Native audio/video understanding experiments |
+| Fastest | Gemini 3.1 Flash Lite Preview | Low-cost caption and short transform workloads |
+| QA | GPT-5.5 | Premium transcript/file review, not default native-video detection |
 
-**Key:** Gemini 3 Pro can analyze actual video frames (visual hooks, pacing, expressions) alongside transcripts. GPT-5.2 has highest benchmark accuracy. Gemini 2.5 Flash is 4x cheaper for quick iterations.
+**Key:** The current V1 flow still analyzes transcripts and structured video metadata after upload/transcription. Gemini 3.1 Pro is the default because it is the strongest OpenRouter-listed fit for long-context highlight reasoning and structured clip output. Gemini 3 Flash is the default for future direct video/audio ingest metadata.
 
 **Backend change:** Update `auto-highlights/route.ts` model routing to support the new model IDs.
 

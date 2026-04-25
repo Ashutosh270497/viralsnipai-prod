@@ -6,6 +6,7 @@ import { ArrowLeft, Download, Film, Languages, Loader2, Mic } from "lucide-react
 
 import { useRepurpose } from "@/components/repurpose/repurpose-context";
 import { ExportPanel } from "@/components/repurpose/export-panel";
+import { AppCard, EmptyState as ProductEmptyState, PageHeader } from "@/components/product-ui/primitives";
 import { TranslateTranscriptDialog } from "@/components/repurpose/translate-transcript-dialog";
 import { VoiceTranslateDialog } from "@/components/repurpose/voice-translate-dialog";
 import { TranslationsList } from "@/components/repurpose/translations-list";
@@ -70,10 +71,25 @@ export default function RepurposeExportPage() {
 
   // ── Guard states (after all hooks) ───────────────────────────────────────
   if (projects.length === 0)
-    return <EmptyState message="Create a project to start repurposing video content." />;
+    return (
+      <ProductEmptyState
+        icon={Download}
+        title="Create a project before exporting"
+        description="Exports are generated from clips inside a project. Create a project, upload a video, then return here to render MP4s."
+        primary={{ label: "Create project", href: "/projects" }}
+      />
+    );
 
   if (!isProjectSelected)
-    return <GlassCard title="Select a project" description="Choose a project from the selector above to access export tools." />;
+    return (
+      <ProductEmptyState
+        icon={Film}
+        title="Select a project to view exports"
+        description="Choose a project to see export history, rendering status, and download links."
+        primary={{ label: "Go to projects", href: "/projects" }}
+        secondary={{ label: "Create new export", href: "/repurpose" }}
+      />
+    );
 
   if (isLoading)
     return <GlassCard title="Loading export data" description="Fetching clips, exports, and translation state…" loading />;
@@ -83,7 +99,7 @@ export default function RepurposeExportPage() {
       <GlassCard title="Project unavailable" description="The selected project could not be loaded. Pick another project to continue.">
         <button
           onClick={() => setProjectId("")}
-          className="mt-4 flex items-center gap-2 px-4 py-2 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10 text-sm font-medium transition-colors"
+          className="mt-4 flex items-center gap-2 px-4 py-2 rounded-lg border border-border/50 bg-muted/40 hover:bg-muted/60 text-sm font-medium transition-colors text-foreground"
         >
           <ArrowLeft className="h-4 w-4" /> Back to Ingest & Detect
         </button>
@@ -95,7 +111,7 @@ export default function RepurposeExportPage() {
       <GlassCard title="No media found" description="Ingest a YouTube video or upload a file before exporting.">
         <Link
           href={`/repurpose?projectId=${project.id}`}
-          className="mt-4 inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-purple-500 to-pink-500 text-white font-medium text-sm"
+          className="mt-4 inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground font-medium text-sm transition-colors"
         >
           <ArrowLeft className="h-4 w-4" /> Go to Ingest & Detect
         </Link>
@@ -113,18 +129,14 @@ export default function RepurposeExportPage() {
 
   // ── Render ──────────────────────────────────────────────────────────────────
   return (
-    <div className="space-y-5 pb-10">
-
-      {/* ── Page header with inline stats ───────────────────────────────────── */}
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Export & Translate</h1>
-          <p className="text-sm text-muted-foreground/70 mt-0.5">
-            Choose a format, configure settings, and ship channel-ready clips.
-          </p>
-        </div>
-        {/* Inline stat chips */}
-        <div className="flex items-center gap-2">
+    <div className="w-full space-y-5 pb-10">
+      <PageHeader
+        eyebrow="Export"
+        title="Export queue"
+        description="Choose formats, monitor rendering status, and download completed short-form MP4s."
+        icon={Download}
+        actions={
+          <div className="flex items-center gap-2">
           {[
             { label: "Total",    value: project.clips.length,  dim: false },
             { label: "Selected", value: selectedClipIds.length, dim: selectedClipIds.length === 0 },
@@ -134,16 +146,17 @@ export default function RepurposeExportPage() {
               "flex items-baseline gap-1.5 px-3 py-1.5 rounded-lg border text-sm",
               s.accent
                 ? "border-emerald-500/25 bg-emerald-500/8 text-emerald-400"
-                : "border-white/[0.07] bg-white/[0.03] text-muted-foreground/60"
+                : "border-border bg-muted/40 text-muted-foreground"
             )}>
-              <span className={cn("font-bold tabular-nums", s.dim ? "text-white/25" : "text-white")}>
+              <span className={cn("font-bold tabular-nums", s.dim ? "text-muted-foreground/40" : "text-foreground")}>
                 {s.value}
               </span>
               <span className="text-[11px] uppercase tracking-wide">{s.label}</span>
             </div>
           ))}
-        </div>
-      </div>
+          </div>
+        }
+      />
 
       {/* ── Main grid ────────────────────────────────────────────────────────── */}
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_400px] lg:items-start">
@@ -152,14 +165,14 @@ export default function RepurposeExportPage() {
         <div className="space-y-5">
 
           {/* Export card */}
-          <div className="rounded-2xl border border-white/10 bg-gradient-to-br from-white/[0.04] to-transparent p-6">
+          <AppCard className="p-6">
             <div className="flex items-center justify-between mb-5">
               <div className="flex items-center gap-2">
-                <Film className="h-4 w-4 text-purple-400" />
+                <Film className="h-4 w-4 text-primary" />
                 <h2 className="text-base font-semibold">Export Video</h2>
               </div>
               {selectedClipIds.length > 0 && (
-                <span className="text-[11px] font-semibold px-2.5 py-1 rounded-full bg-purple-500/15 text-purple-400">
+                <span className="text-[11px] font-semibold px-2.5 py-1 rounded-full bg-primary/15 text-primary">
                   {selectedClipIds.length} clip{selectedClipIds.length > 1 ? "s" : ""} selected
                 </span>
               )}
@@ -173,13 +186,13 @@ export default function RepurposeExportPage() {
                 <div className="flex items-center gap-2 shrink-0">
                   <button
                     onClick={() => setSelectedClipIds(project.clips.map((c) => c.id))}
-                    className="px-3 py-1.5 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10 text-xs font-medium transition-colors"
+                    className="px-3 py-1.5 rounded-lg border border-border/50 bg-muted/40 hover:bg-muted/60 text-xs font-medium transition-colors text-foreground"
                   >
                     Select all
                   </button>
                   <Link
                     href={`/repurpose/editor?projectId=${project.id}`}
-                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10 text-xs font-medium transition-colors"
+                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-border/50 bg-muted/40 hover:bg-muted/60 text-xs font-medium transition-colors text-foreground"
                   >
                     <ArrowLeft className="h-3 w-3" /> Editor
                   </Link>
@@ -196,12 +209,12 @@ export default function RepurposeExportPage() {
               selectedPreset={selectedPreset}
               onPresetChange={setSelectedPreset}
             />
-          </div>
+          </AppCard>
 
           {/* Translation card */}
-          <div className="rounded-2xl border border-white/10 bg-gradient-to-br from-white/[0.04] to-transparent p-6">
+          <AppCard className="p-6">
             <div className="flex items-center gap-2 mb-1">
-              <Languages className="h-4 w-4 text-purple-400" />
+              <Languages className="h-4 w-4 text-primary" />
               <h2 className="text-base font-semibold">Translation</h2>
             </div>
             <p className="text-sm text-muted-foreground/70 mb-5">
@@ -213,33 +226,33 @@ export default function RepurposeExportPage() {
                 <div className="space-y-2 mb-5">
                   <button
                     onClick={() => setTranslateOpen(true)}
-                    className="w-full flex items-center gap-3 px-4 py-3.5 rounded-xl border border-purple-500/20 bg-purple-500/[0.06] hover:bg-purple-500/10 text-left transition-colors group"
+                    className="w-full flex items-center gap-3 px-4 py-3.5 rounded-xl border border-primary/20 bg-primary/[0.06] hover:bg-primary/10 text-left transition-colors group"
                   >
-                    <div className="w-8 h-8 rounded-full bg-purple-500/20 flex items-center justify-center shrink-0 group-hover:bg-purple-500/30 transition-colors">
-                      <Languages className="h-4 w-4 text-purple-400" />
+                    <div className="w-8 h-8 rounded-full bg-primary/15 flex items-center justify-center shrink-0 group-hover:bg-primary/25 transition-colors">
+                      <Languages className="h-4 w-4 text-primary" />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold text-white">Translate Transcript</p>
+                      <p className="text-sm font-semibold text-foreground">Translate Transcript</p>
                       <p className="text-xs text-muted-foreground/60 mt-0.5">Generate subtitle translations in any language</p>
                     </div>
-                    <div className="shrink-0 h-4 w-4 rounded-full border-2 border-purple-500/40 flex items-center justify-center">
-                      <div className="w-2 h-2 rounded-full bg-purple-500" />
+                    <div className="shrink-0 h-4 w-4 rounded-full border-2 border-primary/40 flex items-center justify-center">
+                      <div className="w-2 h-2 rounded-full bg-primary" />
                     </div>
                   </button>
 
                   {primaryAsset.type === "video" && (
                     <button
                       onClick={() => setVoiceTranslateOpen(true)}
-                      className="w-full flex items-center gap-3 px-4 py-3.5 rounded-xl border border-white/[0.07] bg-transparent hover:bg-white/[0.04] text-left transition-colors group"
+                      className="w-full flex items-center gap-3 px-4 py-3.5 rounded-xl border border-border bg-muted/20 hover:bg-muted/40 text-left transition-colors group"
                     >
-                      <div className="w-8 h-8 rounded-full bg-white/8 flex items-center justify-center shrink-0 group-hover:bg-white/12 transition-colors">
+                      <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center shrink-0 transition-colors">
                         <Mic className="h-4 w-4 text-muted-foreground/70" />
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-semibold text-white">Translate Voice</p>
+                        <p className="text-sm font-semibold text-foreground">Translate Voice</p>
                         <p className="text-xs text-muted-foreground/60 mt-0.5">AI-dubbed video in target language</p>
                       </div>
-                      <div className="shrink-0 h-4 w-4 rounded-full border-2 border-white/20" />
+                      <div className="shrink-0 h-4 w-4 rounded-full border-2 border-border/50" />
                     </button>
                   )}
                 </div>
@@ -250,24 +263,24 @@ export default function RepurposeExportPage() {
                 )}
               </>
             ) : (
-              <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-white/10 bg-white/[0.02] p-8 text-center">
+              <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border bg-muted/30 p-8 text-center">
                 <Languages className="h-6 w-6 text-muted-foreground/20 mb-2" />
                 <p className="text-sm text-muted-foreground/50">
                   Transcript required — ingest and transcribe content first.
                 </p>
               </div>
             )}
-          </div>
+          </AppCard>
         </div>
 
         {/* ── RIGHT: Format + Preview (sticky sidebar) ─────────────────────── */}
         <div className="lg:sticky lg:top-6 space-y-4">
 
           {/* Format picker + Preview unified card */}
-          <div className="rounded-2xl border border-white/10 bg-gradient-to-br from-white/[0.04] to-transparent overflow-hidden">
+          <AppCard className="overflow-hidden">
 
             {/* Format section */}
-            <div className="p-5 border-b border-white/[0.06]">
+            <div className="p-5 border-b border-border/40">
               <div className="flex items-center justify-between mb-3">
                 <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground/50">
                   Output Format
@@ -289,12 +302,12 @@ export default function RepurposeExportPage() {
                       className={cn(
                         "w-full text-left px-3.5 py-2.5 rounded-xl border transition-all flex items-center justify-between gap-3",
                         active
-                          ? "bg-gradient-to-r from-purple-500/[0.15] to-pink-500/[0.08] border-purple-500/30"
-                          : "border-white/[0.05] bg-transparent hover:bg-white/[0.03] hover:border-white/10"
+                          ? "border-emerald-500/30 bg-emerald-500/[0.10]"
+                          : "border-border bg-muted/20 hover:bg-muted/40 hover:border-border"
                       )}
                     >
                       <div className="min-w-0">
-                        <p className={cn("text-[13px] font-medium leading-tight", active ? "text-white" : "text-white/65")}>
+                        <p className={cn("text-[13px] font-medium leading-tight", active ? "text-foreground" : "text-muted-foreground")}>
                           {preset.label}
                         </p>
                         <p className="text-[10px] text-muted-foreground/40 mt-0.5 tabular-nums">
@@ -303,9 +316,9 @@ export default function RepurposeExportPage() {
                       </div>
                       <div className={cn(
                         "w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0",
-                        active ? "border-purple-500" : "border-white/20"
+                        active ? "border-emerald-500" : "border-border/50"
                       )}>
-                        {active && <div className="w-2 h-2 rounded-full bg-purple-500" />}
+                        {active && <div className="w-2 h-2 rounded-full bg-emerald-500" />}
                       </div>
                     </button>
                   );
@@ -326,7 +339,7 @@ export default function RepurposeExportPage() {
 
               <div className="flex justify-center">
                 <div
-                  className="relative overflow-hidden rounded-xl bg-black/60 border border-white/[0.08] transition-all duration-300"
+                  className="relative overflow-hidden rounded-xl bg-muted/60 border border-border/40 transition-all duration-300"
                   style={{
                     aspectRatio: `${selectedPresetConfig.width} / ${selectedPresetConfig.height}`,
                     maxWidth:
@@ -347,7 +360,7 @@ export default function RepurposeExportPage() {
                     />
                   ) : (
                     <div className="flex h-full flex-col items-center justify-center gap-2">
-                      <Film className="h-6 w-6 text-white/10" />
+                      <Film className="h-6 w-6 text-muted-foreground/20" />
                       <p className="text-[10px] text-muted-foreground/25 text-center px-4">
                         {selectedClipIds.length === 0 ? "Select clips to preview" : "No preview available"}
                       </p>
@@ -365,7 +378,7 @@ export default function RepurposeExportPage() {
                 </p>
               )}
             </div>
-          </div>
+          </AppCard>
 
           {/* Pending auto-refresh note */}
           {pendingExportCount > 0 && (
@@ -413,21 +426,13 @@ function GlassCard({
   children?: React.ReactNode;
 }) {
   return (
-    <div className="rounded-2xl border border-white/10 bg-gradient-to-br from-white/5 to-transparent p-8">
+    <div className="rounded-2xl border border-border/60 bg-card/60 p-8">
       <div className="flex items-center gap-2 mb-1">
-        {loading && <Loader2 className="h-4 w-4 animate-spin text-purple-400" />}
+        {loading && <Loader2 className="h-4 w-4 animate-spin text-primary" />}
         <h3 className="text-base font-semibold">{title}</h3>
       </div>
       <p className="text-sm text-muted-foreground">{description}</p>
       {children}
-    </div>
-  );
-}
-
-function EmptyState({ message }: { message: string }) {
-  return (
-    <div className="flex min-h-[200px] items-center justify-center rounded-2xl border border-dashed border-white/10 bg-white/[0.02] p-10 text-center text-sm text-muted-foreground">
-      {message}
     </div>
   );
 }

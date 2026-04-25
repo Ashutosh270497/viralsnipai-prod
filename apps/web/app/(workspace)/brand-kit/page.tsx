@@ -3,6 +3,8 @@ import { getCurrentUser } from "@/lib/auth";
 import { getBrandKit } from "@/lib/brand-kit";
 import { prisma } from "@/lib/prisma";
 import { isPaidPlan } from "@/lib/watermark";
+import { PageHeader } from "@/components/product-ui/primitives";
+import { Palette } from "lucide-react";
 
 export default async function BrandKitPage() {
   const user = await getCurrentUser();
@@ -28,11 +30,13 @@ export default async function BrandKitPage() {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="space-y-1">
-        <h1 className="text-3xl font-semibold tracking-tight">Brand kit</h1>
-        <p className="text-muted-foreground">Keep every clip and export on-brand automatically.</p>
-      </div>
+    <div className="w-full space-y-6">
+      <PageHeader
+        eyebrow="Brand"
+        title="Brand kit"
+        description="Keep every clip and export on-brand with caption style, color, logo, font, and watermark defaults."
+        icon={Palette}
+      />
       <BrandKitForm
         canToggleWatermark={canToggleWatermark}
         initial={{

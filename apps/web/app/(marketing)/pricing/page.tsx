@@ -1,32 +1,30 @@
-import { Metadata } from "next";
+import type { Metadata } from "next";
 
-import { isUiV2Enabled } from "@/lib/feature-flags";
 import { PricingPageV2 } from "@/components/marketing-v2/pricing-page";
-import { LegacyMarketingPlaceholder } from "@/components/marketing/legacy-placeholder";
 
 export const metadata: Metadata = {
-  title: "ViralSnipAI Pricing — Free, Plus, and Pro",
+  title: "Pricing — ViralSnipAI",
   description:
-    "Compare ViralSnipAI Free, Plus, and Pro plans. Monthly Razorpay billing for India and global customers.",
+    "Free, Plus, and Pro plans for AI video repurposing. Upload long videos, detect viral clips, add captions, export with your brand. Monthly billing via Razorpay.",
+  alternates: {
+    canonical: "https://viralsnipai.com/pricing",
+  },
   openGraph: {
-    title: "ViralSnipAI Pricing",
+    title: "ViralSnipAI Pricing — Free, Plus, Pro",
     description:
-      "Flexible monthly plans for AI hooks, captioned clips, branded exports, and SnipRadar growth workflows. Free, Plus, and Pro tiers.",
+      "Three plans for turning long videos into viral-ready short clips. AI highlight detection, brand captions, and multi-platform exports.",
     url: "https://viralsnipai.com/pricing",
-    images: ["/api/og?path=pricing"]
-  }
+    images: ["/api/og?path=pricing"],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "ViralSnipAI Pricing — Free, Plus, Pro",
+    description:
+      "AI video repurposing. Start free — 3 uploads, 5 exports per month. No credit card required.",
+    images: ["/api/og?path=pricing"],
+  },
 };
 
 export default function PricingPage() {
-  const enabled = isUiV2Enabled();
-  if (!enabled) {
-    return (
-      <LegacyMarketingPlaceholder
-        title="Pricing overview"
-        description="Pricing is available in the new billing workspace. Sign in to manage plans and start a Razorpay subscription."
-      />
-    );
-  }
-
   return <PricingPageV2 />;
 }

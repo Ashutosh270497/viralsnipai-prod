@@ -12,10 +12,9 @@ import { cn } from "@/lib/utils";
 
 const NAV_LINKS = [
   { href: "#features", label: "Features" },
-  { href: "#marketplace", label: "Templates" },
+  { href: "#how-it-works", label: "How it works" },
   { href: "#pricing", label: "Pricing" },
-  { href: "/docs", label: "Docs", comingSoon: true },
-  { href: "/changelog", label: "Changelog", comingSoon: true }
+  { href: "#faq", label: "FAQ" }
 ];
 
 export function MarketingHeader() {
@@ -44,8 +43,10 @@ export function MarketingHeader() {
 
   return (
     <header
-      className={`sticky top-0 z-40 border-b border-border/60 bg-background/85 px-6 transition-shadow backdrop-blur ${
-        elevated ? "shadow-lg" : "shadow-none"
+      className={`sticky top-0 z-40 border-b px-6 transition-all backdrop-blur-xl ${
+        elevated
+          ? "border-slate-200/80 bg-white/[0.82] shadow-lg shadow-slate-950/5 dark:border-white/10 dark:bg-[#081111]/[0.82]"
+          : "border-slate-200/60 bg-white/[0.68] dark:border-white/10 dark:bg-[#081111]/[0.68]"
       }`}
     >
       <div className="mx-auto flex w-full max-w-6xl items-center justify-between gap-4 py-4">
@@ -53,21 +54,22 @@ export function MarketingHeader() {
           <Logo className="h-6 w-6" />
           ViralSnipAI
         </Link>
-        <nav className="hidden items-center gap-6 text-sm font-medium text-muted-foreground md:flex" aria-label="Primary">
+        <nav className="hidden items-center gap-7 text-sm font-medium text-slate-600 dark:text-slate-300 md:flex" aria-label="Primary">
           {NAV_LINKS.map((link) => (
             <NavLink key={link.href} {...link} onNavigate={() => setIsMenuOpen(false)} />
           ))}
         </nav>
         <div className="hidden items-center gap-3 md:flex">
           <ThemeToggle />
-          <Button variant="ghost" asChild>
+          <Button variant="ghost" asChild className="rounded-full">
             <Link href="/signin">Sign in</Link>
           </Button>
           <Button
             asChild
+            className="rounded-full bg-gradient-to-r from-emerald-500 to-cyan-500 px-5 font-semibold text-white shadow-lg shadow-emerald-900/15 hover:from-emerald-400 hover:to-cyan-400"
             onClick={() => trackEvent({ name: "cta_try_free", payload: { source: "header" } })}
           >
-            <Link href="/signup">Try Free</Link>
+            <Link href="/signup">Start free</Link>
           </Button>
         </div>
         <div className="flex items-center gap-2 md:hidden">
@@ -97,17 +99,18 @@ export function MarketingHeader() {
             ))}
           </nav>
           <div className="flex flex-col gap-3">
-            <Button variant="ghost" asChild className="justify-start">
+            <Button variant="ghost" asChild className="justify-start rounded-full">
               <Link href="/signin" onClick={() => setIsMenuOpen(false)}>
                 Sign in
               </Link>
             </Button>
             <Button
               asChild
+              className="rounded-full bg-gradient-to-r from-emerald-500 to-cyan-500 text-white"
               onClick={() => trackEvent({ name: "cta_try_free", payload: { source: "header_mobile" } })}
             >
               <Link href="/signup" onClick={() => setIsMenuOpen(false)}>
-                Try Free
+                Start free
               </Link>
             </Button>
           </div>
@@ -142,7 +145,7 @@ function NavLink({ href, label, comingSoon, className, onNavigate }: NavLinkProp
     return (
       <a
         href={href}
-        className={cn("transition hover:text-foreground", className)}
+        className={cn("transition hover:text-slate-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 dark:hover:text-white", className)}
         onClick={onNavigate}
       >
         {label}
@@ -151,7 +154,7 @@ function NavLink({ href, label, comingSoon, className, onNavigate }: NavLinkProp
   }
 
   return (
-    <Link href={href} className={cn("transition hover:text-foreground", className)} onClick={onNavigate}>
+    <Link href={href} className={cn("transition hover:text-slate-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 dark:hover:text-white", className)} onClick={onNavigate}>
       {label}
     </Link>
   );

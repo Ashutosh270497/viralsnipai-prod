@@ -38,16 +38,16 @@ export default async function BillingPage({ searchParams }: BillingPageProps) {
   const initialRegion = resolveRegion(searchParams?.region, state.billingRegion, state.recommendedRegion);
 
   return (
-    <div className="min-h-screen bg-[#0a0a0f] text-slate-100">
+    <div className="min-h-screen bg-background text-foreground">
       <div className="mx-auto flex w-full max-w-[1100px] flex-col gap-8 px-6 py-8 lg:px-8">
         <header className="space-y-5">
-          <div className="flex flex-col gap-4 border-b border-white/5 pb-5 md:flex-row md:items-center md:justify-between">
+          <div className="flex flex-col gap-4 border-b border-border/70 pb-5 md:flex-row md:items-center md:justify-between">
             <div className="flex items-center gap-3">
               <Button
                 variant="ghost"
                 size="icon"
                 asChild
-                className="h-9 w-9 rounded-xl border border-white/10 bg-white/[0.03] text-slate-200 hover:border-white/20 hover:bg-white/[0.06]"
+                className="h-9 w-9 rounded-xl border border-border bg-card text-foreground hover:border-primary/35"
               >
                 <Link href="/">
                   <ArrowLeft className="h-4 w-4" />
@@ -55,8 +55,8 @@ export default async function BillingPage({ searchParams }: BillingPageProps) {
                 </Link>
               </Button>
               <div className="flex items-center gap-3">
-                <h1 className="text-xl font-bold tracking-tight text-slate-100">Billing</h1>
-                <span className="rounded-full border border-violet-500/20 bg-violet-500/15 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-violet-300">
+                <h1 className="text-xl font-bold tracking-tight text-foreground">Billing</h1>
+                <span className="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-emerald-600 dark:text-emerald-300">
                   Razorpay Only
                 </span>
               </div>
@@ -66,14 +66,14 @@ export default async function BillingPage({ searchParams }: BillingPageProps) {
               <Button
                 variant="ghost"
                 asChild
-                className="h-[34px] rounded-lg border border-white/10 px-3.5 text-[13px] font-medium text-slate-400 hover:border-white/20 hover:bg-white/[0.04] hover:text-slate-200"
+                className="h-[34px] rounded-lg border border-border px-3.5 text-[13px] font-medium text-muted-foreground hover:border-primary/35 hover:text-foreground"
               >
                 <Link href="/pricing">View pricing</Link>
               </Button>
               <Button
                 variant="ghost"
                 asChild
-                className="h-[34px] rounded-lg border border-white/10 px-3.5 text-[13px] font-medium text-slate-400 hover:border-white/20 hover:bg-white/[0.04] hover:text-slate-200"
+                className="h-[34px] rounded-lg border border-border px-3.5 text-[13px] font-medium text-muted-foreground hover:border-primary/35 hover:text-foreground"
               >
                 <Link href="/dashboard">Back to workspace</Link>
               </Button>
@@ -81,10 +81,10 @@ export default async function BillingPage({ searchParams }: BillingPageProps) {
           </div>
 
           <div className="space-y-2">
-            <h2 className="text-2xl font-bold tracking-tight text-slate-100 sm:text-[28px]">
+            <h2 className="text-2xl font-bold tracking-tight text-foreground sm:text-[28px]">
               Manage billing and plan access
             </h2>
-            <p className="max-w-[560px] text-sm leading-6 text-slate-500">
+            <p className="max-w-[560px] text-sm leading-6 text-muted-foreground">
               Billing is now standardized on Razorpay with one canonical plan model: free, plus,
               and pro. Monthly subscriptions are available for India and global pricing.
             </p>

@@ -903,16 +903,16 @@ export function TranscriptEditor({
 
       {/* Video position bar */}
       {previewPath && entries.length > 0 && (
-        <div className="h-0.5 rounded-full bg-white/[0.05] overflow-hidden">
+        <div className="h-0.5 rounded-full bg-muted/60 overflow-hidden">
           <div
-            className="h-full bg-gradient-to-r from-purple-500 to-pink-500 transition-[width] duration-100"
+            className="h-full bg-primary transition-[width] duration-100"
             style={{ width: `${videoProgress}%` }}
           />
         </div>
       )}
 
       {/* Single-block transcript editor — always one unified text block */}
-      <div className="overflow-hidden rounded-xl border border-white/10 bg-black/20">
+      <div className="overflow-hidden rounded-xl border border-border/40 bg-muted/30">
         {!text.trim() ? (
           <div className="flex items-center justify-center py-8 text-sm text-muted-foreground/40">
             Transcript is empty — click Save to commit.

@@ -5,48 +5,47 @@
 @tailwind utilities;
 
 :root {
-  --background: 0 0% 99%;
-  --foreground: 210 29% 8%;
+  --background: 180 33% 97%;
+  --foreground: 217 33% 8%;
   --card: 0 0% 100%;
-  --card-foreground: 210 29% 8%;
+  --card-foreground: 217 33% 8%;
   --popover: 0 0% 100%;
-  --popover-foreground: 210 29% 8%;
-  --primary: 160 84% 30%;          /* emerald 600 — legible on light bg */
+  --popover-foreground: 217 33% 8%;
+  --primary: 166 84% 31%;
   --primary-foreground: 0 0% 100%;
-  --secondary: 210 20% 96%;
-  --secondary-foreground: 210 29% 8%;
-  --muted: 210 20% 92%;
-  --muted-foreground: 210 8% 45%;
-  --accent: 160 84% 30%;
+  --secondary: 190 24% 94%;
+  --secondary-foreground: 217 33% 8%;
+  --muted: 190 20% 91%;
+  --muted-foreground: 215 16% 36%;
+  --accent: 190 91% 37%;
   --accent-foreground: 0 0% 100%;
   --destructive: 0 85% 60%;
   --destructive-foreground: 0 0% 98%;
-  --border: 210 20% 90%;
-  --input: 210 20% 90%;
-  --ring: 160 84% 30%;
+  --border: 190 16% 84%;
+  --input: 190 16% 84%;
+  --ring: 166 84% 31%;
   --radius: 10px;
 }
 
 .dark {
-  /* Terminal Pro — pure black base, emerald accent */
-  --background: 0 0% 3%;           /* #080808 near-absolute black */
-  --foreground: 210 17% 93%;       /* #E8ECF2 crisp off-white */
-  --card: 0 0% 6%;                 /* #0f0f0f raised surface */
-  --card-foreground: 210 17% 93%;
-  --popover: 0 0% 8%;              /* #141414 dropdown / sheet */
-  --popover-foreground: 210 17% 93%;
-  --primary: 160 84% 39%;          /* #10b981 emerald 500 */
+  --background: 190 34% 7%;
+  --foreground: 190 22% 94%;
+  --card: 190 28% 10%;
+  --card-foreground: 190 22% 94%;
+  --popover: 190 28% 12%;
+  --popover-foreground: 190 22% 94%;
+  --primary: 160 84% 39%;
   --primary-foreground: 0 0% 100%;
-  --secondary: 0 0% 10%;           /* #1a1a1a subtle raised bg */
-  --secondary-foreground: 0 0% 72%; /* body text on dark surface */
-  --muted: 0 0% 13%;               /* #212121 inputs / disabled */
-  --muted-foreground: 0 0% 45%;    /* #737373 placeholder / secondary */
-  --accent: 160 84% 39%;           /* same as primary for consistency */
+  --secondary: 190 24% 14%;
+  --secondary-foreground: 190 18% 82%;
+  --muted: 190 20% 17%;
+  --muted-foreground: 190 10% 66%;
+  --accent: 188 86% 45%;
   --accent-foreground: 0 0% 100%;
   --destructive: 0 68% 50%;
   --destructive-foreground: 0 0% 98%;
-  --border: 0 0% 14%;              /* #242424 subtle dividers */
-  --input: 0 0% 14%;
+  --border: 190 18% 20%;
+  --input: 190 18% 20%;
   --ring: 160 84% 39%;
   --radius: 10px;
 }
@@ -62,6 +61,17 @@ html {
 body {
   @apply bg-background text-foreground antialiased;
   font-feature-settings: "rlig" 1, "calt" 1;
+  background:
+    radial-gradient(circle at 12% 0%, hsl(166 84% 50% / 0.08), transparent 32rem),
+    radial-gradient(circle at 88% 8%, hsl(190 91% 55% / 0.08), transparent 28rem),
+    hsl(var(--background));
+}
+
+.dark body {
+  background:
+    radial-gradient(circle at 16% -10%, hsl(166 84% 45% / 0.16), transparent 34rem),
+    radial-gradient(circle at 86% 4%, hsl(190 91% 55% / 0.12), transparent 30rem),
+    hsl(var(--background));
 }
 
 /* Focus ring */

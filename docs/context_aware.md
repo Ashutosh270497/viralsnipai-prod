@@ -393,7 +393,8 @@ V1 production baseline:
 - Auth: NextAuth with `NEXTAUTH_SECRET`, `NEXTAUTH_URL`, Google OAuth, and production redirect URI.
 - Storage: Supabase Storage through S3-compatible variables is recommended for V1 production.
 - AI: OpenRouter for text/transcript intelligence flows, OpenAI for Whisper/TTS/DALL-E-compatible paths.
-- Current V1 OpenRouter defaults: `google/gemini-3.1-pro-preview` for auto-highlight detection, `google/gemini-3.1-flash-lite-preview` for caption refinement and future ingest metadata, and `anthropic/claude-sonnet-4.6` for hooks/scripts.
+- Current V1 OpenRouter defaults: `google/gemini-3.1-pro-preview` for auto-highlight detection, `google/gemini-3-flash-preview` for future direct video/audio ingest metadata, `google/gemini-3.1-flash-lite-preview` for caption refinement, and `anthropic/claude-sonnet-4.6` for hooks/scripts.
+- The Create Clip highlight detector selector is synced with the April 25, 2026 OpenRouter model catalog: Gemini 3.1 Pro remains the default best-overall detector; Gemini 3 Flash is the balanced video option; Qwen3.6 Plus and MiMo V2.5 are video/audio-capable alternatives; Gemini 3.1 Flash Lite is the fastest low-cost option; GPT-5.5 is retained for premium transcript/file QA rather than native video detection.
 - Billing: Razorpay live keys, webhook secret, and starter/creator/studio subscription plan IDs.
 - Background jobs: Inngest event and signing keys, endpoint at `/api/inngest`.
 - Deployment targets: Vercel or Coolify/VPS.

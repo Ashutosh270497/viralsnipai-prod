@@ -14,6 +14,7 @@ import {
   Music,
   Pencil,
   Sparkles,
+  Upload as UploadIcon,
   Youtube,
   Zap,
 } from "lucide-react";
@@ -22,6 +23,7 @@ import { UploadDropzone } from "@/components/upload/upload-dropzone";
 import { AIPromptGeneratorDialog } from "@/components/repurpose/ai-prompt-generator-dialog";
 import { useRepurpose } from "@/components/repurpose/repurpose-context";
 import { Button } from "@/components/ui/button";
+import { AppCard, EmptyState, PageHeader, Stepper } from "@/components/product-ui/primitives";
 import { cn, formatDuration } from "@/lib/utils";
 import { useRepurposeIngest } from "@/components/repurpose/use-repurpose-ingest";
 import {
@@ -71,6 +73,7 @@ export function RepurposeIngestPage() {
   });
 
   const clipCount = project?.clips?.length ?? 0;
+  const activeStep = clipCount > 0 ? 1 : primaryAsset ? 0 : 0;
   const appliedSeedRef = useRef<string | null>(null);
   const seededIdea = useMemo(() => {
     const ideaId = searchParams.get("ideaId");
@@ -129,29 +132,14 @@ export function RepurposeIngestPage() {
   }
 
   return (
-    <div className="space-y-6 pb-10 animate-enter">
-      {/* ── Page header ─────────────────────────────────────────────────────── */}
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <div
-            className="flex h-9 w-9 items-center justify-center rounded-lg shrink-0"
-            style={{
-              background: "linear-gradient(135deg, #10b981 0%, #34d399 100%)",
-              boxShadow: "0 0 14px hsl(263 72% 56% / 0.5)",
-            }}
-          >
-            <Sparkles className="h-4 w-4 text-white" />
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight">Repurpose OS</h1>
-            <p className="text-sm text-muted-foreground/70 mt-0.5">
-              Transform long-form video into viral clips — automatically.
-            </p>
-          </div>
-        </div>
-
-        {/* Project selector */}
-        <div className="min-w-[220px]">
+    <div className="w-full space-y-6 pb-10 animate-enter">
+      <PageHeader
+        eyebrow="Create Clip"
+        title="Upload, detect, edit, export"
+        description="A guided V1 workspace for turning long-form recordings into branded short clips."
+        icon={Sparkles}
+        actions={
+          <div className="min-w-[240px]">
           <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/50 mb-1.5">
             Active Project
           </p>
@@ -172,8 +160,18 @@ export function RepurposeIngestPage() {
               <Link href="/dashboard" className="text-primary hover:underline">create one</Link>
             </p>
           )}
-        </div>
-      </div>
+          </div>
+        }
+      />
+
+      <Stepper
+        activeIndex={activeStep}
+        steps={[
+          { label: "Upload & Detect", icon: UploadIcon },
+          { label: "Edit & Enhance", icon: Pencil },
+          { label: "Export", icon: Download },
+        ]}
+      />
 
       {/* ── Seeded idea banner ────────────────────────────────────────────────── */}
       {seededIdea ? (
@@ -194,12 +192,12 @@ export function RepurposeIngestPage() {
               </div>
               <div className="flex flex-wrap gap-2 text-xs text-muted-foreground/60">
                 {seededIdea.niche ? (
-                  <span className="rounded-full border border-border/50 bg-white/[0.04] px-2.5 py-1">
+                  <span className="rounded-full border border-border/50 bg-muted/50 px-2.5 py-1">
                     Audience: {seededIdea.niche}
                   </span>
                 ) : null}
                 {seededIdea.keywords.slice(0, 3).map((keyword) => (
-                  <span key={keyword} className="rounded-full border border-border/50 bg-white/[0.04] px-2.5 py-1">
+                  <span key={keyword} className="rounded-full border border-border/50 bg-muted/50 px-2.5 py-1">
                     {keyword}
                   </span>
                 ))}
@@ -217,22 +215,20 @@ export function RepurposeIngestPage() {
 
       {/* ── No project selected ─────────────────────────────────────────────── */}
       {!isProjectSelected ? (
-        <div className="flex min-h-[260px] flex-col items-center justify-center rounded-xl border border-dashed border-border/40 bg-white/[0.01] p-10 text-center">
-          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/[0.08] ring-1 ring-primary/20 mb-4">
-            <Sparkles className="h-5 w-5 text-primary/40" />
-          </div>
-          <p className="text-sm font-semibold text-foreground/50">Select a project to start</p>
-          <p className="text-xs text-muted-foreground/40 mt-1">
-            Use the project selector above to enable uploads and detection.
-          </p>
-        </div>
+        <EmptyState
+          icon={Sparkles}
+          title="Start by creating or selecting a project"
+          description="Choose an existing project from the selector above, or create a fresh project to upload a source video and generate clips."
+          primary={{ label: "Create project", href: "/projects" }}
+          secondary={{ label: "Select existing project", href: "/projects" }}
+        />
       ) : (
         <div className="space-y-6">
           {/* ── Main 2-column grid ──────────────────────────────────────────── */}
           <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_360px] lg:items-start">
 
             {/* ── LEFT: Source panel ─────────────────────────────────────────── */}
-            <div className="rounded-xl border border-border/50 bg-card p-6 space-y-5">
+            <AppCard className="space-y-5 p-6">
               <div>
                 <div className="flex items-center gap-2 mb-0.5">
                   <Youtube className="h-4 w-4 text-red-400" />
@@ -278,6 +274,12 @@ export function RepurposeIngestPage() {
                 <div className="flex-1 h-px bg-border/40" />
               </div>
 
+              <div className="grid gap-3 text-xs text-muted-foreground sm:grid-cols-3">
+                <div className="rounded-2xl border border-border/70 bg-muted/30 p-3">Formats: MP4, MOV, WebM</div>
+                <div className="rounded-2xl border border-border/70 bg-muted/30 p-3">Max size: configured by plan</div>
+                <div className="rounded-2xl border border-border/70 bg-muted/30 p-3">Typical processing: 2-5 min</div>
+              </div>
+
               {/* Upload dropzone */}
               <UploadDropzone
                 projectId={projectId}
@@ -314,7 +316,7 @@ export function RepurposeIngestPage() {
                     </span>
                   </div>
                   {primaryAsset.transcript ? (
-                    <div className="h-28 overflow-y-auto rounded-lg bg-black/20 px-3 py-2 text-xs text-muted-foreground/60 leading-relaxed">
+                    <div className="h-28 overflow-y-auto rounded-lg bg-muted/60 px-3 py-2 text-xs text-muted-foreground/60 leading-relaxed">
                       {primaryAsset.transcript}
                     </div>
                   ) : (
@@ -328,10 +330,10 @@ export function RepurposeIngestPage() {
                   No asset loaded yet
                 </div>
               )}
-            </div>
+            </AppCard>
 
             {/* ── RIGHT: AI Detection config ─────────────────────────────────── */}
-            <div className="rounded-xl border border-border/50 bg-card p-6 flex flex-col gap-5">
+            <AppCard className="flex flex-col gap-5 p-6">
               {/* Header */}
               <div className="flex items-start justify-between gap-3">
                 <div>
@@ -425,7 +427,7 @@ export function RepurposeIngestPage() {
                   </Button>
                 )}
               </div>
-            </div>
+            </AppCard>
           </div>
 
           {/* ── Detected Highlights grid ─────────────────────────────────────── */}
@@ -608,7 +610,7 @@ function DetectionProgressCard({
                     ? "bg-emerald-500"
                     : isActive
                     ? "bg-primary"
-                    : "bg-white/[0.06]"
+                    : "bg-muted"
                 )}
               >
                 {isDone ? (

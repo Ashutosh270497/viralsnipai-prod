@@ -6,9 +6,9 @@ import { useState } from "react";
 import { formatDistanceToNow } from "date-fns";
 import { ArrowUpRight, Film, MoreVertical, PenLine, Share2 } from "lucide-react";
 
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { AppCard, StatusBadge } from "@/components/product-ui/primitives";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -77,17 +77,16 @@ export function ProjectCard({ project }: ProjectCardProps) {
 
   return (
     <Link href={`/projects/${project.id}`}>
-      <Card className="h-full border-border/40 bg-card/50 backdrop-blur-sm shadow-sm rounded-3xl transition hover:border-violet-500 hover:shadow-lg">
-        <CardHeader>
+      <AppCard className="h-full p-5" interactive>
           <div className="flex items-start justify-between gap-2">
             <div className="space-y-2">
-              <Badge variant="secondary" className="w-fit text-[10px] px-2 py-0.5 rounded-full">
+              <Badge variant="secondary" className="w-fit rounded-full px-2 py-0.5 text-[10px]">
                 {project.topic ?? "No topic yet"}
               </Badge>
-              <CardTitle className="text-xl">{project.title}</CardTitle>
-              <CardDescription>
+              <h3 className="text-xl font-semibold tracking-tight text-foreground">{project.title}</h3>
+              <p className="text-sm text-muted-foreground">
                 Updated {formatDistanceToNow(project.updatedAt, { addSuffix: true })}
-              </CardDescription>
+              </p>
             </div>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -120,28 +119,28 @@ export function ProjectCard({ project }: ProjectCardProps) {
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
-        </CardHeader>
-        <CardContent className="grid gap-3">
-          <div className="flex items-center justify-between rounded-lg border border-dashed border-violet-200/60 dark:border-violet-800/40 bg-gradient-to-br from-violet-50/60 to-purple-50/40 dark:from-violet-950/30 dark:to-purple-950/20 px-4 py-3">
-            <div className="flex items-center gap-3 text-sm">
-              <Film className="h-4 w-4 text-violet-600" />
+          <div className="mt-5 grid grid-cols-3 gap-2 rounded-2xl border border-border/70 bg-muted/30 p-3">
+            <div className="space-y-1 text-sm">
+              <Film className="h-4 w-4 text-primary" />
               <span>{project.assets.length} asset(s)</span>
             </div>
-            <div className="flex items-center gap-3 text-sm">
-              <PenLine className="h-4 w-4 text-purple-600" />
+            <div className="space-y-1 text-sm">
+              <PenLine className="h-4 w-4 text-cyan-600 dark:text-cyan-300" />
               <span>{project.clips.length} clip(s)</span>
             </div>
-            <div className="flex items-center gap-3 text-sm">
-              <Share2 className="h-4 w-4 text-fuchsia-500" />
+            <div className="space-y-1 text-sm">
+              <Share2 className="h-4 w-4 text-blue-600 dark:text-blue-300" />
               <span>{exportDone} export(s)</span>
             </div>
           </div>
-        </CardContent>
-        <CardFooter className="flex items-center justify-end text-xs font-medium text-muted-foreground">
+          <div className="mt-4 flex items-center justify-between">
+            {project.exports[0]?.status ? <StatusBadge status={project.exports[0].status} /> : <span />}
+            <div className="flex items-center justify-end text-xs font-semibold text-primary">
           View timeline
           <ArrowUpRight className="ml-2 h-4 w-4" />
-        </CardFooter>
-      </Card>
+            </div>
+          </div>
+      </AppCard>
     </Link>
   );
 }

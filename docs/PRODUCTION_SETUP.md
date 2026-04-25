@@ -110,7 +110,7 @@ Set the same `S3_*` variables pointing at your chosen bucket provider.
 Current V1 model defaults:
 
 ```env
-OPENROUTER_VIDEO_INGEST_MODEL="google/gemini-3.1-flash-lite-preview"
+OPENROUTER_VIDEO_INGEST_MODEL="google/gemini-3-flash-preview"
 OPENROUTER_HIGHLIGHTS_MODEL="google/gemini-3.1-pro-preview"
 OPENROUTER_CAPTIONS_MODEL="google/gemini-3.1-flash-lite-preview"
 OPENROUTER_HOOKS_MODEL="anthropic/claude-sonnet-4.6"
