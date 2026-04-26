@@ -6,6 +6,7 @@ import { Plus, Trash2, Type } from "lucide-react";
 import { CAPTION_STYLES } from "@/lib/constants/caption-styles";
 import {
   createDefaultHookOverlay,
+  normalizeClipCaptionStyle,
   type ClipCaptionStyleConfig,
   type HookOverlay,
 } from "@/lib/repurpose/caption-style-config";
@@ -13,7 +14,7 @@ import type { CaptionEntry } from "@/lib/srt-utils";
 import { cn } from "@/lib/utils";
 
 interface CaptionOverlayStudioProps {
-  value: ClipCaptionStyleConfig;
+  value?: ClipCaptionStyleConfig | null;
   onChange: (value: ClipCaptionStyleConfig) => void;
   sampleCaption?: string;
   previewPath?: string | null;
@@ -38,6 +39,21 @@ const ALIGN_OPTIONS = [
   { value: "right", label: "Right" },
 ] as const;
 
+const ANIMATION_OPTIONS = [
+  { value: "none", label: "None" },
+  { value: "karaoke", label: "Karaoke" },
+  { value: "pop", label: "Pop" },
+  { value: "fade", label: "Fade" },
+  { value: "slide", label: "Slide" },
+  { value: "bounce", label: "Bounce" },
+] as const;
+
+const SPEED_OPTIONS = [
+  { value: "slow", label: "Slow" },
+  { value: "normal", label: "Normal" },
+  { value: "fast", label: "Fast" },
+] as const;
+
 export function CaptionOverlayStudio({
   value,
   onChange,
@@ -47,10 +63,11 @@ export function CaptionOverlayStudio({
 }: CaptionOverlayStudioProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [currentMs, setCurrentMs] = useState(0);
-  const selectedStyle = CAPTION_STYLES.find((style) => style.id === value.presetId) ?? CAPTION_STYLES[0];
+  const safeValue = useMemo(() => normalizeClipCaptionStyle(value), [value]);
+  const selectedStyle = CAPTION_STYLES.find((style) => style.id === safeValue.presetId) ?? CAPTION_STYLES[0];
   const activeHook = useMemo(
-    () => value.hookOverlays.find((overlay) => currentMs >= overlay.startMs && currentMs <= overlay.endMs),
-    [currentMs, value.hookOverlays]
+    () => safeValue.hookOverlays.find((overlay) => currentMs >= overlay.startMs && currentMs <= overlay.endMs),
+    [currentMs, safeValue.hookOverlays]
   );
   const activeCaption = useMemo(() => {
     const activeEntry = captionEntries.find((entry) => currentMs >= entry.startMs && currentMs <= entry.endMs);
@@ -86,8 +103,8 @@ export function CaptionOverlayStudio({
 
   const updateOverlay = (overlayId: string, updates: Partial<HookOverlay>) => {
     onChange({
-      ...value,
-      hookOverlays: value.hookOverlays.map((overlay) =>
+      ...safeValue,
+      hookOverlays: safeValue.hookOverlays.map((overlay) =>
         overlay.id === overlayId ? { ...overlay, ...updates } : overlay
       ),
     });
@@ -114,15 +131,15 @@ export function CaptionOverlayStudio({
                 type="button"
                 onClick={() =>
                   onChange({
-                    ...value,
+                    ...safeValue,
                     presetId: style.id,
-                    primaryColor: style.colors.power === "#FFFFFF" ? value.primaryColor : "#FFFFFF",
+                    primaryColor: style.colors.power === "#FFFFFF" ? safeValue.primaryColor : "#FFFFFF",
                     emphasisColor: style.colors.emotion,
                   })
                 }
                 className={cn(
                   "rounded-lg border px-3 py-2 text-left transition-colors",
-                  value.presetId === style.id
+                  safeValue.presetId === style.id
                     ? "border-violet-500/40 bg-violet-500/10"
                     : "border-border/40 bg-muted/20 hover:bg-muted/40"
                 )}
@@ -136,8 +153,8 @@ export function CaptionOverlayStudio({
           <div className="mt-4 grid gap-3 md:grid-cols-2">
             <Field label="Font family">
               <input
-                value={value.fontFamily}
-                onChange={(event) => onChange({ ...value, fontFamily: event.target.value })}
+                value={safeValue.fontFamily}
+                onChange={(event) => onChange({ ...safeValue, fontFamily: event.target.value })}
                 className="h-10 w-full rounded-lg border border-border/50 bg-background px-3 text-sm outline-none focus:border-primary/50"
                 placeholder="Arial"
               />
@@ -147,36 +164,61 @@ export function CaptionOverlayStudio({
                 {POSITION_OPTIONS.map((option) => (
                   <TogglePill
                     key={option.value}
-                    active={value.position === option.value}
-                    onClick={() => onChange({ ...value, position: option.value })}
+                    active={safeValue.position === option.value}
+                    onClick={() => onChange({ ...safeValue, position: option.value })}
                     label={option.label}
                   />
                 ))}
               </div>
             </Field>
-            <Field label={`Font size ${value.fontSize}px`}>
+            <Field label="Text align">
+              <div className="flex gap-2">
+                {ALIGN_OPTIONS.map((option) => (
+                  <TogglePill
+                    key={option.value}
+                    active={safeValue.align === option.value}
+                    onClick={() => onChange({ ...safeValue, align: option.value })}
+                    label={option.label}
+                  />
+                ))}
+              </div>
+            </Field>
+            <Field label={`Font size ${safeValue.fontSize}px`}>
               <input
                 type="range"
                 min={28}
                 max={96}
                 step={2}
-                value={value.fontSize}
+                value={safeValue.fontSize}
                 onChange={(event) =>
-                  onChange({ ...value, fontSize: Number(event.target.value) })
+                  onChange({ ...safeValue, fontSize: Number(event.target.value) })
                 }
                 className="w-full accent-violet-500"
               />
             </Field>
-            <Field label={`Background ${Math.round(value.backgroundOpacity * 100)}%`}>
+            <Field label={`Words per line ${safeValue.maxWordsPerLine}`}>
+              <input
+                type="range"
+                min={2}
+                max={12}
+                step={1}
+                value={safeValue.maxWordsPerLine}
+                onChange={(event) =>
+                  onChange({ ...safeValue, maxWordsPerLine: Number(event.target.value) })
+                }
+                className="w-full accent-violet-500"
+              />
+            </Field>
+            <Field label={`Background ${Math.round(safeValue.backgroundOpacity * 100)}%`}>
               <input
                 type="range"
                 min={0}
                 max={100}
                 step={5}
-                value={Math.round(value.backgroundOpacity * 100)}
+                value={Math.round(safeValue.backgroundOpacity * 100)}
                 onChange={(event) =>
                   onChange({
-                    ...value,
+                    ...safeValue,
                     backgroundOpacity: Number(event.target.value) / 100,
                   })
                 }
@@ -188,37 +230,120 @@ export function CaptionOverlayStudio({
           <div className="mt-4 grid gap-3 md:grid-cols-3">
             <ColorField
               label="Text"
-              value={value.primaryColor}
-              onChange={(next) => onChange({ ...value, primaryColor: next })}
+              value={safeValue.primaryColor}
+              onChange={(next) => onChange({ ...safeValue, primaryColor: next })}
             />
             <ColorField
               label="Accent"
-              value={value.emphasisColor}
-              onChange={(next) => onChange({ ...value, emphasisColor: next })}
+              value={safeValue.emphasisColor}
+              onChange={(next) => onChange({ ...safeValue, emphasisColor: next })}
             />
             <ColorField
               label="Background"
-              value={value.backgroundColor}
-              onChange={(next) => onChange({ ...value, backgroundColor: next })}
+              value={safeValue.backgroundColor}
+              onChange={(next) => onChange({ ...safeValue, backgroundColor: next })}
             />
           </div>
 
           <div className="mt-4 flex flex-wrap gap-2">
             <TogglePill
-              active={value.outline}
-              onClick={() => onChange({ ...value, outline: !value.outline })}
-              label={value.outline ? "Outline on" : "Outline off"}
+              active={safeValue.outline}
+              onClick={() => onChange({ ...safeValue, outline: !safeValue.outline })}
+              label={safeValue.outline ? "Outline on" : "Outline off"}
             />
             <TogglePill
-              active={value.background}
-              onClick={() => onChange({ ...value, background: !value.background })}
-              label={value.background ? "Background on" : "Background off"}
+              active={safeValue.background}
+              onClick={() => onChange({ ...safeValue, background: !safeValue.background })}
+              label={safeValue.background ? "Background on" : "Background off"}
             />
             <TogglePill
-              active={value.karaoke}
-              onClick={() => onChange({ ...value, karaoke: !value.karaoke })}
-              label={value.karaoke ? "Karaoke on" : "Karaoke off"}
+              active={safeValue.karaoke}
+              onClick={() =>
+                onChange({
+                  ...safeValue,
+                  karaoke: !safeValue.karaoke,
+                  animation: {
+                    ...safeValue.animation,
+                    type: !safeValue.karaoke ? "karaoke" : "none",
+                    wordHighlight: !safeValue.karaoke,
+                  },
+                })
+              }
+              label={safeValue.karaoke ? "Karaoke on" : "Karaoke off"}
             />
+            <TogglePill
+              active={safeValue.safeZoneAware}
+              onClick={() => onChange({ ...safeValue, safeZoneAware: !safeValue.safeZoneAware })}
+              label={safeValue.safeZoneAware ? "Safe-zone on" : "Safe-zone off"}
+            />
+          </div>
+
+          <div className="mt-4 rounded-lg border border-border/40 bg-muted/20 p-3">
+            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground/55">
+              Caption animation
+            </p>
+            <div className="mt-3 grid gap-3 lg:grid-cols-3">
+              <Field label="Type">
+                <div className="flex flex-wrap gap-2">
+                  {ANIMATION_OPTIONS.map((option) => (
+                    <TogglePill
+                      key={option.value}
+                      active={safeValue.animation.type === option.value}
+                      onClick={() =>
+                        onChange({
+                          ...safeValue,
+                          karaoke: option.value === "karaoke",
+                          animation: {
+                            ...safeValue.animation,
+                            type: option.value,
+                            wordHighlight:
+                              option.value === "karaoke" ? true : safeValue.animation.wordHighlight,
+                          },
+                        })
+                      }
+                      label={option.label}
+                    />
+                  ))}
+                </div>
+              </Field>
+              <Field label="Speed">
+                <div className="flex gap-2">
+                  {SPEED_OPTIONS.map((option) => (
+                    <TogglePill
+                      key={option.value}
+                      active={safeValue.animation.speed === option.value}
+                      onClick={() =>
+                        onChange({
+                          ...safeValue,
+                          animation: { ...safeValue.animation, speed: option.value },
+                        })
+                      }
+                      label={option.label}
+                    />
+                  ))}
+                </div>
+              </Field>
+              <Field label="Highlight">
+                <TogglePill
+                  active={safeValue.animation.wordHighlight}
+                  onClick={() =>
+                    onChange({
+                      ...safeValue,
+                      animation: {
+                        ...safeValue.animation,
+                        wordHighlight: !safeValue.animation.wordHighlight,
+                      },
+                    })
+                  }
+                  label={safeValue.animation.wordHighlight ? "Word highlight on" : "Word highlight off"}
+                />
+              </Field>
+            </div>
+            {safeValue.animation.type !== "none" ? (
+              <p className="mt-3 text-[11px] leading-5 text-amber-300/75">
+                Animation settings are saved for this clip. Current FFmpeg exports burn static captions; unsupported animation falls back safely.
+              </p>
+            ) : null}
           </div>
         </section>
 
@@ -254,23 +379,24 @@ export function CaptionOverlayStudio({
               className={cn(
                 "absolute left-1/2 max-w-[86%] -translate-x-1/2 rounded-xl px-4 py-2 text-center shadow-lg",
                 "pointer-events-none",
-                value.position === "top" && "top-[12%]",
-                value.position === "middle" && "top-1/2 -translate-y-1/2",
-                value.position === "bottom" && "bottom-[11%]"
+                safeValue.position === "top" && "top-[12%]",
+                safeValue.position === "middle" && "top-1/2 -translate-y-1/2",
+                safeValue.position === "bottom" && "bottom-[11%]"
               )}
               style={{
-                color: value.primaryColor,
-                fontSize: `${Math.max(18, Math.round(value.fontSize * 0.38))}px`,
-                fontFamily: value.fontFamily,
-                WebkitTextStroke: value.outline ? `1px ${value.outlineColor}` : undefined,
-                backgroundColor: value.background
-                  ? `${value.backgroundColor}${Math.round(value.backgroundOpacity * 255)
+                color: safeValue.primaryColor,
+                fontSize: `${Math.max(18, Math.round(safeValue.fontSize * 0.38))}px`,
+                fontFamily: safeValue.fontFamily,
+                textAlign: safeValue.align,
+                WebkitTextStroke: safeValue.outline ? `1px ${safeValue.outlineColor}` : undefined,
+                backgroundColor: safeValue.background
+                  ? `${safeValue.backgroundColor}${Math.round(safeValue.backgroundOpacity * 255)
                       .toString(16)
                       .padStart(2, "0")}`
                   : "transparent",
               }}
             >
-              <span className="font-semibold">
+              <span className={cn("font-semibold", safeValue.animation.type === "pop" && "scale-[1.03]", safeValue.animation.type === "fade" && "opacity-90")}>
                 {activeCaption}
               </span>
             </div>
@@ -279,8 +405,8 @@ export function CaptionOverlayStudio({
           </div>
 
           <div className="mt-3 rounded-lg border border-border/40 bg-muted/20 px-3 py-2 text-xs text-muted-foreground/60">
-            {selectedStyle.name} preset · {value.hookOverlays.length} hook overlay
-            {value.hookOverlays.length === 1 ? "" : "s"}
+            {selectedStyle.name} preset · {safeValue.animation.type} animation · {safeValue.hookOverlays.length} hook overlay
+            {safeValue.hookOverlays.length === 1 ? "" : "s"}
           </div>
         </section>
       </div>
@@ -297,8 +423,8 @@ export function CaptionOverlayStudio({
             type="button"
             onClick={() =>
               onChange({
-                ...value,
-                hookOverlays: [...value.hookOverlays, createDefaultHookOverlay()],
+                ...safeValue,
+                hookOverlays: [...safeValue.hookOverlays, createDefaultHookOverlay()],
               })
             }
             className="inline-flex items-center gap-1.5 rounded-lg border border-violet-500/25 bg-violet-500/10 px-3 py-2 text-xs font-medium text-violet-300 transition-colors hover:bg-violet-500/15"
@@ -308,13 +434,13 @@ export function CaptionOverlayStudio({
           </button>
         </div>
 
-        {value.hookOverlays.length === 0 ? (
+        {safeValue.hookOverlays.length === 0 ? (
           <div className="rounded-lg border border-dashed border-border/40 px-4 py-6 text-sm text-muted-foreground/45">
             No hook overlay yet. Add one for intro punch, CTA, or quote emphasis.
           </div>
         ) : (
           <div className="space-y-3">
-            {value.hookOverlays.map((overlay, index) => (
+            {safeValue.hookOverlays.map((overlay, index) => (
               <div key={overlay.id} className="rounded-lg border border-border/40 bg-muted/20 p-3">
                 <div className="mb-3 flex items-center justify-between gap-2">
                   <p className="text-sm font-medium text-foreground">Hook {index + 1}</p>
@@ -322,8 +448,8 @@ export function CaptionOverlayStudio({
                     type="button"
                     onClick={() =>
                       onChange({
-                        ...value,
-                        hookOverlays: value.hookOverlays.filter((item) => item.id !== overlay.id),
+                        ...safeValue,
+                        hookOverlays: safeValue.hookOverlays.filter((item) => item.id !== overlay.id),
                       })
                     }
                     className="rounded-md border border-red-500/20 bg-red-500/10 p-2 text-red-300 transition-colors hover:bg-red-500/15"

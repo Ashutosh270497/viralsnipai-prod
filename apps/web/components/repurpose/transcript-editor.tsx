@@ -6,6 +6,7 @@ import { createVttBlobUrl, type VttBlobHandle } from "@/lib/captions/webvtt";
 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/components/ui/use-toast";
 import { CaptionOverlayStudio } from "@/components/repurpose/caption-overlay-studio";
 import { srtUtils, type CaptionEntry } from "@/lib/srt-utils";
@@ -21,8 +22,8 @@ interface TranscriptEditorProps {
   clipId: string;
   clipTitle?: string | null;
   captionSrt?: string | null;
-  captionStyle: ClipCaptionStyleConfig;
-  onCaptionStyleChange: (style: ClipCaptionStyleConfig) => void;
+  captionStyle?: ClipCaptionStyleConfig | null;
+  onCaptionStyleChange?: (style: ClipCaptionStyleConfig) => void;
   startMs: number;
   endMs: number;
   previewPath?: string | null;
@@ -448,6 +449,11 @@ export function TranscriptEditor({
   );
   const [undoKey, setUndoKey] = useState(0);
   const [searchQuery, setSearchQuery] = useState("");
+  const [captionStyleDraft, setCaptionStyleDraft] = useState<ClipCaptionStyleConfig>(
+    () => normalizeClipCaptionStyle(captionStyle)
+  );
+  const [subtitlesPreviewEnabled, setSubtitlesPreviewEnabled] = useState(true);
+  const safeCaptionStyle = captionStyleDraft;
 
   useEffect(() => {
     const parsed = captionSrt ? srtUtils.parseSRT(captionSrt) : [];
@@ -458,9 +464,12 @@ export function TranscriptEditor({
     const clippedEntries = clampCaptionEntriesToClipWindow(normalized, startMs, endMs);
     setEntries(clippedEntries);
     setInitialEntries(clippedEntries);
-    setInitialCaptionStyle(normalizeClipCaptionStyle(captionStyle));
+    const normalizedStyle = normalizeClipCaptionStyle(captionStyle);
+    setInitialCaptionStyle(normalizedStyle);
+    setCaptionStyleDraft(normalizedStyle);
     setSearchQuery("");
     setUndoKey(0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [captionSrt, clipId, startMs, endMs]); // captionStyle intentionally excluded — only reset on clip change
 
   const hasEntryChanges = useMemo(
@@ -468,7 +477,7 @@ export function TranscriptEditor({
     [entries, initialEntries]
   );
   const hasStyleChanges =
-    JSON.stringify(captionStyle) !== JSON.stringify(initialCaptionStyle);
+    JSON.stringify(safeCaptionStyle) !== JSON.stringify(initialCaptionStyle);
   const hasChanges = hasEntryChanges || hasStyleChanges;
   const wordTimeline = useMemo(() => buildWordTimeline(entries), [entries]);
 
@@ -506,8 +515,15 @@ export function TranscriptEditor({
 
   function handleUndo() {
     setEntries(initialEntries);
-    onCaptionStyleChange(initialCaptionStyle);
+    setCaptionStyleDraft(initialCaptionStyle);
+    onCaptionStyleChange?.(initialCaptionStyle);
     setUndoKey((k) => k + 1);
+  }
+
+  function handleCaptionStyleChange(nextStyle: ClipCaptionStyleConfig) {
+    const normalizedStyle = normalizeClipCaptionStyle(nextStyle);
+    setCaptionStyleDraft(normalizedStyle);
+    onCaptionStyleChange?.(normalizedStyle);
   }
 
   function updateEntryText(idx: number, newText: string) {
@@ -564,7 +580,7 @@ export function TranscriptEditor({
     setIsSaving(true);
 
     try {
-      const normalizedCaptionStyle = normalizeClipCaptionStyle(captionStyle);
+      const normalizedCaptionStyle = normalizeClipCaptionStyle(safeCaptionStyle);
       let nextStartMs = startMs;
       let nextEndMs = endMs;
       let retimedFromTranscript = false;
@@ -726,7 +742,9 @@ export function TranscriptEditor({
           <track kind="captions" src={vttBlobUrl} srcLang="en" label="English" />
         )}
       </video>
-      <CaptionPreviewOverlay captionStyle={captionStyle} entries={entries} currentMs={currentMs} />
+      {subtitlesPreviewEnabled && (
+        <CaptionPreviewOverlay captionStyle={safeCaptionStyle} entries={entries} currentMs={currentMs} />
+      )}
     </div>
   ) : null;
 
@@ -796,6 +814,23 @@ export function TranscriptEditor({
         </div>
       )}
 
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border/40 bg-muted/20 px-3 py-2">
+        <div className="min-w-0">
+          <p className="text-xs font-semibold text-foreground">Caption controls</p>
+          <p className="text-[11px] text-muted-foreground/55">
+            Edit subtitle text, style, color, size, and position. Saving marks the clip for preview/export refresh.
+          </p>
+        </div>
+        <label className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+          Subtitle preview
+          <Switch
+            checked={subtitlesPreviewEnabled}
+            onCheckedChange={setSubtitlesPreviewEnabled}
+            aria-label="Toggle subtitle preview"
+          />
+        </label>
+      </div>
+
       {/* Transcript toolbar: search + segment count + actions */}
       <div className="flex items-center gap-2 flex-wrap">
         {/* Search */}
@@ -815,6 +850,12 @@ export function TranscriptEditor({
           {displayEntries.length}
           {searchQuery.trim() ? `/${entries.length}` : ""} segment{entries.length !== 1 ? "s" : ""}
         </span>
+
+        {hasChanges ? (
+          <Badge variant="outline" className="border-amber-500/30 bg-amber-500/10 text-[10px] text-amber-600 dark:text-amber-300">
+            Unsaved caption changes
+          </Badge>
+        ) : null}
 
         {/* Spacer */}
         <div className="flex-1" />
@@ -868,6 +909,14 @@ export function TranscriptEditor({
           ))
         )}
       </div>
+
+      <CaptionOverlayStudio
+        value={safeCaptionStyle}
+        onChange={handleCaptionStyleChange}
+        sampleCaption={entries[0]?.text}
+        previewPath={previewPath}
+        captionEntries={entries}
+      />
     </div>
   );
 }

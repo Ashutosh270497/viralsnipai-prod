@@ -6,7 +6,9 @@ import { useSearchParams } from "next/navigation";
 import {
   ArrowRight,
   CheckCircle2,
+  Clock3,
   Download,
+  Eye,
   FileText,
   Flame,
   Link as LinkIcon,
@@ -35,6 +37,7 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/components/ui/use-toast";
 import { HIGHLIGHT_MODEL_OPTIONS } from "@/lib/constants/repurpose";
+import { V1UsageLimitsCard } from "@/components/repurpose/v1-usage-limits-card";
 
 export function RepurposeIngestPage() {
   const { toast } = useToast();
@@ -47,6 +50,8 @@ export function RepurposeIngestPage() {
     primaryAsset,
     isProjectSelected,
     invalidate,
+    selectedClipIds,
+    setSelectedClipIds,
   } = useRepurpose();
 
   const {
@@ -332,7 +337,8 @@ export function RepurposeIngestPage() {
               )}
             </AppCard>
 
-            {/* ── RIGHT: AI Detection config ─────────────────────────────────── */}
+            {/* ── RIGHT: AI Detection config + usage ─────────────────────────── */}
+            <div className="space-y-5">
             <AppCard className="flex flex-col gap-5 p-6">
               {/* Header */}
               <div className="flex items-start justify-between gap-3">
@@ -428,6 +434,8 @@ export function RepurposeIngestPage() {
                 )}
               </div>
             </AppCard>
+            <V1UsageLimitsCard />
+            </div>
           </div>
 
           {/* ── Detected Highlights grid ─────────────────────────────────────── */}
@@ -465,67 +473,157 @@ export function RepurposeIngestPage() {
                 </div>
               </div>
 
-              {/* Thumbnail card grid */}
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              {/* Clip result card grid */}
+              <div className="grid gap-4 lg:grid-cols-2">
                 {project.clips.map((clip, index) => {
                   const duration = clip.endMs - clip.startMs;
                   const score = clip.viralityScore ?? null;
+                  const captionStatus = resolveCaptionStatus(clip.captionSrt);
+                  const renderStatus = clip.previewPath ? "Preview ready" : "Preview pending";
+                  const exportRecord = project.exports.find(
+                    (exp) =>
+                      isExportComplete(exp.status) &&
+                      exp.outputPath &&
+                      Array.isArray(exp.clipIds) &&
+                      exp.clipIds.includes(clip.id)
+                  );
                   return (
                     <div
                       key={clip.id}
-                      className="group rounded-xl border border-border/40 overflow-hidden hover:border-border/70 transition-all bg-card"
+                      className="group overflow-hidden rounded-2xl border border-border/50 bg-card/80 shadow-sm transition-all hover:border-primary/30 hover:shadow-lg hover:shadow-slate-950/5"
                     >
-                      {/* Thumbnail */}
-                      <div className="relative aspect-video bg-black/40">
-                        {clip.thumbnail ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img src={clip.thumbnail} alt="" className="w-full h-full object-cover" />
-                        ) : (
-                          <div className="flex h-full items-center justify-center">
-                            <Sparkles className="h-6 w-6 text-white/10" />
-                          </div>
-                        )}
+                      <div className="grid min-h-full gap-0 sm:grid-cols-[220px_minmax(0,1fr)]">
+                        <div className="relative aspect-video bg-black/50 sm:aspect-auto">
+                          {clip.previewPath ? (
+                            <video
+                              src={clip.previewPath}
+                              className="h-full w-full object-cover"
+                              muted
+                              loop
+                              playsInline
+                              preload="metadata"
+                            />
+                          ) : clip.thumbnail ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={clip.thumbnail} alt="" className="h-full w-full object-cover" />
+                          ) : (
+                            <div className="flex h-full items-center justify-center">
+                              <Sparkles className="h-7 w-7 text-white/15" />
+                            </div>
+                          )}
 
-                        {/* Viral score badge */}
-                        {score !== null && (
-                          <div className={cn(
-                            "absolute top-1.5 right-1.5 flex items-center gap-0.5 px-1.5 py-0.5 rounded-full backdrop-blur-sm text-[9px] font-bold text-white",
-                            score >= 80 ? "bg-emerald-500/85" : score >= 60 ? "bg-amber-500/85" : "bg-orange-500/85"
-                          )}>
-                            <Flame className="h-2 w-2" />
-                            {score}
+                          <div className="absolute left-2 top-2 rounded-full bg-black/65 px-2 py-1 text-[10px] font-semibold text-white/80 backdrop-blur-sm">
+                            #{index + 1}
                           </div>
-                        )}
 
-                        {/* Duration */}
-                        <div className="absolute bottom-1.5 left-1.5 px-1.5 py-0.5 rounded bg-black/70 text-[9px] font-mono font-semibold text-white/80">
-                          {formatDuration(duration)}
+                          {score !== null && (
+                            <div className={cn(
+                              "absolute right-2 top-2 flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-bold text-white backdrop-blur-sm",
+                              score >= 80 ? "bg-emerald-500/85" : score >= 60 ? "bg-amber-500/85" : "bg-orange-500/85"
+                            )}>
+                              <Flame className="h-3 w-3" />
+                              {score}
+                            </div>
+                          )}
+
+                          <div className="absolute bottom-2 left-2 flex items-center gap-1 rounded bg-black/70 px-2 py-1 font-mono text-[10px] font-semibold text-white/80">
+                            <Clock3 className="h-3 w-3" />
+                            {formatDuration(duration)}
+                          </div>
                         </div>
 
-                        {/* Hover overlay — actions */}
-                        <div className="absolute inset-0 bg-black/55 opacity-0 group-hover:opacity-100 transition-all flex items-center justify-center gap-2">
-                          <Link
-                            href={`/repurpose/editor?projectId=${projectId}`}
-                            className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-white/15 hover:bg-white/25 text-white text-xs font-medium transition-colors backdrop-blur-sm"
-                          >
-                            <Pencil className="h-3 w-3" />
-                            Edit
-                          </Link>
-                          <Link
-                            href={`/repurpose/export?projectId=${projectId}`}
-                            className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-primary/80 hover:bg-primary text-white text-xs font-medium transition-colors backdrop-blur-sm"
-                          >
-                            <Download className="h-3 w-3" />
-                            Export
-                          </Link>
-                        </div>
-                      </div>
+                        <div className="flex min-w-0 flex-col gap-3 p-4">
+                          <div className="min-w-0">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <h3 className="truncate text-sm font-semibold text-foreground">
+                                  {clip.title || `Clip ${index + 1}`}
+                                </h3>
+                                <p className="mt-1 font-mono text-[11px] text-muted-foreground/55">
+                                  {formatDuration(clip.startMs)} → {formatDuration(clip.endMs)}
+                                </p>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setSelectedClipIds(
+                                    selectedClipIds.includes(clip.id)
+                                      ? selectedClipIds.filter((id) => id !== clip.id)
+                                      : [...selectedClipIds, clip.id]
+                                  )
+                                }
+                                className={cn(
+                                  "shrink-0 rounded-full border px-2.5 py-1 text-[10px] font-semibold transition-colors",
+                                  selectedClipIds.includes(clip.id)
+                                    ? "border-primary/40 bg-primary/15 text-primary"
+                                    : "border-border/60 bg-muted/30 text-muted-foreground hover:text-foreground"
+                                )}
+                              >
+                                {selectedClipIds.includes(clip.id) ? "Selected" : "Select"}
+                              </button>
+                            </div>
 
-                      {/* Card body */}
-                      <div className="px-3 py-2.5">
-                        <p className="text-[13px] font-medium truncate text-foreground/90">
-                          {clip.title || `Clip ${index + 1}`}
-                        </p>
+                            <p className="mt-2 line-clamp-2 text-xs leading-5 text-muted-foreground/70">
+                              {clip.summary || transcriptSnippet(clip.captionSrt) || "Transcript snippet will appear after captions are generated."}
+                            </p>
+                          </div>
+
+                          <div className="grid gap-2 text-[11px] sm:grid-cols-3">
+                            <StatusPill label="Captions" value={captionStatus} tone={captionStatus === "Ready" ? "good" : "warn"} />
+                            <StatusPill label="Render" value={renderStatus} tone={clip.previewPath ? "good" : "neutral"} />
+                            <StatusPill label="Export" value={exportRecord ? "Ready" : "Not exported"} tone={exportRecord ? "good" : "neutral"} />
+                          </div>
+
+                          {score !== null && (
+                            <div className="rounded-xl border border-border/50 bg-muted/25 p-3">
+                              <div className="mb-1.5 flex items-center justify-between text-[11px]">
+                                <span className="font-semibold text-foreground/80">Score explanation</span>
+                                <span className="font-semibold text-muted-foreground/60">{score}/100</span>
+                              </div>
+                              <p className="line-clamp-2 text-xs leading-5 text-muted-foreground/65">
+                                {scoreExplanation(clip.viralityFactors) || "Ranked by hook strength, pacing, emotional peak, transcript quality, and clip boundary quality."}
+                              </p>
+                            </div>
+                          )}
+
+                          <div className="mt-auto flex flex-wrap gap-2">
+                            {clip.previewPath ? (
+                              <a
+                                href={clip.previewPath}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="inline-flex items-center gap-1.5 rounded-lg border border-border/60 bg-muted/30 px-3 py-1.5 text-xs font-semibold text-foreground transition-colors hover:bg-muted/50"
+                              >
+                                <Eye className="h-3.5 w-3.5" />
+                                Preview
+                              </a>
+                            ) : null}
+                            <Link
+                              href={`/repurpose/editor?projectId=${projectId}`}
+                              className="inline-flex items-center gap-1.5 rounded-lg border border-border/60 bg-muted/30 px-3 py-1.5 text-xs font-semibold text-foreground transition-colors hover:bg-muted/50"
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                              Edit
+                            </Link>
+                            <Link
+                              href={`/repurpose/export?projectId=${projectId}`}
+                              className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
+                            >
+                              <Download className="h-3.5 w-3.5" />
+                              Export
+                            </Link>
+                            {exportRecord?.outputPath ? (
+                              <a
+                                href={exportRecord.outputPath}
+                                download
+                                className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-xs font-semibold text-emerald-500 transition-colors hover:bg-emerald-500/15"
+                              >
+                                <Download className="h-3.5 w-3.5" />
+                                Download
+                              </a>
+                            ) : null}
+                          </div>
+                        </div>
                       </div>
                     </div>
                   );
@@ -539,32 +637,139 @@ export function RepurposeIngestPage() {
   );
 }
 
+function StatusPill({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: string;
+  tone: "good" | "warn" | "neutral";
+}) {
+  return (
+    <div
+      className={cn(
+        "rounded-lg border px-2.5 py-2",
+        tone === "good" && "border-emerald-500/20 bg-emerald-500/[0.06]",
+        tone === "warn" && "border-amber-500/20 bg-amber-500/[0.06]",
+        tone === "neutral" && "border-border/60 bg-muted/25"
+      )}
+    >
+      <p className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground/45">
+        {label}
+      </p>
+      <p
+        className={cn(
+          "mt-1 truncate font-semibold",
+          tone === "good" && "text-emerald-500",
+          tone === "warn" && "text-amber-500",
+          tone === "neutral" && "text-muted-foreground"
+        )}
+      >
+        {value}
+      </p>
+    </div>
+  );
+}
+
+function resolveCaptionStatus(captionSrt?: string | null) {
+  if (!captionSrt?.trim()) {
+    return "Missing";
+  }
+  if (captionSrt.includes("[Transcript unavailable]")) {
+    return "Needs regen";
+  }
+  return "Ready";
+}
+
+function transcriptSnippet(captionSrt?: string | null) {
+  if (!captionSrt) {
+    return "";
+  }
+  return captionSrt
+    .replace(/\d+\s*\n/g, " ")
+    .replace(/\d{2}:\d{2}:\d{2},\d{3}\s*-->\s*\d{2}:\d{2}:\d{2},\d{3}/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 180);
+}
+
+function scoreExplanation(viralityFactors: unknown) {
+  if (!viralityFactors || typeof viralityFactors !== "object") {
+    return "";
+  }
+  const factors = viralityFactors as {
+    reasoning?: unknown;
+    improvements?: unknown;
+    hookStrength?: unknown;
+    emotionalPeak?: unknown;
+    pacing?: unknown;
+  };
+  if (typeof factors.reasoning === "string" && factors.reasoning.trim()) {
+    return factors.reasoning.trim();
+  }
+  const parts = [
+    typeof factors.hookStrength === "number" ? `Hook ${factors.hookStrength}/100` : null,
+    typeof factors.emotionalPeak === "number" ? `emotion ${factors.emotionalPeak}/100` : null,
+    typeof factors.pacing === "number" ? `pacing ${factors.pacing}/100` : null,
+  ].filter(Boolean);
+  return parts.length ? `Strongest signals: ${parts.join(", ")}.` : "";
+}
+
+function isExportComplete(status: string) {
+  return status === "done" || status === "completed";
+}
+
 // ─── Detection Progress Card ───────────────────────────────────────────────────
 
 const DETECTION_PHASES = [
   {
-    label: "Connecting to source",
-    sublabel: "Validating YouTube URL and media availability",
+    label: "Upload",
+    sublabel: "Validating source media and preparing the asset",
     Icon: LinkIcon,
     delayMs: 0,
   },
   {
-    label: "Downloading audio track",
-    sublabel: "Extracting audio for transcription",
+    label: "Audio extraction",
+    sublabel: "Extracting clean audio for transcription",
     Icon: Music,
     delayMs: 1500,
   },
   {
-    label: "Transcribing speech",
-    sublabel: "Converting audio to timestamped transcript",
+    label: "Transcription",
+    sublabel: "Converting speech into timestamped text",
     Icon: FileText,
     delayMs: 7500,
   },
   {
-    label: "Analyzing viral patterns",
-    sublabel: "Scoring segments for engagement potential",
+    label: "Scene detection",
+    sublabel: "Finding clean clip boundaries and visual changes",
+    Icon: Zap,
+    delayMs: 17500,
+  },
+  {
+    label: "Highlight scoring",
+    sublabel: "Ranking moments by hook, payoff, and pacing",
     Icon: Sparkles,
+    delayMs: 27500,
+  },
+  {
+    label: "Caption generation",
+    sublabel: "Preparing editable captions for each clip",
+    Icon: FileText,
     delayMs: 37500,
+  },
+  {
+    label: "Preview rendering",
+    sublabel: "Building playable previews and thumbnails",
+    Icon: Download,
+    delayMs: 47500,
+  },
+  {
+    label: "Ready",
+    sublabel: "Clips are ready to edit, export, and download",
+    Icon: CheckCircle2,
+    delayMs: 57500,
   },
 ] as const;
 

@@ -14,6 +14,17 @@ import { ApiResponseBuilder } from '@/lib/api/response';
 import { logger } from '@/lib/logger';
 import { normalizeClipCaptionStyle } from '@/lib/repurpose/caption-style-config';
 
+const SMART_REFRAME_MODES = [
+  "smart_auto",
+  "smart_face",
+  "smart_person",
+  "dynamic_auto",
+  "dynamic_face",
+  "dynamic_person",
+  "center_crop",
+  "blurred_background",
+] as const;
+
 const patchSchema = z
   .object({
     title: z.string().optional(),
@@ -38,6 +49,14 @@ const patchSchema = z
       )
       .nullable()
       .optional(),
+    /** Smart reframe mode — applied to next export when set. */
+    reframeMode: z.enum(SMART_REFRAME_MODES).optional(),
+    trackingSmoothness: z.enum(["low", "medium", "high"]).optional(),
+    exportQuality: z.enum(["balanced", "high"]).optional(),
+    /** Whether captions should be burned into the exported video. */
+    captionsEnabled: z.boolean().optional(),
+    /** Whether to apply the caption safe zone when computing crop windows. */
+    captionSafeZoneEnabled: z.boolean().optional(),
   })
   .refine((data) => {
     if (data.startMs !== undefined && data.endMs !== undefined) {

@@ -4,6 +4,7 @@ export const revalidate = 0;
 import { NextResponse } from "next/server";
 
 import { getCurrentUser } from "@/lib/auth";
+import { logger } from "@/lib/logger";
 import { prisma } from "@/lib/prisma";
 
 export async function GET(
@@ -59,6 +60,12 @@ export async function DELETE(
       userId: user.id
     },
     include: {
+      assets: {
+        select: { id: true }
+      },
+      clips: {
+        select: { id: true }
+      },
       script: {
         select: { id: true }
       }
@@ -69,17 +76,68 @@ export async function DELETE(
     return NextResponse.json({ error: "Not found" }, { status: 404, headers: { "Cache-Control": "no-store" } });
   }
 
-  await prisma.$transaction(async (tx) => {
-    await tx.export.deleteMany({ where: { projectId: project.id } });
-    await tx.clip.deleteMany({ where: { projectId: project.id } });
-    await tx.asset.deleteMany({ where: { projectId: project.id } });
+  const assetIds = project.assets.map((asset) => asset.id);
+  const clipIds = project.clips.map((clip) => clip.id);
 
-    if (project.script?.id) {
-      await tx.script.delete({ where: { id: project.script.id } });
-    }
+  try {
+    await prisma.$transaction(async (tx) => {
+      if (clipIds.length > 0) {
+        await tx.captionTranslation.deleteMany({
+          where: {
+            clipId: { in: clipIds }
+          }
+        });
+      }
 
-    await tx.project.delete({ where: { id: project.id } });
-  });
+      if (assetIds.length > 0) {
+        await tx.transcriptTranslation.deleteMany({
+          where: {
+            assetId: { in: assetIds }
+          }
+        });
+        await tx.voiceTranslation.deleteMany({
+          where: {
+            assetId: { in: assetIds }
+          }
+        });
+      }
+
+      await tx.youTubeIngestJob.deleteMany({
+        where: {
+          projectId: project.id
+        }
+      });
+
+      await tx.export.deleteMany({ where: { projectId: project.id } });
+      await tx.clip.deleteMany({ where: { projectId: project.id } });
+      await tx.asset.deleteMany({ where: { projectId: project.id } });
+
+      if (project.script?.id) {
+        await tx.script.delete({ where: { id: project.script.id } });
+      }
+
+      await tx.project.delete({ where: { id: project.id } });
+    });
+  } catch (error) {
+    logger.error(
+      "Project delete failed",
+      {
+        projectId: project.id,
+        userId: user.id,
+        assetCount: assetIds.length,
+        clipCount: clipIds.length
+      },
+      error instanceof Error ? error : undefined
+    );
+
+    return NextResponse.json(
+      {
+        error: "Project delete failed",
+        message: "We could not delete this project and its related media. Please try again."
+      },
+      { status: 500, headers: { "Cache-Control": "no-store" } }
+    );
+  }
 
   return NextResponse.json({ success: true }, { headers: { "Cache-Control": "no-store" } });
 }

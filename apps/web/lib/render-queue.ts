@@ -4,7 +4,7 @@ import path from "path";
 import { enqueueRender, processJobs } from "@clippers/jobs";
 
 import { prisma } from "@/lib/prisma";
-import { renderExport, PRESETS } from "@/lib/ffmpeg";
+import { renderExport, PRESETS, probeSourceMetadata } from "@/lib/ffmpeg";
 import { getLocalUploadDir } from "@/lib/storage";
 import { generateWatermarkOverlayBuffer, resolveWatermarkStyle } from "@/lib/watermark";
 import { logger } from "@/lib/logger";
@@ -307,6 +307,21 @@ export async function queueExportJob(exportId: string) {
                   `watermark-${Date.now()}.png`
                 );
                 await fs.writeFile(transientWatermarkPath, overlayBuffer);
+              }
+
+              // Log source metadata for each unique source path before encoding starts.
+              const loggedPaths = new Set<string>();
+              for (const seg of segments) {
+                if (!loggedPaths.has(seg.sourcePath)) {
+                  loggedPaths.add(seg.sourcePath);
+                  probeSourceMetadata(seg.sourcePath).then((meta) => {
+                    logger.info("render:source_probe", {
+                      exportId,
+                      sourcePath: seg.sourcePath,
+                      ...meta,
+                    });
+                  }).catch(() => {});
+                }
               }
 
               await renderExport({

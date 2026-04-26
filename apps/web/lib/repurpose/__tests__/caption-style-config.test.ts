@@ -47,4 +47,22 @@ describe("normalizeClipCaptionStyle", () => {
     expect(overlay.text).toBe("Test hook");
     expect(overlay.endMs).toBeGreaterThan(overlay.startMs);
   });
+
+  it("normalizes animation config without changing editable caption text", () => {
+    const style = normalizeClipCaptionStyle({
+      animation: { type: "bounce", wordHighlight: true, speed: "fast" },
+      maxWordsPerLine: 5,
+      safeZoneAware: false,
+    });
+
+    expect(style.animation).toEqual({ type: "bounce", wordHighlight: true, speed: "fast" });
+    expect(style.maxWordsPerLine).toBe(5);
+    expect(style.safeZoneAware).toBe(false);
+  });
+
+  it("maps legacy karaoke toggle into animation config", () => {
+    const style = normalizeClipCaptionStyle({ karaoke: true });
+    expect(style.animation.type).toBe("karaoke");
+    expect(style.animation.wordHighlight).toBe(true);
+  });
 });

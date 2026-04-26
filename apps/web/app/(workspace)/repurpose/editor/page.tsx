@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 
 import { TranscriptEditor } from "@/components/repurpose/transcript-editor";
+import { FramingPanel } from "@/components/repurpose/framing-panel";
 import { useRepurpose } from "@/components/repurpose/repurpose-context";
 import {
   AlertDialog,
@@ -545,6 +546,12 @@ export default function RepurposeEditorPage() {
                       Transcript
                     </TabsTrigger>
                     <TabsTrigger
+                      value="framing"
+                      className="h-8 rounded-none border-b-2 border-transparent px-4 text-xs font-semibold data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=inactive]:text-muted-foreground/60 data-[state=inactive]:hover:text-muted-foreground"
+                    >
+                      Framing
+                    </TabsTrigger>
+                    <TabsTrigger
                       value="export"
                       className="h-8 rounded-none border-b-2 border-transparent px-4 text-xs font-semibold data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=inactive]:text-muted-foreground/60 data-[state=inactive]:hover:text-muted-foreground"
                     >
@@ -566,6 +573,17 @@ export default function RepurposeEditorPage() {
                     onSave={invalidate}
                     onGenerateCaptions={() => handleGenerateCaptions(activeClip.id)}
                     isGenerating={captionLoading === activeClip.id}
+                  />
+                </TabsContent>
+
+                {/* Framing tab */}
+                <TabsContent value="framing" className="m-0 p-5">
+                  <FramingPanel
+                    clipId={activeClip.id}
+                    smartReframePlan={
+                      (activeClip.viralityFactors?.metadata?.smartReframe as import("@/lib/media/smart-reframe").SmartReframePlan | undefined) ?? null
+                    }
+                    onAnalysisComplete={invalidate}
                   />
                 </TabsContent>
 

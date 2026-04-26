@@ -18,6 +18,7 @@ import { ECOSYSTEM_COOKIE_KEY, getEcosystemHome, parseEcosystem } from "@/lib/ec
 import { EcosystemSwitcher } from "@/components/layout/ecosystem-switcher";
 import { EcosystemRouteGate } from "@/components/layout/ecosystem-route-gate";
 import { isFeatureEnabled } from "@/config/features";
+import { LaunchRouteGate } from "@/components/layout/launch-route-gate";
 
 export default async function WorkspaceLayout({ children }: { children: ReactNode }) {
   const user = await getCurrentUser();
@@ -96,7 +97,9 @@ export default async function WorkspaceLayout({ children }: { children: ReactNod
         <main className="flex flex-1 flex-col">
           <EcosystemRouteGate ecosystem={effectiveEcosystem}>
             <WorkflowProvider>
-              <div className="mx-auto flex w-full max-w-[1480px] flex-1 p-4 sm:p-5 lg:p-7">{children}</div>
+              <div className="mx-auto flex w-full max-w-[1480px] flex-1 p-4 sm:p-5 lg:p-7">
+                <LaunchRouteGate>{children}</LaunchRouteGate>
+              </div>
             </WorkflowProvider>
           </EcosystemRouteGate>
         </main>

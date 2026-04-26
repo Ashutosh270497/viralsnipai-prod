@@ -9,6 +9,7 @@ import {
   HAS_OPENROUTER_KEY,
   routedChatCompletion,
   buildEmptyOpenRouterContentError,
+  getOpenRouterCandidateModels,
 } from "./openrouter-client";
 
 const hasApiKey = Boolean(process.env.OPENAI_API_KEY);
@@ -44,6 +45,21 @@ export interface HighlightPayload {
   brief?: string;
   callToAction?: string;
 }
+
+export type HighlightSuggestion = {
+  title: string;
+  hook: string;
+  startPercent: number;
+  endPercent: number;
+  callToAction?: string;
+};
+
+type HighlightParseResult = {
+  highlights: HighlightSuggestion[];
+  repaired: boolean;
+};
+
+const HIGHLIGHT_MAX_TOKENS = Number.parseInt(process.env.OPENROUTER_HIGHLIGHTS_MAX_TOKENS ?? "8192", 10);
 
 const VIRAL_CLIP_EXAMPLES = [
   {
@@ -117,6 +133,131 @@ const VIRAL_CLIP_EXAMPLES = [
     payoff: "Simple homework for tonight, invite to share their dog's progress, tease advanced techniques."
   }
 ] as const;
+
+function stripCodeFence(text: string): string {
+  return text
+    .trim()
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/\s*```$/i, "")
+    .trim();
+}
+
+function extractJsonObject(text: string): string {
+  const stripped = stripCodeFence(text);
+  if (stripped.startsWith("{")) {
+    return stripped;
+  }
+
+  const first = stripped.indexOf("{");
+  const last = stripped.lastIndexOf("}");
+  return first >= 0 && last > first ? stripped.slice(first, last + 1) : "";
+}
+
+function normalizeHighlight(highlight: any): HighlightSuggestion | null {
+  const startPercent = Number.parseFloat(String(highlight?.start_percent ?? highlight?.startPercent ?? ""));
+  const endPercent = Number.parseFloat(String(highlight?.end_percent ?? highlight?.endPercent ?? ""));
+
+  if (!Number.isFinite(startPercent) || !Number.isFinite(endPercent) || endPercent <= startPercent) {
+    return null;
+  }
+
+  return {
+    title: String(highlight?.title ?? highlight?.headline ?? "Highlight").trim() || "Highlight",
+    hook: String(highlight?.hook ?? highlight?.opening ?? highlight?.title ?? "").trim(),
+    startPercent,
+    endPercent,
+    callToAction: highlight?.cta ?? highlight?.call_to_action ?? highlight?.callToAction ?? highlight?.outro ?? undefined,
+  };
+}
+
+function extractCompleteHighlightObjects(text: string): any[] {
+  const highlightsIndex = text.indexOf('"highlights"');
+  const arrayStart = highlightsIndex >= 0 ? text.indexOf("[", highlightsIndex) : -1;
+  if (arrayStart < 0) {
+    return [];
+  }
+
+  const objects: any[] = [];
+  let depth = 0;
+  let start = -1;
+  let inString = false;
+  let escaped = false;
+
+  for (let index = arrayStart + 1; index < text.length; index += 1) {
+    const char = text[index];
+
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+
+    if (char === "\\") {
+      escaped = inString;
+      continue;
+    }
+
+    if (char === '"') {
+      inString = !inString;
+      continue;
+    }
+
+    if (inString) {
+      continue;
+    }
+
+    if (char === "{") {
+      if (depth === 0) {
+        start = index;
+      }
+      depth += 1;
+      continue;
+    }
+
+    if (char === "}") {
+      depth -= 1;
+      if (depth === 0 && start >= 0) {
+        try {
+          objects.push(JSON.parse(text.slice(start, index + 1)));
+        } catch {
+          // Ignore the malformed object and keep scanning for later complete ones.
+        }
+        start = -1;
+      }
+    }
+  }
+
+  return objects;
+}
+
+export function parseOpenRouterHighlightsContent(raw: string): HighlightParseResult {
+  const jsonText = extractJsonObject(raw);
+  if (!jsonText) {
+    throw new Error("OpenRouter highlight response did not contain a JSON object.");
+  }
+
+  try {
+    const parsed = JSON.parse(jsonText) as { highlights?: Array<any> };
+    const highlights = Array.isArray(parsed.highlights)
+      ? parsed.highlights.map(normalizeHighlight).filter((item): item is HighlightSuggestion => Boolean(item))
+      : [];
+
+    if (highlights.length === 0) {
+      throw new Error("OpenRouter highlight JSON did not contain usable highlights.");
+    }
+
+    return { highlights, repaired: false };
+  } catch (error) {
+    const repairedHighlights = extractCompleteHighlightObjects(jsonText)
+      .map(normalizeHighlight)
+      .filter((item): item is HighlightSuggestion => Boolean(item));
+
+    if (repairedHighlights.length > 0) {
+      return { highlights: repairedHighlights, repaired: true };
+    }
+
+    throw error instanceof Error ? error : new Error("OpenRouter returned invalid highlight JSON.");
+  }
+}
 
 export async function generateHooks(payload: HookPayload) {
   return generateHooksViaOpenRouter(payload);
@@ -215,10 +356,13 @@ export async function generateHighlights(payload: HighlightPayload) {
     "- Optional: cliffhanger for next video",
     "",
     "**OUTPUT:** Valid JSON only: {\"highlights\":[{...}]}",
-    "Each needs: title, hook, start_percent, end_percent, optional call_to_action",
+    "Each object needs only: title, hook, start_percent, end_percent, call_to_action",
+    "Keep title <= 8 words, hook <= 24 words, call_to_action <= 14 words.",
     "Numeric percentages (0-100), chronological, start < end",
-    "Target 30-45 seconds per clip. Return 3-10 viral moments.",
+    "Target 30-45 seconds per clip. Return exactly target_clips items.",
     "Sentence boundaries only. No overlaps.",
+    "Do not include markdown, comments, trailing prose, or extra keys.",
+    "Close every JSON object and array.",
     "",
     "**SELECTION CRITERIA:**",
     "- Would this stop mid-scroll in 3 seconds?",
@@ -233,42 +377,69 @@ export async function generateHighlights(payload: HighlightPayload) {
     ? requestedModel
     : OPENROUTER_MODELS.highlights;
 
-  logger.debug("[Highlights] Using OpenRouter model", { model: openRouterHighlightsModel });
-  const orResp = await openRouterClient.chat.completions.create({
-    model: openRouterHighlightsModel,
-    messages: [
-      { role: "system", content: highlightsSystemContent },
-      { role: "user", content: JSON.stringify(userPayload) }
-    ],
-    max_tokens: 4096,
-    temperature: 0.3,
-  });
-  const orRaw = extractOpenRouterContent(orResp);
-  const text = orRaw.trim().startsWith("{") ? orRaw : (orRaw.match(/\{[\s\S]*\}/)?.[0] ?? "");
+  const highlightModels = getOpenRouterCandidateModels("highlights", openRouterHighlightsModel);
+  const failures: Array<{ model: string; message: string; recovered?: number }> = [];
 
-  if (!text) {
-    throw buildEmptyOpenRouterContentError(openRouterHighlightsModel, orResp);
-  }
+  for (const model of highlightModels) {
+    logger.debug("[Highlights] Using OpenRouter model", { model });
 
-  try {
-    const parsed = JSON.parse(text) as { highlights?: Array<any> };
-    if (parsed.highlights && Array.isArray(parsed.highlights) && parsed.highlights.length > 0) {
-      return parsed.highlights
-        .map((highlight) => ({
-          title: highlight.title ?? highlight.headline ?? "Highlight",
-          hook: highlight.hook ?? highlight.opening ?? highlight.title ?? "",
-          startPercent: Number.parseFloat(highlight.start_percent ?? highlight.startPercent ?? 0),
-          endPercent: Number.parseFloat(highlight.end_percent ?? highlight.endPercent ?? 0),
-          callToAction: highlight.cta ?? highlight.call_to_action ?? highlight.outro ?? undefined
-        }))
-        .filter((item) => Number.isFinite(item.startPercent) && Number.isFinite(item.endPercent));
+    try {
+      const orResp = await openRouterClient.chat.completions.create({
+        model,
+        messages: [
+          { role: "system", content: highlightsSystemContent },
+          { role: "user", content: JSON.stringify(userPayload) }
+        ],
+        max_tokens: Number.isFinite(HIGHLIGHT_MAX_TOKENS) ? HIGHLIGHT_MAX_TOKENS : 8192,
+        temperature: 0.1,
+        provider: { allow_fallbacks: true },
+      } as any);
+      const orRaw = extractOpenRouterContent(orResp);
+
+      if (!orRaw) {
+        throw buildEmptyOpenRouterContentError(model, orResp);
+      }
+
+      const parsed = parseOpenRouterHighlightsContent(orRaw);
+      const usableHighlights = parsed.highlights
+        .filter((item) => item.startPercent >= 0 && item.endPercent <= 100)
+        .slice(0, maxClipCount);
+
+      if (usableHighlights.length < minClipCount) {
+        failures.push({
+          model,
+          message: `Only ${usableHighlights.length} usable highlights returned; expected at least ${minClipCount}.`,
+          recovered: usableHighlights.length,
+        });
+        logger.warn("[Highlights] OpenRouter model returned too few usable highlights", {
+          model,
+          count: usableHighlights.length,
+          repaired: parsed.repaired,
+        });
+        continue;
+      }
+
+      if (parsed.repaired) {
+        logger.warn("[Highlights] Recovered complete highlights from truncated JSON", {
+          model,
+          count: usableHighlights.length,
+        });
+      }
+
+      return usableHighlights;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "OpenRouter highlight generation failed";
+      failures.push({ model, message });
+      logger.warn("[Highlights] OpenRouter model failed", { model, message });
+      continue;
     }
-  } catch (error) {
-    logger.error("Failed to parse OpenRouter highlights", { error, text });
-    throw new Error(`OpenRouter model "${openRouterHighlightsModel}" returned invalid highlight JSON.`);
   }
 
-  throw new Error(`OpenRouter model "${openRouterHighlightsModel}" returned no usable highlights.`);
+  throw new Error(
+    `OpenRouter failed to generate valid highlights. Tried models: ${failures
+      .map((failure) => `${failure.model}: ${failure.message}`)
+      .join(" | ")}`
+  );
 }
 
 export type ImagenPromptPayload = {

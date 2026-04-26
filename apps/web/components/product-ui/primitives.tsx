@@ -1,5 +1,5 @@
 import Link from "next/link";
-import type { ComponentType, ReactNode } from "react";
+import type { ComponentPropsWithoutRef, ComponentType, ReactNode } from "react";
 import { ArrowRight, LucideIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -9,13 +9,15 @@ export function AppCard({
   children,
   className,
   interactive = false,
+  ...props
 }: {
   children: ReactNode;
   className?: string;
   interactive?: boolean;
-}) {
+} & ComponentPropsWithoutRef<"div">) {
   return (
     <div
+      {...props}
       className={cn(
         "rounded-2xl border border-border/70 bg-card/88 shadow-sm shadow-slate-950/5 backdrop-blur-sm",
         "dark:bg-white/[0.055] dark:shadow-black/20",

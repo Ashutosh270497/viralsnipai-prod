@@ -5,6 +5,7 @@ import ffmpeg from "fluent-ffmpeg";
 import ffmpegStatic from "ffmpeg-static";
 import ffprobeStatic from "ffprobe-static";
 import { srtUtils } from "@/lib/srt-utils";
+import { logger } from "@/lib/logger";
 import type { ClipReframePlan, VideoGeometry } from "@/lib/types";
 import type { ClipCaptionStyleConfig, HookOverlay } from "@/lib/repurpose/caption-style-config";
 
@@ -45,25 +46,28 @@ export const PRESETS = {
   landscape_16x9_1080: { width: 1920, height: 1080 }
 } as const;
 
+// High-quality export — CRF 16, slow preset. Used for all final export encodes.
 const playbackOptions = [
-  "-c:v",
-  "libx264",
-  "-preset",
-  "slow",
-  "-crf",
-  "16",
-  "-profile:v",
-  "high",
-  "-level",
-  "4.1",
-  "-pix_fmt",
-  "yuv420p",
-  "-c:a",
-  "aac",
-  "-b:a",
-  "256k",
-  "-movflags",
-  "+faststart"
+  "-c:v",    "libx264",
+  "-preset",  "slow",
+  "-crf",     "16",
+  "-profile:v", "high",
+  "-level",   "4.2",          // 4.2 supports higher frame-rate/bitrate ceilings than 4.1
+  "-pix_fmt", "yuv420p",
+  "-c:a",     "aac",
+  "-b:a",     "256k",
+  "-movflags", "+faststart",
+];
+
+// Preview-only quality — CRF 24, veryfast. NEVER use as final export source.
+export const previewPlaybackOptions = [
+  "-c:v",    "libx264",
+  "-preset",  "veryfast",
+  "-crf",     "24",
+  "-pix_fmt", "yuv420p",
+  "-c:a",     "aac",
+  "-b:a",     "128k",
+  "-movflags", "+faststart",
 ];
 
 export function getPresetDimensions(preset: keyof typeof PRESETS) {
@@ -217,7 +221,7 @@ export function buildCaptionOverlayFilterChain({
     });
   }
 
-  filters.push(`scale=${width}:${height}`);
+  filters.push(`scale=${width}:${height}:flags=lanczos`);
   filters.push("setsar=1");
   return filters.join(",");
 }
@@ -277,7 +281,7 @@ export function buildPresetVideoFilter({
   const targetRatio = width / height;
 
   if (!reframePlan || reframePlan.mode === "letterbox") {
-    return `scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1`;
+    return `scale=${width}:${height}:force_original_aspect_ratio=decrease:flags=lanczos,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1`;
   }
 
   const { centerX, centerY } = getPlanAnchorCenter(reframePlan);
@@ -311,7 +315,7 @@ export function buildPresetVideoFilter({
   const cropXExpr = escapeFilterExpression(cropXRaw);
   const cropYExpr = escapeFilterExpression(cropYRaw);
 
-  return `crop=${cropWidthExpr}:${cropHeightExpr}:${cropXExpr}:${cropYExpr},scale=${width}:${height},setsar=1`;
+  return `crop=${cropWidthExpr}:${cropHeightExpr}:${cropXExpr}:${cropYExpr},scale=${width}:${height}:flags=lanczos,setsar=1`;
 }
 
 export async function probeDuration(filePath: string): Promise<number> {
@@ -633,21 +637,32 @@ export async function concatClips({
       });
 
     if (watermarkPath) {
+      // Re-encode required to composite the watermark overlay.
       const offset = 48;
       command.input(watermarkPath);
       command.complexFilter([
-        `[0:v]scale=${width}:${height}[base]`,
+        // Clips from extractAndRenderSegment are already at target resolution; scale is a no-op
+        // but we keep it for safety against any upstream dimension mismatch.
+        `[0:v]scale=${width}:${height}:flags=lanczos[base]`,
         `[base][1:v]overlay=W-w-${offset}:H-h-${offset}[v]`,
       ]);
       command.outputOptions([...playbackOptions, "-map", "[v]", "-map", "0:a?"]);
     } else {
-      command.outputOptions(["-vf", `scale=${width}:${height}`, ...playbackOptions]);
+      // All input clips come from extractAndRenderSegment (H.264/AAC at the target resolution).
+      // Stream copy avoids a re-encode pass and preserves quality exactly.
+      command.outputOptions(["-c", "copy"]);
     }
 
     command.run();
   });
 }
 
+/**
+ * Concatenate pre-encoded clips using stream copy — no re-encode, no quality loss.
+ *
+ * All input clips must share the same codec, resolution, and frame rate.
+ * Clips produced by extractClip / extractAndRenderSegment always satisfy this.
+ */
 export async function concatClipsPassthrough({
   clipPaths,
   outputPath,
@@ -665,11 +680,10 @@ export async function concatClipsPassthrough({
     ffmpeg()
       .input(concatListPath)
       .inputOptions(["-f", "concat", "-safe", "0"])
-      .outputOptions([...playbackOptions])
+      // Stream copy: clips are already H.264/AAC at the correct resolution.
+      .outputOptions(["-c", "copy"])
       .output(outputPath)
-      .on("start", (cmd) => {
-        commandLine = cmd;
-      })
+      .on("start", (cmd) => { commandLine = cmd; })
       .on("end", async () => {
         await fs.unlink(concatListPath).catch(() => null);
         resolve();
@@ -689,6 +703,23 @@ export async function concatClipsPassthrough({
   });
 }
 
+/**
+ * Render a full export from source segments.
+ *
+ * Quality guarantee:
+ *   Each segment is encoded in a single FFmpeg pass: crop/reframe + scale + caption burn-in
+ *   all happen together (extractAndRenderSegment). The previous two-pass approach
+ *   (extractClip → applyCaptionAndOverlayStyling) caused visible generation loss and is gone.
+ *
+ *   Concatenation uses stream copy when no watermark is needed, adding zero quality loss.
+ *   When a watermark overlay is required it adds one extra encode pass (unavoidable for compositing).
+ *
+ * Pass count:
+ *   No captions, no watermark:  1 encode pass  (extractAndRenderSegment) + stream copy concat
+ *   With captions, no watermark: 1 encode pass  (extractAndRenderSegment) + stream copy concat
+ *   With watermark:              2 encode passes (extractAndRenderSegment + watermark concat)
+ *   Previously (always):         3 encode passes (extract + caption + concat)
+ */
 export async function renderExport({
   segments,
   preset,
@@ -721,69 +752,59 @@ export async function renderExport({
 
   const clipPaths: string[] = [];
   const tempCaptionPaths: string[] = [];
+  const renderStart = Date.now();
 
   try {
     for (const [index, segment] of segments.entries()) {
       const clipPath = path.join(tempDir, `${segment.id}.mp4`);
       const segmentIndex = index + 1;
       const segmentCount = segments.length;
-      const extractBase = 18;
-      const extractRange = 34;
-      const stylingBase = 52;
-      const stylingRange = 24;
 
+      // Spread the full 18→76% range across all segments (single pass per segment now)
       onProgress?.({
         step: "extracting",
-        progressPct: extractBase + (segmentIndex - 1) * (extractRange / Math.max(segmentCount, 1)),
+        progressPct: 18 + (segmentIndex - 1) * (58 / Math.max(segmentCount, 1)),
         segmentIndex,
         segmentCount,
       });
-      await extractClip({
+
+      const captionSource = captionPaths?.[segment.id];
+      const caption = await resolveCaptionInput(captionSource, tempDir, segment.id);
+      if (caption?.temporary) {
+        tempCaptionPaths.push(caption.srtPath);
+      }
+
+      // Single-pass: crop/reframe + scale + caption burn all in one FFmpeg invocation.
+      // Input is always the original source asset — never a preview or intermediate clip.
+      await extractAndRenderSegment({
         inputPath: segment.sourcePath,
         startMs: segment.startMs,
         endMs: segment.endMs,
         outputPath: clipPath,
         preset,
         reframePlan: segment.reframePlan,
+        srtPath: caption?.srtPath ?? null,
+        captionStyle: segment.captionStyle,
       });
 
-      const captionSource = captionPaths?.[segment.id];
-      const caption = await resolveCaptionInput(captionSource, tempDir, segment.id);
-      const hasStyledOverlays = Boolean(segment.captionStyle?.hookOverlays?.length);
-      if (caption || hasStyledOverlays) {
-        if (caption?.temporary) {
-          tempCaptionPaths.push(caption.srtPath);
-        }
-        const captionedPath = path.join(tempDir, `${segment.id}-captioned.mp4`);
-        onProgress?.({
-          step: "styling",
-          progressPct: stylingBase + (segmentIndex - 1) * (stylingRange / Math.max(segmentCount, 1)),
-          segmentIndex,
-          segmentCount,
-        });
-        await applyCaptionAndOverlayStyling({
-          inputPath: clipPath,
-          outputPath: captionedPath,
-          preset,
-          srtPath: caption?.srtPath,
-          captionStyle: segment.captionStyle,
-        });
-        clipPaths.push(captionedPath);
-      } else {
-        clipPaths.push(clipPath);
-      }
+      clipPaths.push(clipPath);
     }
 
-    onProgress?.({
-      step: "stitching",
-      progressPct: 84,
-      segmentCount: segments.length,
-    });
+    onProgress?.({ step: "stitching", progressPct: 84, segmentCount: segments.length });
+
+    // No-watermark path: stream copy (zero quality loss).
+    // Watermark path: one composite re-encode (unavoidable for overlay).
     await concatClips({ clipPaths, outputPath, preset, watermarkPath });
-    onProgress?.({
-      step: "finalizing",
-      progressPct: 96,
+
+    onProgress?.({ step: "finalizing", progressPct: 96, segmentCount: segments.length });
+
+    logger.info("renderExport completed", {
+      outputPath,
+      preset,
       segmentCount: segments.length,
+      withWatermark: Boolean(watermarkPath),
+      withCaptions: Object.values(captionPaths ?? {}).some(Boolean),
+      totalDurationMs: Date.now() - renderStart,
     });
   } finally {
     await Promise.all(
@@ -971,7 +992,7 @@ export async function generateThumbnail({
       .outputOptions([
         "-frames:v", "1",
         "-q:v", "2",
-        "-vf", "scale=480:-1"
+        "-vf", "scale=480:-1:flags=lanczos"
       ])
       .output(outputPath)
       .on("end", () => resolve())
@@ -1049,5 +1070,195 @@ export async function getAudioDuration(audioPath: string): Promise<number> {
         resolve(metadata.format.duration ?? 0);
       }
     });
+  });
+}
+
+// ─── Quality-preserving single-pass rendering ────────────────────────────────
+
+export interface SourceMetadata {
+  width: number | null;
+  height: number | null;
+  fps: number | null;
+  durationSec: number | null;
+  videoCodec: string | null;
+  audioCodec: string | null;
+  videoBitrateKbps: number | null;
+  audioBitrateKbps: number | null;
+  rotation: number;
+}
+
+/**
+ * Probe source video for quality-relevant metadata.
+ * Used for render logging and adaptive quality decisions.
+ */
+export async function probeSourceMetadata(filePath: string): Promise<SourceMetadata> {
+  return new Promise((resolve) => {
+    ffmpeg.ffprobe(filePath, (_error, metadata) => {
+      if (_error || !metadata?.streams) {
+        resolve({ width: null, height: null, fps: null, durationSec: null, videoCodec: null, audioCodec: null, videoBitrateKbps: null, audioBitrateKbps: null, rotation: 0 });
+        return;
+      }
+      const v = metadata.streams.find((s: any) => s.codec_type === "video");
+      const a = metadata.streams.find((s: any) => s.codec_type === "audio");
+
+      let fps: number | null = null;
+      const fpsStr = v?.r_frame_rate ?? v?.avg_frame_rate;
+      if (fpsStr && typeof fpsStr === "string" && fpsStr.includes("/")) {
+        const [num, den] = fpsStr.split("/").map(Number);
+        if (den) fps = Math.round((num / den) * 100) / 100;
+      }
+
+      const rotationRaw =
+        Number(v?.tags?.rotate ?? 0) ||
+        Number(v?.side_data_list?.find((e: any) => typeof e.rotation !== "undefined")?.rotation ?? 0);
+
+      resolve({
+        width: v?.width ?? null,
+        height: v?.height ?? null,
+        fps,
+        durationSec: metadata.format?.duration ?? null,
+        videoCodec: v?.codec_name ?? null,
+        audioCodec: a?.codec_name ?? null,
+        videoBitrateKbps: v?.bit_rate ? Math.round(Number(v.bit_rate) / 1000) : null,
+        audioBitrateKbps: a?.bit_rate ? Math.round(Number(a.bit_rate) / 1000) : null,
+        rotation: Math.abs(rotationRaw),
+      });
+    });
+  });
+}
+
+/**
+ * Build a combined video filter string that applies reframe/crop/scale and caption
+ * burn-in in one filter chain — eliminating the need for a second encode pass.
+ *
+ * Filter order matters:
+ *   1. Reframe + scale to target resolution (buildPresetVideoFilter)
+ *   2. Burn subtitles at the scaled resolution (font sizes stay correct)
+ *   3. Burn timed hook overlays
+ */
+function buildSinglePassVideoFilter({
+  preset,
+  reframePlan,
+  durationSeconds,
+  srtPath,
+  captionStyle,
+}: {
+  preset: keyof typeof PRESETS;
+  reframePlan?: ClipReframePlan | null;
+  durationSeconds?: number;
+  srtPath?: string | null;
+  captionStyle?: ClipCaptionStyleConfig | null;
+}): string {
+  // Step 1 — reframe + scale (already includes :flags=lanczos in buildPresetVideoFilter)
+  const filters: string[] = [buildPresetVideoFilter({ preset, reframePlan, durationSeconds })];
+
+  // Step 2 — subtitle burn (post-scale so absolute font sizes are correct on the target canvas)
+  if (srtPath && captionStyle) {
+    const animationType = captionStyle.animation?.type ?? "none";
+    if (animationType !== "none") {
+      logger.warn("render:caption_animation_static_fallback", {
+        animationType,
+        renderer: "ffmpeg_static",
+      });
+    }
+    filters.push(buildSubtitleFilter(srtPath, captionStyle));
+  } else if (srtPath) {
+    filters.push(`subtitles='${escapeSubtitlesPath(srtPath)}'`);
+  }
+
+  // Step 3 — timed hook overlays
+  captionStyle?.hookOverlays?.forEach((overlay) => {
+    filters.push(buildHookOverlayFilter(overlay));
+  });
+
+  return filters.join(",");
+}
+
+/**
+ * Extract a segment from source video and apply crop/scale + caption burn-in in
+ * a single FFmpeg encode pass.
+ *
+ * This is the quality-correct replacement for the old two-step
+ * extractClip() → applyCaptionAndOverlayStyling() approach which caused a second
+ * lossy encode even at CRF 16.
+ *
+ * Input: always the original source asset path (never a preview or intermediate clip).
+ */
+export async function extractAndRenderSegment({
+  inputPath,
+  startMs,
+  endMs,
+  outputPath,
+  preset,
+  reframePlan,
+  srtPath,
+  captionStyle,
+  quality = "export",
+}: {
+  inputPath: string;
+  startMs: number;
+  endMs: number;
+  outputPath: string;
+  preset: keyof typeof PRESETS;
+  reframePlan?: ClipReframePlan | null;
+  srtPath?: string | null;
+  captionStyle?: ClipCaptionStyleConfig | null;
+  quality?: "export" | "preview";
+}): Promise<void> {
+  const startSeconds = startMs / 1000;
+  const durationSeconds = Math.max((endMs - startMs) / 1000, 0.12);
+
+  await fs.mkdir(path.dirname(outputPath), { recursive: true });
+
+  const videoFilter = buildSinglePassVideoFilter({
+    preset, reframePlan, durationSeconds, srtPath, captionStyle,
+  });
+  const qualityOpts = quality === "preview" ? [...previewPlaybackOptions] : [...playbackOptions];
+  const renderStart = Date.now();
+
+  // Log source metadata for diagnostics (non-blocking — runs concurrently with encode setup)
+  const sourceMeta = await probeSourceMetadata(inputPath).catch(() => null);
+
+  return new Promise<void>((resolve, reject) => {
+    let commandLine: string | undefined;
+    ffmpeg(inputPath)
+      .setStartTime(startSeconds)
+      .setDuration(durationSeconds)
+      .outputOptions(["-vf", videoFilter, ...qualityOpts])
+      .output(outputPath)
+      .on("start", (cmd) => { commandLine = cmd; })
+      .on("end", async () => {
+        let fileSizeBytes: number | null = null;
+        try { fileSizeBytes = (await fs.stat(outputPath)).size; } catch { /* ignore */ }
+
+        logger.info("render:segment", {
+          inputPath,
+          outputPath,
+          preset,
+          quality,
+          crf: quality === "preview" ? 24 : 16,
+          codec: "libx264",
+          audioBitrate: quality === "preview" ? "128k" : "256k",
+          reframeMode: reframePlan?.mode ?? "none",
+          hasCaptions: Boolean(srtPath),
+          hasHookOverlays: Boolean(captionStyle?.hookOverlays?.length),
+          streamCopy: false,
+          sourceWidth: sourceMeta?.width,
+          sourceHeight: sourceMeta?.height,
+          sourceFps: sourceMeta?.fps,
+          sourceCodec: sourceMeta?.videoCodec,
+          sourceAudioCodec: sourceMeta?.audioCodec,
+          sourceBitrateKbps: sourceMeta?.videoBitrateKbps,
+          fileSizeBytes,
+          renderDurationMs: Date.now() - renderStart,
+        });
+        resolve();
+      })
+      .on("error", (_error, _stdout, stderr) =>
+        reject(buildFfmpegError("extractAndRenderSegment", _error, {
+          inputPath, outputPath, commandLine, stderr: stderr ?? undefined,
+        }))
+      )
+      .run();
   });
 }

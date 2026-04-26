@@ -73,10 +73,10 @@ export const OPENROUTER_MODELS = {
   scripts: process.env.OPENROUTER_SCRIPTS_MODEL ?? 'anthropic/claude-sonnet-4.6',
 
   /**
-   * Highlight / timestamp detection — Gemini 3.1 Pro Preview
-   * Best for long transcript/video context and structured JSON reasoning.
+   * Highlight / timestamp detection — Gemini 2.5 Pro
+   * Stable-first long transcript reasoning for structured clip timestamps.
    */
-  highlights: process.env.OPENROUTER_HIGHLIGHTS_MODEL ?? 'google/gemini-3.1-pro-preview',
+  highlights: process.env.OPENROUTER_HIGHLIGHTS_MODEL ?? 'google/gemini-2.5-pro',
 
   /**
    * Imagen prompt enhancement — Gemini 3.1 Flash Lite Preview
@@ -278,9 +278,10 @@ const OPENROUTER_BACKUP_MODELS: Partial<Record<OpenRouterModelKey, string[]>> = 
     'google/gemini-3-flash-preview',
   ],
   highlights: [
-    'google/gemini-2.5-pro',
+    'google/gemini-2.5-flash',
     'qwen/qwen3.6-plus',
-    'openai/gpt-5.5',
+    'openai/gpt-4o-mini',
+    'google/gemini-3.1-pro-preview',
   ],
   captions: [
     'google/gemini-2.5-flash-lite',
@@ -560,7 +561,7 @@ export function getSafeOpenRouterErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : 'OpenRouter request failed';
 }
 
-function getOpenRouterCandidateModels(feature: OpenRouterModelKey, primaryModel: string): string[] {
+export function getOpenRouterCandidateModels(feature: OpenRouterModelKey, primaryModel: string): string[] {
   const fallbacksEnabled = process.env.OPENROUTER_MODEL_FALLBACKS_ENABLED !== 'false';
   if (!fallbacksEnabled) {
     return [primaryModel];

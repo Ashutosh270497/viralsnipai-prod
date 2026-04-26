@@ -10,6 +10,9 @@ import { transcodeToMp3 } from "@/lib/ffmpeg";
 
 // Whisper API hard limit. We use 24 MB to leave a safe margin.
 const WHISPER_MAX_BYTES = 24 * 1024 * 1024;
+const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
+const OPENROUTER_REFERER = "https://snipradar.app";
+const OPENROUTER_TITLE = "ViralSnipAI";
 
 const stat = promisify(fs.stat);
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -36,10 +39,18 @@ const MAX_ATTEMPTS = Number(process.env.TRANSCRIBE_MAX_ATTEMPTS ?? 3);
 const RETRY_DELAY_BASE_MS = Number(process.env.TRANSCRIBE_RETRY_DELAY_MS ?? 4000);
 const MAX_DIRECT_UPLOAD_BYTES = Number(process.env.TRANSCRIBE_MAX_DIRECT_BYTES ?? 24 * 1024 * 1024);
 const TIMING_FALLBACK_MODEL = process.env.TRANSCRIBE_TIMING_FALLBACK_MODEL ?? "whisper-1";
+const OPENROUTER_TRANSCRIBE_MODEL =
+  process.env.OPENROUTER_TRANSCRIBE_MODEL ?? "openai/gpt-4o-audio-preview";
+const OPENROUTER_TRANSCRIBE_MAX_TOKENS = Number(process.env.OPENROUTER_TRANSCRIBE_MAX_TOKENS ?? 12000);
+const OPENROUTER_TRANSCRIBE_TIMEOUT_MS = Number(process.env.OPENROUTER_TRANSCRIBE_TIMEOUT_MS ?? 180000);
 const AUDIO_EXTENSIONS = new Set([".mp3", ".m4a", ".aac", ".wav", ".webm", ".ogg", ".oga", ".flac"]);
 
 export async function transcribeFile(filePath: string): Promise<TranscriptionResult> {
   const mode = (process.env.USE_MOCK_TRANSCRIBE ?? "auto").toLowerCase();
+  const provider = (
+    process.env.TRANSCRIBE_PROVIDER ??
+    (process.env.OPENROUTER_ENABLED === "true" && process.env.OPENROUTER_API_KEY ? "openrouter" : "openai")
+  ).toLowerCase();
 
   const fileName = filePath.split("/").pop() ?? "asset";
   const stats = await stat(filePath);
@@ -49,13 +60,28 @@ export async function transcribeFile(filePath: string): Promise<TranscriptionRes
     return generateMockResult(fileName, durationGuess);
   }
 
-  if (!openAIClient) {
+  const prepared = await prepareTranscriptionSource(filePath);
+
+  if (provider === "openrouter") {
+    try {
+      return await transcribeWithOpenRouter(prepared.path);
+    } finally {
+      await prepared.cleanup();
+    }
+  }
+
+  if (provider !== "openai") {
     throw new Error(
-      "Live transcription requires OPENAI_API_KEY (and optional WHISPER_MODEL). Set USE_MOCK_TRANSCRIBE=true to use synthetic output."
+      `Unsupported TRANSCRIBE_PROVIDER "${provider}". Use "openrouter" for OpenRouter audio transcription or "openai" for legacy direct transcription.`
     );
   }
 
-  const prepared = await prepareTranscriptionSource(filePath);
+  if (!openAIClient) {
+    await prepared.cleanup();
+    throw new Error(
+      "Live transcription requires OPENAI_API_KEY for TRANSCRIBE_PROVIDER=openai. Set TRANSCRIBE_PROVIDER=openrouter and OPENROUTER_API_KEY to route transcription through OpenRouter."
+    );
+  }
 
   try {
     const plans: Array<{ model: string; format: "verbose_json" | "json" }> = [
@@ -164,7 +190,7 @@ export async function transcribeFile(filePath: string): Promise<TranscriptionRes
       if (lastError) {
         throw lastError;
       }
-      return generateMockResult(fileName, durationGuess);
+      throw new Error("Transcription provider returned no response.");
     }
 
     if (usedFormat === "verbose_json" && typeof response === "object") {
@@ -200,7 +226,7 @@ export async function transcribeFile(filePath: string): Promise<TranscriptionRes
         : [];
 
       if (text.length === 0) {
-        return generateMockResult(fileName, durationGuess);
+        throw new Error("Transcription provider returned empty text.");
       }
 
       return {
@@ -211,7 +237,7 @@ export async function transcribeFile(filePath: string): Promise<TranscriptionRes
 
     const plainText = (response.text ?? "").trim();
     if (!plainText) {
-      return generateMockResult(fileName, durationGuess);
+      throw new Error("Transcription provider returned empty text.");
     }
     return {
       text: plainText,
@@ -219,15 +245,220 @@ export async function transcribeFile(filePath: string): Promise<TranscriptionRes
     };
   } catch (error) {
     console.error("Transcription request failed", error);
-    if (mode === "auto") {
-      console.warn("[Transcribe] Falling back to synthetic transcript.");
-      return generateMockResult(fileName, durationGuess);
-    }
     const reason = error instanceof Error ? error.message : "Unknown transcription error.";
-    throw new Error(`Transcription failed: ${reason}. You can enable mock transcripts with USE_MOCK_TRANSCRIBE=true.`);
+    throw new Error(`Transcription failed: ${reason}. Synthetic transcripts are disabled unless USE_MOCK_TRANSCRIBE=true.`);
   } finally {
     await prepared.cleanup();
   }
+}
+
+async function transcribeWithOpenRouter(filePath: string): Promise<TranscriptionResult> {
+  const apiKey = process.env.OPENROUTER_API_KEY;
+  if (!apiKey) {
+    throw new Error("OpenRouter transcription requires OPENROUTER_API_KEY.");
+  }
+
+  const fileBuffer = await fsp.readFile(filePath);
+  const format = getOpenRouterAudioFormat(filePath);
+  const controller = new AbortController();
+  const timeout = windowlessSetTimeout(() => controller.abort(), OPENROUTER_TRANSCRIBE_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(`${OPENROUTER_BASE_URL}/chat/completions`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+        "HTTP-Referer": OPENROUTER_REFERER,
+        "X-OpenRouter-Title": OPENROUTER_TITLE
+      },
+      body: JSON.stringify({
+        model: OPENROUTER_TRANSCRIBE_MODEL,
+        messages: [
+          {
+            role: "system",
+            content:
+              "You are a production speech-to-text engine. Transcribe the user's audio exactly. Do not summarize, invent, translate, or generate placeholder text."
+          },
+          {
+            role: "user",
+            content: [
+              {
+                type: "text",
+                text:
+                  "Return only JSON in this shape: {\"text\":\"full transcript\",\"segments\":[{\"start\":0,\"end\":5,\"text\":\"segment text\"}]}. Use the actual spoken words. If exact timestamps are unavailable, split the transcript into approximate chronological segments."
+              },
+              {
+                type: "input_audio",
+                input_audio: {
+                  data: fileBuffer.toString("base64"),
+                  format
+                }
+              }
+            ]
+          }
+        ],
+        temperature: 0,
+        max_tokens: Number.isFinite(OPENROUTER_TRANSCRIBE_MAX_TOKENS)
+          ? OPENROUTER_TRANSCRIBE_MAX_TOKENS
+          : 12000,
+        stream: false,
+        provider: {
+          allow_fallbacks: true
+        }
+      }),
+      signal: controller.signal
+    });
+
+    if (!response.ok) {
+      const errorBody = await safeParseJson(response);
+      const message =
+        typeof errorBody?.error?.message === "string"
+          ? errorBody.error.message
+          : response.statusText || "OpenRouter transcription failed.";
+      throw new Error(`OpenRouter transcription failed (${response.status}): ${message}`);
+    }
+
+    const body = await response.json();
+    const content = extractOpenRouterMessageContent(body);
+    if (!content.trim()) {
+      throw new Error(`OpenRouter model "${OPENROUTER_TRANSCRIBE_MODEL}" returned empty transcription content.`);
+    }
+
+    const transcription = parseOpenRouterTranscriptionContent(content);
+    if (!transcription.text.trim()) {
+      throw new Error(`OpenRouter model "${OPENROUTER_TRANSCRIBE_MODEL}" returned no transcript text.`);
+    }
+    if (isSyntheticTranscriptText(transcription.text)) {
+      throw new Error("OpenRouter returned synthetic placeholder text instead of real transcription.");
+    }
+
+    return transcription;
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new Error(`OpenRouter transcription timed out after ${OPENROUTER_TRANSCRIBE_TIMEOUT_MS}ms.`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function getOpenRouterAudioFormat(filePath: string): string {
+  const ext = path.extname(filePath).toLowerCase().replace(".", "");
+  if (["mp3", "wav", "aac", "ogg", "flac", "m4a"].includes(ext)) {
+    return ext;
+  }
+  return "mp3";
+}
+
+function extractOpenRouterMessageContent(body: any): string {
+  const content = body?.choices?.[0]?.message?.content;
+  if (typeof content === "string") {
+    return content;
+  }
+  if (Array.isArray(content)) {
+    return content
+      .map((part) => {
+        if (typeof part === "string") {
+          return part;
+        }
+        if (part && typeof part === "object" && typeof part.text === "string") {
+          return part.text;
+        }
+        return "";
+      })
+      .join("\n");
+  }
+  return "";
+}
+
+export function parseOpenRouterTranscriptionContent(content: string): TranscriptionResult {
+  const cleaned = stripJsonFence(content.trim());
+  try {
+    const parsed = JSON.parse(cleaned) as {
+      text?: unknown;
+      transcript?: unknown;
+      segments?: unknown;
+    };
+    const text = typeof parsed.text === "string"
+      ? parsed.text.trim()
+      : typeof parsed.transcript === "string"
+        ? parsed.transcript.trim()
+        : "";
+    const segments = Array.isArray(parsed.segments)
+      ? parsed.segments
+          .map((segment, index) => normalizeOpenRouterSegment(segment, index))
+          .filter((segment): segment is TranscriptionSegment => Boolean(segment))
+      : [];
+
+    return {
+      text,
+      segments
+    };
+  } catch {
+    return {
+      text: cleaned,
+      segments: []
+    };
+  }
+}
+
+function normalizeOpenRouterSegment(segment: unknown, index: number): TranscriptionSegment | null {
+  if (!segment || typeof segment !== "object") {
+    return null;
+  }
+
+  const record = segment as Record<string, unknown>;
+  const text = typeof record.text === "string" ? record.text.trim() : "";
+  if (!text) {
+    return null;
+  }
+
+  const start = coerceFiniteNumber(record.start, index * 8);
+  const end = Math.max(start + 0.1, coerceFiniteNumber(record.end, start + 8));
+
+  return {
+    start,
+    end,
+    text
+  };
+}
+
+function coerceFiniteNumber(value: unknown, fallback: number) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === "string") {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) {
+      return parsed;
+    }
+  }
+  return fallback;
+}
+
+function stripJsonFence(value: string) {
+  return value
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/\s*```$/i, "")
+    .trim();
+}
+
+async function safeParseJson(response: Response): Promise<any | null> {
+  try {
+    return await response.json();
+  } catch {
+    return null;
+  }
+}
+
+function windowlessSetTimeout(callback: () => void, ms: number) {
+  return setTimeout(callback, Number.isFinite(ms) && ms > 0 ? ms : 180000);
+}
+
+export function isSyntheticTranscriptText(text: string): boolean {
+  return /this is synthetic transcript segment \d+/i.test(text.slice(0, 1000));
 }
 
 function isUnsupportedVerboseModeError(error: unknown): boolean {

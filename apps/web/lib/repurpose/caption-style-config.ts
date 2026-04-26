@@ -3,6 +3,14 @@ import type { CaptionStyleId } from "@/lib/constants/caption-styles";
 export type CaptionVerticalPosition = "top" | "middle" | "bottom";
 export type OverlayVerticalPosition = "top" | "center" | "bottom";
 export type OverlayHorizontalAlign = "left" | "center" | "right";
+export type CaptionAnimationType = "none" | "karaoke" | "pop" | "fade" | "slide" | "bounce";
+export type CaptionAnimationSpeed = "slow" | "normal" | "fast";
+
+export interface CaptionAnimationConfig {
+  type: CaptionAnimationType;
+  wordHighlight: boolean;
+  speed: CaptionAnimationSpeed;
+}
 
 export interface HookOverlay {
   id: string;
@@ -32,6 +40,10 @@ export interface ClipCaptionStyleConfig {
   backgroundColor: string;
   backgroundOpacity: number;
   karaoke: boolean;
+  maxWordsPerLine: number;
+  align: OverlayHorizontalAlign;
+  animation: CaptionAnimationConfig;
+  safeZoneAware: boolean;
   hookOverlays: HookOverlay[];
 }
 
@@ -48,6 +60,14 @@ export const DEFAULT_CLIP_CAPTION_STYLE: ClipCaptionStyleConfig = {
   backgroundColor: "#0B0B12",
   backgroundOpacity: 0.42,
   karaoke: false,
+  maxWordsPerLine: 7,
+  align: "center",
+  animation: {
+    type: "none",
+    wordHighlight: false,
+    speed: "normal",
+  },
+  safeZoneAware: true,
   hookOverlays: [],
 };
 
@@ -143,7 +163,38 @@ export function normalizeClipCaptionStyle(
     backgroundColor: normalizeHex(raw.backgroundColor, fallback.backgroundColor),
     backgroundOpacity: clampNumber(raw.backgroundOpacity, 0, 1, fallback.backgroundOpacity),
     karaoke: typeof raw.karaoke === "boolean" ? raw.karaoke : fallback.karaoke,
+    maxWordsPerLine: clampNumber(raw.maxWordsPerLine, 2, 12, fallback.maxWordsPerLine),
+    align: normalizeStringChoice(raw.align, ["left", "center", "right"], fallback.align),
+    animation: normalizeCaptionAnimation(raw.animation, raw.karaoke, fallback.animation),
+    safeZoneAware: typeof raw.safeZoneAware === "boolean" ? raw.safeZoneAware : fallback.safeZoneAware,
     hookOverlays,
+  };
+}
+
+function normalizeCaptionAnimation(
+  input: unknown,
+  legacyKaraoke: unknown,
+  fallback: CaptionAnimationConfig
+): CaptionAnimationConfig {
+  if (!input || typeof input !== "object") {
+    return {
+      ...fallback,
+      type: legacyKaraoke === true ? "karaoke" : fallback.type,
+      wordHighlight: legacyKaraoke === true ? true : fallback.wordHighlight,
+    };
+  }
+
+  const raw = input as Record<string, unknown>;
+  const type = normalizeStringChoice(
+    raw.type,
+    ["none", "karaoke", "pop", "fade", "slide", "bounce"],
+    legacyKaraoke === true ? "karaoke" : fallback.type
+  );
+
+  return {
+    type,
+    wordHighlight: typeof raw.wordHighlight === "boolean" ? raw.wordHighlight : type === "karaoke",
+    speed: normalizeStringChoice(raw.speed, ["slow", "normal", "fast"], fallback.speed),
   };
 }
 
