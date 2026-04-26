@@ -8,6 +8,11 @@ import { srtUtils } from "@/lib/srt-utils";
 import { logger } from "@/lib/logger";
 import type { ClipReframePlan, VideoGeometry } from "@/lib/types";
 import type { ClipCaptionStyleConfig, HookOverlay } from "@/lib/repurpose/caption-style-config";
+import {
+  assertNotPreviewPreset,
+  getQualityOptions,
+  validateExportOptions,
+} from "@/lib/media/video-quality-policy";
 
 const ffmpegCandidates = [
   process.env.FFMPEG_PATH,
@@ -47,28 +52,27 @@ export const PRESETS = {
 } as const;
 
 // High-quality export — CRF 16, slow preset. Used for all final export encodes.
-const playbackOptions = [
-  "-c:v",    "libx264",
-  "-preset",  "slow",
-  "-crf",     "16",
-  "-profile:v", "high",
-  "-level",   "4.2",          // 4.2 supports higher frame-rate/bitrate ceilings than 4.1
-  "-pix_fmt", "yuv420p",
-  "-c:a",     "aac",
-  "-b:a",     "256k",
-  "-movflags", "+faststart",
-];
+const playbackOptions = [...getQualityOptions("high_quality_export")];
 
-// Preview-only quality — CRF 24, veryfast. NEVER use as final export source.
-export const previewPlaybackOptions = [
-  "-c:v",    "libx264",
-  "-preset",  "veryfast",
-  "-crf",     "24",
-  "-pix_fmt", "yuv420p",
-  "-c:a",     "aac",
-  "-b:a",     "128k",
-  "-movflags", "+faststart",
-];
+// Preview-only quality — lower quality/speed optimized. NEVER use as final export source.
+export const previewPlaybackOptions = [...getQualityOptions("preview_fast")];
+
+function assertFinalExportQuality(options: readonly string[], caller: string) {
+  const violations = validateExportOptions(options);
+  if (violations.length > 0) {
+    throw new Error(`[video-quality-policy] ${caller} produced invalid final export options: ${violations.join("; ")}`);
+  }
+}
+
+function assertOriginalSourceForFinalExport(inputPath: string, caller: string) {
+  const normalized = inputPath.replace(/\\/g, "/").toLowerCase();
+  const previewMarkers = ["/previews/", "/preview/", "_preview.", "-preview."];
+  if (previewMarkers.some((marker) => normalized.includes(marker))) {
+    throw new Error(
+      `[video-quality-policy] ${caller} received a preview/intermediate file for final export. Final exports must use the original source video: ${inputPath}`
+    );
+  }
+}
 
 export function getPresetDimensions(preset: keyof typeof PRESETS) {
   return PRESETS[preset];
@@ -747,6 +751,9 @@ export async function renderExport({
     segmentCount?: number;
   }) => void;
 }) {
+  assertNotPreviewPreset("high_quality_export", "renderExport");
+  assertFinalExportQuality(playbackOptions, "renderExport");
+
   const tempDir = `${outputPath}_segments`;
   await fs.mkdir(tempDir, { recursive: true });
 
@@ -776,6 +783,7 @@ export async function renderExport({
 
       // Single-pass: crop/reframe + scale + caption burn all in one FFmpeg invocation.
       // Input is always the original source asset — never a preview or intermediate clip.
+      assertOriginalSourceForFinalExport(segment.sourcePath, "renderExport");
       await extractAndRenderSegment({
         inputPath: segment.sourcePath,
         startMs: segment.startMs,
@@ -1207,6 +1215,11 @@ export async function extractAndRenderSegment({
 }): Promise<void> {
   const startSeconds = startMs / 1000;
   const durationSeconds = Math.max((endMs - startMs) / 1000, 0.12);
+  if (quality === "export") {
+    assertNotPreviewPreset("high_quality_export", "extractAndRenderSegment");
+    assertFinalExportQuality(playbackOptions, "extractAndRenderSegment");
+    assertOriginalSourceForFinalExport(inputPath, "extractAndRenderSegment");
+  }
 
   await fs.mkdir(path.dirname(outputPath), { recursive: true });
 
