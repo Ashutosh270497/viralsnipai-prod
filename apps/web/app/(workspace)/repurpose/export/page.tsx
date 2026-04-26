@@ -55,6 +55,12 @@ export default function RepurposeExportPage() {
     [project?.clips, selectedClipIds]
   );
 
+  // The first selected clip's SRT — used for .srt / .vtt downloads in the panel.
+  const selectedCaptionSrt = useMemo(() => {
+    const clip = project?.clips.find((c) => selectedClipIds.includes(c.id));
+    return clip?.captionSrt ?? null;
+  }, [project?.clips, selectedClipIds]);
+
   const pendingExportCount = useMemo(
     () =>
       project?.exports.filter((e) => e.status !== "done" && e.status !== "failed").length ?? 0,
@@ -208,6 +214,8 @@ export default function RepurposeExportPage() {
               onQueued={invalidate}
               selectedPreset={selectedPreset}
               onPresetChange={setSelectedPreset}
+              captionSrt={selectedCaptionSrt}
+              clipTitle={previewClip?.title}
             />
           </AppCard>
 

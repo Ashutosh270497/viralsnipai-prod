@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Save, Type, RefreshCw, AlertTriangle } from "lucide-react";
+import { Save, Type, RefreshCw, AlertTriangle, Search, Scissors } from "lucide-react";
+import { createVttBlobUrl, type VttBlobHandle } from "@/lib/captions/webvtt";
 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -20,7 +21,8 @@ interface TranscriptEditorProps {
   clipId: string;
   clipTitle?: string | null;
   captionSrt?: string | null;
-  captionStyle?: ClipCaptionStyleConfig | null;
+  captionStyle: ClipCaptionStyleConfig;
+  onCaptionStyleChange: (style: ClipCaptionStyleConfig) => void;
   startMs: number;
   endMs: number;
   previewPath?: string | null;
@@ -424,6 +426,7 @@ export function TranscriptEditor({
   clipTitle,
   captionSrt,
   captionStyle,
+  onCaptionStyleChange,
   startMs,
   endMs,
   previewPath,
@@ -433,19 +436,18 @@ export function TranscriptEditor({
 }: TranscriptEditorProps) {
   const { toast } = useToast();
   const videoRef = useRef<HTMLVideoElement>(null);
-  const editorRef = useRef<HTMLParagraphElement>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [videoProgress, setVideoProgress] = useState(0);
+  const [currentMs, setCurrentMs] = useState(0);
+  const vttHandleRef = useRef<VttBlobHandle | null>(null);
 
   const [entries, setEntries] = useState<CaptionEntry[]>([]);
-  const [initialText, setInitialText] = useState("");
-  const [text, setText] = useState("");
+  const [initialEntries, setInitialEntries] = useState<CaptionEntry[]>([]);
   const [initialCaptionStyle, setInitialCaptionStyle] = useState<ClipCaptionStyleConfig>(
     DEFAULT_CLIP_CAPTION_STYLE
   );
-  const [liveCaptionStyle, setLiveCaptionStyle] = useState<ClipCaptionStyleConfig>(
-    DEFAULT_CLIP_CAPTION_STYLE
-  );
+  const [undoKey, setUndoKey] = useState(0);
+  const [searchQuery, setSearchQuery] = useState("");
 
   useEffect(() => {
     const parsed = captionSrt ? srtUtils.parseSRT(captionSrt) : [];
@@ -453,26 +455,37 @@ export function TranscriptEditor({
       ...entry,
       text: normalizeEntryText(entry.text),
     }));
-
     const clippedEntries = clampCaptionEntriesToClipWindow(normalized, startMs, endMs);
-    const combined = combineEntries(clippedEntries);
-
     setEntries(clippedEntries);
-    setInitialText(combined);
-    setText(combined);
-    const normalizedStyle = normalizeClipCaptionStyle(captionStyle);
-    setInitialCaptionStyle(normalizedStyle);
-    setLiveCaptionStyle(normalizedStyle);
-  }, [captionSrt, captionStyle, clipId, startMs, endMs]);
+    setInitialEntries(clippedEntries);
+    setInitialCaptionStyle(normalizeClipCaptionStyle(captionStyle));
+    setSearchQuery("");
+    setUndoKey(0);
+  }, [captionSrt, clipId, startMs, endMs]); // captionStyle intentionally excluded — only reset on clip change
 
-  const liveText = useMemo(
-    () => normalizeEntryText(editorRef.current?.textContent ?? text),
-    [text]
+  const hasEntryChanges = useMemo(
+    () => JSON.stringify(entries) !== JSON.stringify(initialEntries),
+    [entries, initialEntries]
   );
   const hasStyleChanges =
-    JSON.stringify(liveCaptionStyle) !== JSON.stringify(initialCaptionStyle);
-  const hasChanges = liveText !== initialText || hasStyleChanges;
+    JSON.stringify(captionStyle) !== JSON.stringify(initialCaptionStyle);
+  const hasChanges = hasEntryChanges || hasStyleChanges;
   const wordTimeline = useMemo(() => buildWordTimeline(entries), [entries]);
+
+  // Build a VTT Blob URL from the current entries so the native browser player
+  // shows CC controls. Regenerate whenever entries change; revoke the old URL.
+  const vttBlobUrl = useMemo(() => {
+    const previous = vttHandleRef.current;
+    if (previous) previous.revoke();
+    const handle = createVttBlobUrl(entries);
+    vttHandleRef.current = handle;
+    return handle?.url ?? null;
+  }, [entries]);
+
+  // Final cleanup on unmount.
+  useEffect(() => {
+    return () => { vttHandleRef.current?.revoke(); };
+  }, []);
 
   const clipScopedCaptionSrt = useMemo(() => {
     if (entries.length === 0) {
@@ -492,18 +505,54 @@ export function TranscriptEditor({
   const durationMs = Math.max(1, endMs - startMs);
 
   function handleUndo() {
-    setText(initialText);
-    setLiveCaptionStyle(initialCaptionStyle);
-    if (editorRef.current) {
-      editorRef.current.textContent = initialText;
-    }
+    setEntries(initialEntries);
+    onCaptionStyleChange(initialCaptionStyle);
+    setUndoKey((k) => k + 1);
   }
+
+  function updateEntryText(idx: number, newText: string) {
+    const normalized = normalizeEntryText(newText);
+    if (!normalized) return;
+    setEntries((prev) => prev.map((e, i) => (i === idx ? { ...e, text: normalized } : e)));
+  }
+
+  function splitEntry(idx: number) {
+    const entry = entries[idx];
+    if (!entry) return;
+    const words = entry.text.trim().split(/\s+/).filter(Boolean);
+    if (words.length <= 1) return;
+    const mid = Math.ceil(words.length / 2);
+    const midMs = Math.round((entry.startMs + entry.endMs) / 2);
+    const a: CaptionEntry = { index: entry.index, startMs: entry.startMs, endMs: midMs, text: words.slice(0, mid).join(" ") };
+    const b: CaptionEntry = { index: entry.index + 1, startMs: midMs, endMs: entry.endMs, text: words.slice(mid).join(" ") };
+    setEntries(
+      [...entries.slice(0, idx), a, b, ...entries.slice(idx + 1)].map((e, i) => ({ ...e, index: i + 1 }))
+    );
+  }
+
+  function mergeWithNext(idx: number) {
+    const a = entries[idx];
+    const b = entries[idx + 1];
+    if (!a || !b) return;
+    const merged: CaptionEntry = { index: a.index, startMs: a.startMs, endMs: b.endMs, text: `${a.text.trim()} ${b.text.trim()}`.trim() };
+    setEntries(
+      [...entries.slice(0, idx), merged, ...entries.slice(idx + 2)].map((e, i) => ({ ...e, index: i + 1 }))
+    );
+  }
+
+  const displayEntries = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return entries.map((e, i) => ({ entry: e, idx: i }));
+    return entries.map((e, i) => ({ entry: e, idx: i })).filter(({ entry }) =>
+      entry.text.toLowerCase().includes(q)
+    );
+  }, [entries, searchQuery]);
 
   async function handleSave() {
     if (!hasChanges) return;
 
-    const normalized = normalizeEntryText(editorRef.current?.textContent ?? text);
-    if (!normalized) {
+    const combinedText = entries.map((e) => e.text).join(" ").trim();
+    if (!combinedText) {
       toast({
         variant: "destructive",
         title: "Transcript is empty",
@@ -513,20 +562,18 @@ export function TranscriptEditor({
     }
 
     setIsSaving(true);
-    setText(normalized);
 
     try {
-      const normalizedCaptionStyle = normalizeClipCaptionStyle(liveCaptionStyle);
+      const normalizedCaptionStyle = normalizeClipCaptionStyle(captionStyle);
       let nextStartMs = startMs;
       let nextEndMs = endMs;
       let retimedFromTranscript = false;
 
-      const inferredRange = inferTrimRangeFromEditedText(normalized, wordTimeline);
-      const inferredEditRanges = inferEditRangesFromEditedText(normalized, wordTimeline);
+      const inferredRange = inferTrimRangeFromEditedText(combinedText, wordTimeline);
+      const inferredEditRanges = inferEditRangesFromEditedText(combinedText, wordTimeline);
       if (inferredRange) {
         const candidateStart = startMs + inferredRange.startMs;
         const candidateEnd = startMs + inferredRange.endMs;
-
         if (
           candidateEnd - candidateStart >= MIN_TRIMMED_CLIP_DURATION_MS &&
           candidateStart >= 0 &&
@@ -534,7 +581,6 @@ export function TranscriptEditor({
         ) {
           const startDelta = Math.abs(candidateStart - startMs);
           const endDelta = Math.abs(candidateEnd - endMs);
-
           if (startDelta >= TRIM_DELTA_THRESHOLD_MS || endDelta >= TRIM_DELTA_THRESHOLD_MS) {
             nextStartMs = candidateStart;
             nextEndMs = candidateEnd;
@@ -543,7 +589,6 @@ export function TranscriptEditor({
         }
       }
 
-      const nextDurationMs = Math.max(1, nextEndMs - nextStartMs);
       const absoluteEditRanges = inferredEditRanges
         ? inferredEditRanges.map((range) => ({
             startMs: startMs + range.startMs,
@@ -552,22 +597,10 @@ export function TranscriptEditor({
         : null;
       const hasInternalEditCuts = Boolean(absoluteEditRanges && absoluteEditRanges.length > 1);
 
-      const singleSegmentSrt = srtUtils.buildSRT([
-        {
-          index: 1,
-          startMs: 0,
-          endMs: nextDurationMs,
-          text: normalized,
-        },
-      ]);
-
-      const rebuiltTimedEntries = buildTimedCaptionEntriesFromEditedText(
-        normalized,
-        wordTimeline
+      // Build SRT directly from current per-segment entries.
+      const captionSrtToPersist = srtUtils.buildSRT(
+        entries.map((e, i) => ({ ...e, index: i + 1 }))
       );
-      const captionSrtToPersist = rebuiltTimedEntries
-        ? srtUtils.buildSRT(rebuiltTimedEntries)
-        : singleSegmentSrt;
 
       const patchPayload: {
         captionSrt: string;
@@ -585,7 +618,6 @@ export function TranscriptEditor({
       };
 
       if (retimedFromTranscript) {
-        // Existing preview represents old range, so invalidate immediately.
         patchPayload.previewPath = null;
       }
 
@@ -596,9 +628,7 @@ export function TranscriptEditor({
         cache: "no-store",
       });
 
-      if (!updateResponse.ok) {
-        throw new Error("Failed to save transcript");
-      }
+      if (!updateResponse.ok) throw new Error("Failed to save transcript");
 
       const updatePayload = (await updateResponse.json().catch(() => null)) as
         | {
@@ -622,17 +652,14 @@ export function TranscriptEditor({
         : null;
 
       if (retimedFromTranscript || hasInternalEditCuts) {
-        // Refresh preview for updated clip timing and/or internal cut ranges.
         const regenerateResponse = await fetch("/api/repurpose/captions", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ clipId }),
           cache: "no-store",
         });
-
         if (regenerateResponse.ok) {
-          // Keep the user-edited transcript as the final source of truth.
-          const restoreTranscriptResponse = await fetch(`/api/clips/${clipId}`, {
+          const restoreRes = await fetch(`/api/clips/${clipId}`, {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -644,18 +671,11 @@ export function TranscriptEditor({
             }),
             cache: "no-store",
           });
-
-          if (!restoreTranscriptResponse.ok) {
-            toast({
-              title: "Clip timing synced",
-              description: "Preview refreshed, but transcript restore failed. Please click Save once more.",
-            });
+          if (!restoreRes.ok) {
+            toast({ title: "Clip timing synced", description: "Preview refreshed, but transcript restore failed. Please click Save once more." });
           }
         } else {
-          toast({
-            title: "Clip timing synced",
-            description: "Transcript saved, but preview refresh failed. Regenerate captions to refresh preview.",
-          });
+          toast({ title: "Clip timing synced", description: "Transcript saved, but preview refresh failed. Regenerate captions to refresh preview." });
         }
       }
 
@@ -665,20 +685,14 @@ export function TranscriptEditor({
           ? "Saved. Internal transcript deletions will be applied in export render."
           : retimedFromTranscript
             ? "Transcript and clip timing are now synchronized."
-            : "Saved in single-block format.",
+            : `Saved ${entries.length} segment${entries.length !== 1 ? "s" : ""}.`,
       });
 
-      setInitialText(normalized);
-      setText(normalized);
-      setLiveCaptionStyle(normalizedCaptionStyle);
-      await onSave();
+      setInitialEntries(entries);
       setInitialCaptionStyle(normalizedCaptionStyle);
+      await onSave();
     } catch {
-      toast({
-        variant: "destructive",
-        title: "Save failed",
-        description: "Unable to save transcript. Please retry.",
-      });
+      toast({ variant: "destructive", title: "Save failed", description: "Unable to save transcript. Please retry." });
     } finally {
       setIsSaving(false);
     }
@@ -688,56 +702,14 @@ export function TranscriptEditor({
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
-
     function handleTimeUpdate() {
       const dur = video!.duration || 1;
       setVideoProgress((video!.currentTime / dur) * 100);
+      setCurrentMs(Math.round(video!.currentTime * 1000));
     }
-
     video.addEventListener("timeupdate", handleTimeUpdate);
     return () => video.removeEventListener("timeupdate", handleTimeUpdate);
   }, []);
-
-  const seekVideoToEditorCursor = useCallback(() => {
-    const editor = editorRef.current;
-    const video = videoRef.current;
-    if (!editor || !video || wordTimeline.length === 0) {
-      return;
-    }
-
-    const selection = window.getSelection();
-    if (!selection || selection.rangeCount === 0) {
-      return;
-    }
-
-    const anchorNode = selection.anchorNode;
-    if (!anchorNode || !editor.contains(anchorNode)) {
-      return;
-    }
-
-    const range = selection.getRangeAt(0).cloneRange();
-    range.selectNodeContents(editor);
-    range.setEnd(anchorNode, selection.anchorOffset);
-    const beforeCaret = range.toString();
-
-    const liveTokens = tokenizeWords(editor.textContent ?? "");
-    if (liveTokens.length === 0) {
-      return;
-    }
-
-    const wordIndex = Math.max(0, tokenizeWords(beforeCaret).length - 1);
-    const normalizedIndex =
-      wordTimeline.length === liveTokens.length
-        ? wordIndex
-        : Math.round((wordIndex / Math.max(1, liveTokens.length - 1)) * Math.max(0, wordTimeline.length - 1));
-
-    const targetWord = wordTimeline[Math.max(0, Math.min(wordTimeline.length - 1, normalizedIndex))];
-    if (!targetWord) {
-      return;
-    }
-
-    video.currentTime = targetWord.startMs / 1000;
-  }, [wordTimeline]);
 
   const videoPlayer = previewPath ? (
     <div className="relative w-full overflow-hidden rounded-lg bg-black">
@@ -748,15 +720,13 @@ export function TranscriptEditor({
         style={{ maxHeight: "240px" }}
         preload="metadata"
         controls
-      />
-      <CaptionPreviewOverlay
-        captionStyle={liveCaptionStyle}
-        activeCaption={entries.find((entry) => {
-          const currentMs = videoRef.current ? Math.round(videoRef.current.currentTime * 1000) : 0;
-          return currentMs >= entry.startMs && currentMs <= entry.endMs;
-        })?.text ?? text}
-        currentMs={Math.round((videoRef.current?.currentTime ?? 0) * 1000)}
-      />
+        crossOrigin="anonymous"
+      >
+        {vttBlobUrl && (
+          <track kind="captions" src={vttBlobUrl} srcLang="en" label="English" />
+        )}
+      </video>
+      <CaptionPreviewOverlay captionStyle={captionStyle} entries={entries} currentMs={currentMs} />
     </div>
   ) : null;
 
@@ -765,17 +735,9 @@ export function TranscriptEditor({
       <div className="flex items-center justify-between gap-3 rounded-lg border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
         <div className="flex items-center gap-2">
           <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-          <span>
-            Clip preview is unavailable for this highlight. Rebuild captions to regenerate the playable preview and thumbnail.
-          </span>
+          <span>Clip preview is unavailable. Rebuild captions to regenerate the playable preview and thumbnail.</span>
         </div>
-        <Button
-          variant="secondary"
-          size="sm"
-          className="h-7 shrink-0"
-          onClick={onGenerateCaptions}
-          disabled={isGenerating}
-        >
+        <Button variant="secondary" size="sm" className="h-7 shrink-0" onClick={onGenerateCaptions} disabled={isGenerating}>
           <RefreshCw className={cn("mr-1.5 h-3.5 w-3.5", isGenerating && "animate-spin")} />
           {isGenerating ? "Rebuilding..." : "Rebuild preview"}
         </Button>
@@ -790,22 +752,10 @@ export function TranscriptEditor({
         <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border/60 bg-muted/10 px-4 py-8 text-center">
           <Type className="mb-2 h-7 w-7 text-muted-foreground/25" />
           <p className="text-sm font-medium text-muted-foreground/80">No transcript available</p>
-          <p className="mt-1 max-w-[280px] text-xs text-muted-foreground/50">
-            Generate captions to create an editable transcript.
-          </p>
+          <p className="mt-1 max-w-[280px] text-xs text-muted-foreground/50">Generate captions to create an editable transcript.</p>
           {onGenerateCaptions && (
-            <Button
-              variant="default"
-              size="sm"
-              className="mt-4 gap-1.5"
-              onClick={onGenerateCaptions}
-              disabled={isGenerating}
-            >
-              {isGenerating ? (
-                <RefreshCw className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <Type className="h-3.5 w-3.5" />
-              )}
+            <Button variant="default" size="sm" className="mt-4 gap-1.5" onClick={onGenerateCaptions} disabled={isGenerating}>
+              {isGenerating ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Type className="h-3.5 w-3.5" />}
               {isGenerating ? "Generating..." : "Generate Captions"}
             </Button>
           )}
@@ -822,17 +772,9 @@ export function TranscriptEditor({
         <div className="flex flex-col items-center justify-center rounded-lg border border-amber-500/30 bg-amber-500/5 px-4 py-8 text-center">
           <AlertTriangle className="mb-2 h-7 w-7 text-amber-500/60" />
           <p className="text-sm font-medium text-foreground/80">Transcript quality is too low</p>
-          <p className="mt-1 max-w-[320px] text-xs text-muted-foreground/60">
-            Captions are mostly unusable. Regenerate to get a clean single-block transcript.
-          </p>
+          <p className="mt-1 max-w-[320px] text-xs text-muted-foreground/60">Captions are mostly unusable. Regenerate to get a clean transcript.</p>
           {onGenerateCaptions && (
-            <Button
-              variant="default"
-              size="sm"
-              className="mt-4 gap-1.5"
-              onClick={onGenerateCaptions}
-              disabled={isGenerating}
-            >
+            <Button variant="default" size="sm" className="mt-4 gap-1.5" onClick={onGenerateCaptions} disabled={isGenerating}>
               <RefreshCw className={cn("h-3.5 w-3.5", isGenerating && "animate-spin")} />
               {isGenerating ? "Regenerating..." : "Regenerate Captions"}
             </Button>
@@ -850,51 +792,47 @@ export function TranscriptEditor({
       {captionQuality.tier === "needs_cleanup" && (
         <div className="flex items-center gap-2 rounded-lg border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
           <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-          <span>
-            Some transcript cues may be noisy ({captionQuality.validCount}/{captionQuality.totalCount} usable). Edit the text below or regenerate for best results.
-          </span>
+          <span>Some transcript cues may be noisy ({captionQuality.validCount}/{captionQuality.totalCount} usable). Edit below or regenerate.</span>
         </div>
       )}
 
-      {/* Transcript header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">
-            Transcript
-          </p>
-          <Badge variant="secondary" className="h-[18px] px-1.5 text-[10px]">
-            Single segment
-          </Badge>
+      {/* Transcript toolbar: search + segment count + actions */}
+      <div className="flex items-center gap-2 flex-wrap">
+        {/* Search */}
+        <div className="relative flex-1 min-w-[140px] max-w-[220px]">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground/40 pointer-events-none" />
+          <input
+            type="search"
+            placeholder="Search…"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="h-7 w-full rounded-lg border border-border/50 bg-muted/20 pl-8 pr-3 text-xs outline-none focus:border-primary/50 placeholder:text-muted-foreground/40"
+          />
         </div>
-        <div className="flex items-center gap-1.5">
+
+        {/* Segment count badge */}
+        <span className="text-[10px] font-medium text-muted-foreground/50 shrink-0">
+          {displayEntries.length}
+          {searchQuery.trim() ? `/${entries.length}` : ""} segment{entries.length !== 1 ? "s" : ""}
+        </span>
+
+        {/* Spacer */}
+        <div className="flex-1" />
+
+        {/* Actions */}
+        <div className="flex items-center gap-1.5 shrink-0">
           {onGenerateCaptions && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-6 gap-1 px-2 text-[11px] text-muted-foreground/60 hover:text-foreground"
-              onClick={onGenerateCaptions}
-              disabled={isGenerating}
-            >
+            <Button variant="ghost" size="sm" className="h-6 gap-1 px-2 text-[11px] text-muted-foreground/60 hover:text-foreground" onClick={onGenerateCaptions} disabled={isGenerating}>
               <RefreshCw className={cn("h-3 w-3", isGenerating && "animate-spin")} />
-              Regenerate
+              Regen
             </Button>
           )}
           {hasChanges && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-6 px-2 text-[11px] text-muted-foreground/60 hover:text-foreground"
-              onClick={handleUndo}
-            >
+            <Button variant="ghost" size="sm" className="h-6 px-2 text-[11px] text-muted-foreground/60 hover:text-foreground" onClick={handleUndo}>
               Undo
             </Button>
           )}
-          <Button
-            size="sm"
-            className="h-6 gap-1 px-2.5 text-[11px]"
-            onClick={handleSave}
-            disabled={!hasChanges || isSaving}
-          >
+          <Button size="sm" className="h-6 gap-1 px-2.5 text-[11px]" onClick={handleSave} disabled={!hasChanges || isSaving}>
             <Save className="h-3 w-3" />
             {isSaving ? "Saving…" : "Save"}
           </Button>
@@ -904,65 +842,138 @@ export function TranscriptEditor({
       {/* Video position bar */}
       {previewPath && entries.length > 0 && (
         <div className="h-0.5 rounded-full bg-muted/60 overflow-hidden">
-          <div
-            className="h-full bg-primary transition-[width] duration-100"
-            style={{ width: `${videoProgress}%` }}
-          />
+          <div className="h-full bg-primary transition-[width] duration-100" style={{ width: `${videoProgress}%` }} />
         </div>
       )}
 
-      {/* Single-block transcript editor — always one unified text block */}
-      <div className="overflow-hidden rounded-xl border border-border/40 bg-muted/30">
-        {!text.trim() ? (
+      {/* Per-segment rows */}
+      <div className="overflow-hidden rounded-xl border border-border/40 bg-muted/30 divide-y divide-border/25">
+        {displayEntries.length === 0 ? (
           <div className="flex items-center justify-center py-8 text-sm text-muted-foreground/40">
-            Transcript is empty — click Save to commit.
+            {searchQuery.trim() ? "No segments match your search." : "No segments available."}
           </div>
         ) : (
-          <p
-            ref={editorRef}
-            key={initialText}
-            contentEditable
-            suppressContentEditableWarning
-            onMouseUp={seekVideoToEditorCursor}
-            onKeyUp={seekVideoToEditorCursor}
-            onBlur={(e) => {
-              const normalized = normalizeEntryText(e.currentTarget.textContent ?? "");
-              if (normalized) setText(normalized);
-            }}
-            className="px-4 py-4 text-sm leading-relaxed text-foreground/80 outline-none focus:text-foreground cursor-text transition-colors min-h-[80px] whitespace-pre-wrap"
-          >
-            {text}
-          </p>
+          displayEntries.map(({ entry, idx }) => (
+            <SegmentRow
+              key={`${undoKey}-${entry.index}`}
+              entry={entry}
+              originalIndex={idx}
+              isLast={idx === entries.length - 1}
+              isActive={currentMs >= entry.startMs && currentMs < entry.endMs}
+              onTextChange={updateEntryText}
+              onSplit={splitEntry}
+              onMerge={mergeWithNext}
+              onSeek={(ms) => { if (videoRef.current) videoRef.current.currentTime = ms / 1000; }}
+            />
+          ))
         )}
       </div>
-
-      <CaptionOverlayStudio
-        value={liveCaptionStyle}
-        onChange={setLiveCaptionStyle}
-        sampleCaption={entries[0]?.text || text}
-        previewPath={previewPath}
-        captionEntries={entries}
-      />
     </div>
   );
 }
 
+// ── Per-segment row ────────────────────────────────────────────────────────────
+
+function msToMinSec(ms: number): string {
+  const s = Math.floor(ms / 1000);
+  return `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
+}
+
+function SegmentRow({
+  entry,
+  originalIndex,
+  isLast,
+  isActive,
+  onTextChange,
+  onSplit,
+  onMerge,
+  onSeek,
+}: {
+  entry: CaptionEntry;
+  originalIndex: number;
+  isLast: boolean;
+  isActive: boolean;
+  onTextChange: (idx: number, text: string) => void;
+  onSplit: (idx: number) => void;
+  onMerge: (idx: number) => void;
+  onSeek: (ms: number) => void;
+}) {
+  const canSplit = entry.text.trim().split(/\s+/).filter(Boolean).length > 1;
+
+  return (
+    <div className={cn(
+      "group flex items-start gap-3 px-4 py-2.5 transition-colors",
+      isActive ? "bg-primary/8" : "hover:bg-muted/20"
+    )}>
+      {/* Timestamp — click to seek */}
+      <button
+        onClick={() => onSeek(entry.startMs)}
+        className={cn(
+          "shrink-0 w-[92px] pt-0.5 font-mono text-[10px] tabular-nums text-left transition-colors hover:text-primary",
+          isActive ? "text-primary font-semibold" : "text-muted-foreground/50"
+        )}
+        title="Seek to this segment"
+      >
+        {msToMinSec(entry.startMs)} → {msToMinSec(entry.endMs)}
+      </button>
+
+      {/* Editable text */}
+      <div
+        contentEditable
+        suppressContentEditableWarning
+        onBlur={(e) => onTextChange(originalIndex, e.currentTarget.textContent ?? "")}
+        className="flex-1 min-w-0 text-sm leading-relaxed text-foreground/80 outline-none focus:text-foreground cursor-text py-0.5"
+      >
+        {entry.text}
+      </div>
+
+      {/* Actions — visible on hover */}
+      <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0 pt-0.5">
+        <button
+          onClick={() => onSplit(originalIndex)}
+          disabled={!canSplit}
+          title="Split at midpoint"
+          className="h-5 w-5 flex items-center justify-center rounded text-muted-foreground/40 hover:text-foreground hover:bg-muted/60 transition-colors disabled:opacity-20 disabled:pointer-events-none"
+        >
+          <Scissors className="h-3 w-3" />
+        </button>
+        {!isLast && (
+          <button
+            onClick={() => onMerge(originalIndex)}
+            title="Merge with next segment"
+            className="h-5 w-5 flex items-center justify-center rounded text-muted-foreground/40 hover:text-foreground hover:bg-muted/60 transition-colors text-[11px] font-bold"
+          >
+            ↓
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Caption preview overlay (video layer) ─────────────────────────────────────
+
 function CaptionPreviewOverlay({
   captionStyle,
-  activeCaption,
+  entries,
   currentMs,
 }: {
   captionStyle: ClipCaptionStyleConfig;
-  activeCaption: string;
+  entries: CaptionEntry[];
   currentMs: number;
 }) {
+  const activeCaption =
+    entries.find((e) => currentMs >= e.startMs && currentMs < e.endMs)?.text ??
+    entries[0]?.text ??
+    "";
+
   const activeHook = captionStyle.hookOverlays.find(
     (overlay) => currentMs >= overlay.startMs && currentMs <= overlay.endMs
   );
 
   return (
     <>
-      {activeHook ? (
+      {activeHook && (
         <div
           className={cn(
             "pointer-events-none absolute max-w-[80%] rounded-xl px-4 py-2 text-center shadow-xl",
@@ -972,9 +983,7 @@ function CaptionPreviewOverlay({
           )}
           style={{
             color: activeHook.textColor,
-            backgroundColor: `${activeHook.backgroundColor}${Math.round(activeHook.backgroundOpacity * 255)
-              .toString(16)
-              .padStart(2, "0")}`,
+            backgroundColor: `${activeHook.backgroundColor}${Math.round(activeHook.backgroundOpacity * 255).toString(16).padStart(2, "0")}`,
             fontSize: `${Math.max(16, Math.round(activeHook.fontSize * 0.34))}px`,
             fontWeight: activeHook.bold ? 700 : 500,
             fontStyle: activeHook.italic ? "italic" : "normal",
@@ -982,28 +991,28 @@ function CaptionPreviewOverlay({
         >
           {activeHook.text}
         </div>
-      ) : null}
+      )}
 
       <div
         className={cn(
-          "pointer-events-none absolute left-1/2 max-w-[86%] -translate-x-1/2 rounded-xl px-4 py-2 text-center shadow-xl",
+          "pointer-events-none absolute left-1/2 max-w-[86%] -translate-x-1/2 rounded-xl px-4 py-2 text-center shadow-xl transition-opacity duration-100",
           captionStyle.position === "top" && "top-[14%]",
           captionStyle.position === "middle" && "top-1/2 -translate-y-1/2",
-          captionStyle.position === "bottom" && "bottom-[10%]"
+          captionStyle.position === "bottom" && "bottom-[10%]",
+          !activeCaption.trim() && "opacity-0"
         )}
         style={{
           color: captionStyle.primaryColor,
           fontSize: `${Math.max(15, Math.round(captionStyle.fontSize * 0.34))}px`,
           fontFamily: captionStyle.fontFamily,
+          fontWeight: 700,
           WebkitTextStroke: captionStyle.outline ? `1px ${captionStyle.outlineColor}` : undefined,
           backgroundColor: captionStyle.background
-            ? `${captionStyle.backgroundColor}${Math.round(captionStyle.backgroundOpacity * 255)
-                .toString(16)
-                .padStart(2, "0")}`
+            ? `${captionStyle.backgroundColor}${Math.round(captionStyle.backgroundOpacity * 255).toString(16).padStart(2, "0")}`
             : "transparent",
         }}
       >
-        {normalizeEntryText(activeCaption) || "Caption preview"}
+        {normalizeEntryText(activeCaption) || ""}
       </div>
     </>
   );

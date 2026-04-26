@@ -12,6 +12,7 @@ import {
   Film,
   Flame,
   Loader2,
+  RefreshCw,
   Scissors,
   AlertTriangle,
   Crop,
@@ -32,9 +33,11 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/components/ui/use-toast";
 import { getCaptionQuality } from "@/lib/caption-quality";
 import { cn, formatDuration } from "@/lib/utils";
+import { srtToWebVTT } from "@/lib/captions/webvtt";
 
 export default function RepurposeEditorPage() {
   const { toast } = useToast();
@@ -52,6 +55,7 @@ export default function RepurposeEditorPage() {
   const [activeClipId, setActiveClipId] = useState<string | null>(null);
   const [captionLoading, setCaptionLoading] = useState<string | undefined>();
   const [deleteClipId, setDeleteClipId] = useState<string | null>(null);
+  const [retranscribing, setRetranscribing] = useState(false);
 
   const clips = useMemo(() => project?.clips ?? [], [project?.clips]);
   const activeClip = useMemo(
@@ -168,6 +172,47 @@ export default function RepurposeEditorPage() {
       toast({ variant: "destructive", title: "Failed to delete clip" });
     } finally {
       setDeleteClipId(null);
+    }
+  }
+
+  /**
+   * Re-runs Whisper transcription on the asset backing the active clip,
+   * then regenerates captions for the clip from the real transcript.
+   */
+  async function handleRetranscribe() {
+    const clip = activeClip;
+    if (!clip?.assetId) {
+      toast({ variant: "destructive", title: "No asset linked to this clip" });
+      return;
+    }
+    setRetranscribing(true);
+    try {
+      // Step 1 — re-transcribe the source file.
+      const rtRes = await fetch("/api/repurpose/retranscribe", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ assetId: clip.assetId }),
+        cache: "no-store",
+      });
+      if (!rtRes.ok) {
+        const body = await rtRes.json().catch(() => null);
+        throw new Error(body?.message ?? "Re-transcription failed");
+      }
+      // Step 2 — regenerate captions for this clip from the fresh transcript.
+      await handleGenerateCaptions(clip.id);
+      toast({
+        title: "Re-transcription complete",
+        description: "Real transcript has replaced the placeholder. Captions regenerated.",
+      });
+      await invalidate();
+    } catch (err) {
+      toast({
+        variant: "destructive",
+        title: "Re-transcription failed",
+        description: err instanceof Error ? err.message : "Please check that the source file exists and a transcription provider is configured.",
+      });
+    } finally {
+      setRetranscribing(false);
     }
   }
 
@@ -387,7 +432,6 @@ export default function RepurposeEditorPage() {
                           <Flame className="h-3 w-3" />
                           {activeClip.viralityScore}/100
                         </span>
-                        {/* Mini score bar */}
                         <div className="flex items-center gap-1">
                           <div className="w-16 h-1 rounded-full bg-muted/60 overflow-hidden">
                             <div
@@ -468,23 +512,96 @@ export default function RepurposeEditorPage() {
                 </div>
               )}
 
-              {/* Transcript editor */}
-              <div className="p-5">
-                <TranscriptEditor
-                  clipId={activeClip.id}
-                  clipTitle={activeClip.title}
-                  captionSrt={activeClip.captionSrt}
-                  captionStyle={activeClip.captionStyle}
-                  startMs={activeClip.startMs}
-                  endMs={activeClip.endMs}
-                  previewPath={activeClip.previewPath}
-                  onSave={invalidate}
-                  onGenerateCaptions={() => handleGenerateCaptions(activeClip.id)}
-                  isGenerating={captionLoading === activeClip.id}
-                />
-              </div>
+              {/* ── Synthetic transcript recovery banner ──────────────────── */}
+              {isSyntheticSrt(activeClip.captionSrt) && (
+                <div className="flex items-start gap-3 border-b border-amber-500/20 bg-amber-500/[0.06] px-5 py-3.5">
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-400" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-amber-300">Placeholder transcript detected</p>
+                    <p className="mt-0.5 text-xs text-amber-400/70">
+                      This clip was generated from a synthetic fallback — not a real transcription.
+                      Re-transcribe to replace it with the actual speech from the source video.
+                    </p>
+                  </div>
+                  <button
+                    onClick={handleRetranscribe}
+                    disabled={retranscribing}
+                    className="flex shrink-0 items-center gap-1.5 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-[11px] font-semibold text-amber-300 transition-colors hover:bg-amber-500/20 disabled:opacity-50"
+                  >
+                    <RefreshCw className={cn("h-3 w-3", retranscribing && "animate-spin")} />
+                    {retranscribing ? "Transcribing…" : "Re-transcribe"}
+                  </button>
+                </div>
+              )}
 
-              {/* AI summary */}
+              {/* ── Tabbed editor area ────────────────────────────────────── */}
+              <Tabs defaultValue="transcript" className="w-full">
+                <div className="border-b border-border/40 px-5 pt-4">
+                  <TabsList className="h-8 w-auto gap-0 rounded-none border-0 bg-transparent p-0">
+                    <TabsTrigger
+                      value="transcript"
+                      className="h-8 rounded-none border-b-2 border-transparent px-4 text-xs font-semibold data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=inactive]:text-muted-foreground/60 data-[state=inactive]:hover:text-muted-foreground"
+                    >
+                      Transcript
+                    </TabsTrigger>
+                    <TabsTrigger
+                      value="export"
+                      className="h-8 rounded-none border-b-2 border-transparent px-4 text-xs font-semibold data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=inactive]:text-muted-foreground/60 data-[state=inactive]:hover:text-muted-foreground"
+                    >
+                      Export
+                    </TabsTrigger>
+                  </TabsList>
+                </div>
+
+                {/* Transcript tab */}
+                <TabsContent value="transcript" className="m-0 p-5">
+                  <TranscriptEditor
+                    clipId={activeClip.id}
+                    clipTitle={activeClip.title}
+                    captionSrt={activeClip.captionSrt}
+                    captionStyle={activeClip.captionStyle}
+                    startMs={activeClip.startMs}
+                    endMs={activeClip.endMs}
+                    previewPath={activeClip.previewPath}
+                    onSave={invalidate}
+                    onGenerateCaptions={() => handleGenerateCaptions(activeClip.id)}
+                    isGenerating={captionLoading === activeClip.id}
+                  />
+                </TabsContent>
+
+                {/* Export tab */}
+                <TabsContent value="export" className="m-0 p-5 space-y-4">
+                  {/* Caption file downloads */}
+                  {activeClip.captionSrt && !isSyntheticSrt(activeClip.captionSrt) && !activeClip.captionSrt.includes("[Transcript unavailable]") ? (
+                    <ClipCaptionDownloads
+                      srt={activeClip.captionSrt}
+                      clipTitle={activeClip.title}
+                    />
+                  ) : (
+                    <div className="rounded-xl border border-dashed border-border/50 bg-muted/20 px-4 py-6 text-center">
+                      <FileText className="mx-auto mb-2 h-6 w-6 text-muted-foreground/20" />
+                      <p className="text-sm text-muted-foreground/50">No captions available</p>
+                      <p className="mt-1 text-xs text-muted-foreground/35">
+                        Generate captions first to enable .srt / .vtt downloads.
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Link to full export page */}
+                  <Link
+                    href={`/repurpose/export?projectId=${project.id}`}
+                    className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90 shadow-sm shadow-primary/20"
+                  >
+                    Export with video render
+                    <ArrowRight className="h-4 w-4" />
+                  </Link>
+                  <p className="text-center text-[11px] text-muted-foreground/40">
+                    Choose aspect ratio, burn captions into the video, and download the final MP4.
+                  </p>
+                </TabsContent>
+              </Tabs>
+
+              {/* AI summary — always visible below the tabs */}
               {activeClip.summary && (
                 <div className="border-t border-border/40 px-5 py-4">
                   <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/40 mb-1.5">
@@ -536,6 +653,64 @@ export default function RepurposeEditorPage() {
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+/** True when captionSrt contains the synthetic mock pattern from generateMockResult(). */
+function isSyntheticSrt(srt: string | null | undefined): boolean {
+  if (!srt) return false;
+  return /this is synthetic transcript segment \d+/i.test(srt.slice(0, 500));
+}
+
+/** Client-side file download helper. */
+function downloadBlob(content: string, mimeType: string, filename: string) {
+  const blob = new Blob([content], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 5_000);
+}
+
+function safeStem(title: string | null | undefined): string {
+  if (!title) return "captions";
+  return title.trim().replace(/[^\w\s-]/g, "").replace(/\s+/g, "-").slice(0, 64).toLowerCase() || "captions";
+}
+
+function ClipCaptionDownloads({
+  srt,
+  clipTitle,
+}: {
+  srt: string;
+  clipTitle?: string | null;
+}) {
+  const stem = safeStem(clipTitle);
+  return (
+    <div className="rounded-xl border border-border/60 bg-muted/20 p-4">
+      <p className="mb-3 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/45">
+        Download Caption Files
+      </p>
+      <div className="flex flex-wrap gap-2">
+        <button
+          onClick={() => downloadBlob(srt, "application/x-subrip", `${stem}.srt`)}
+          className="flex items-center gap-1.5 rounded-lg border border-border/50 bg-background px-3 py-2 text-xs font-semibold text-foreground/80 transition-colors hover:border-border hover:text-foreground"
+        >
+          <FileText className="h-3.5 w-3.5" />
+          Download .srt
+        </button>
+        <button
+          onClick={() => downloadBlob(srtToWebVTT(srt), "text/vtt", `${stem}.vtt`)}
+          className="flex items-center gap-1.5 rounded-lg border border-border/50 bg-background px-3 py-2 text-xs font-semibold text-foreground/80 transition-colors hover:border-border hover:text-foreground"
+        >
+          <FileText className="h-3.5 w-3.5" />
+          Download .vtt
+        </button>
+      </div>
+      <p className="mt-2.5 text-[10px] text-muted-foreground/40">
+        Soft caption files — attach to any video player or upload to YouTube.
+      </p>
+    </div>
+  );
+}
 
 function GlassCard({
   title,

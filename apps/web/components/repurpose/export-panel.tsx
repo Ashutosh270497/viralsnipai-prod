@@ -6,10 +6,12 @@ import {
   CheckCircle2,
   Download,
   Eye,
+  FileText,
   Loader2,
   RefreshCw,
   XCircle,
 } from "lucide-react";
+import { srtToWebVTT } from "@/lib/captions/webvtt";
 
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/components/ui/use-toast";
@@ -33,6 +35,10 @@ interface ExportPanelProps {
   onQueued?: () => Promise<void> | void;
   selectedPreset: string;
   onPresetChange: (preset: string) => void;
+  /** SRT caption text of the selected clip — enables .srt / .vtt downloads. */
+  captionSrt?: string | null;
+  /** Used as the filename stem for downloaded caption files. */
+  clipTitle?: string | null;
 }
 
 type ExportRuntime = {
@@ -58,6 +64,8 @@ export function ExportPanel({
   onQueued,
   selectedPreset,
   onPresetChange,
+  captionSrt,
+  clipTitle,
 }: ExportPanelProps) {
   const { toast } = useToast();
   const [includeCaptions, setIncludeCaptions] = useState(false);
@@ -472,6 +480,11 @@ export function ExportPanel({
         </div>
       )}
 
+      {/* Caption file downloads — only shown when captionSrt is available */}
+      {captionSrt && captionSrt.trim().length > 0 && !captionSrt.includes("[Transcript unavailable]") && (
+        <CaptionDownloadRow srt={captionSrt} clipTitle={clipTitle} />
+      )}
+
       {exports.length > 0 && (
         <div>
           <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/35 mb-2 px-0.5">
@@ -612,4 +625,72 @@ function summarizeError(message?: string | null) {
 
 function isCompletedStatus(status?: string | null) {
   return status === "done" || status === "completed";
+}
+
+// ─── Caption download helpers ──────────────────────────────────────────────────
+
+function downloadBlob(content: string, mimeType: string, filename: string) {
+  const blob = new Blob([content], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 5_000);
+}
+
+function safeStem(title: string | null | undefined): string {
+  if (!title) return "captions";
+  return title
+    .trim()
+    .replace(/[^\w\s-]/g, "")
+    .replace(/\s+/g, "-")
+    .slice(0, 64)
+    .toLowerCase() || "captions";
+}
+
+function CaptionDownloadRow({
+  srt,
+  clipTitle,
+}: {
+  srt: string;
+  clipTitle?: string | null;
+}) {
+  const stem = safeStem(clipTitle);
+
+  function handleSrt() {
+    downloadBlob(srt, "application/x-subrip", `${stem}.srt`);
+  }
+
+  function handleVtt() {
+    const vtt = srtToWebVTT(srt);
+    downloadBlob(vtt, "text/vtt", `${stem}.vtt`);
+  }
+
+  return (
+    <div className="rounded-xl border border-border/60 bg-muted/20 px-4 py-3">
+      <p className="mb-2.5 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/45">
+        Download Captions
+      </p>
+      <div className="flex items-center gap-2">
+        <button
+          onClick={handleSrt}
+          className="flex items-center gap-1.5 rounded-lg border border-border/50 bg-background px-3 py-1.5 text-[11px] font-semibold text-foreground/80 transition-colors hover:border-border hover:text-foreground"
+        >
+          <FileText className="h-3 w-3" />
+          Download .srt
+        </button>
+        <button
+          onClick={handleVtt}
+          className="flex items-center gap-1.5 rounded-lg border border-border/50 bg-background px-3 py-1.5 text-[11px] font-semibold text-foreground/80 transition-colors hover:border-border hover:text-foreground"
+        >
+          <FileText className="h-3 w-3" />
+          Download .vtt
+        </button>
+        <p className="ml-auto text-[10px] text-muted-foreground/40">
+          Soft captions for any player
+        </p>
+      </div>
+    </div>
+  );
 }

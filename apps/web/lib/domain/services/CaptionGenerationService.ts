@@ -53,6 +53,14 @@ export class CaptionGenerationService {
     const maxDurationMs = options.maxDurationMs || 2000;
 
     try {
+      // Reject synthetic/mock transcripts that were produced as a fallback
+      // when real transcription was unavailable. Surface the proper empty state
+      // instead of showing placeholder text as if it were a real transcript.
+      if (this.isSyntheticTranscript(transcript)) {
+        logger.warn('Synthetic transcript detected — returning unavailable fallback SRT');
+        return this.generateFallbackSRT(clipStartMs, clipEndMs);
+      }
+
       // Parse transcript JSON (pass clip timing for plain text handling)
       const transcriptData = this.parseTranscript(transcript, clipStartMs, clipEndMs);
 
@@ -407,6 +415,20 @@ export class CaptionGenerationService {
         return `${seg.index}\n${start} --> ${end}\n${seg.text}\n`;
       })
       .join('\n');
+  }
+
+  /**
+   * Detect mock/synthetic transcripts produced by generateMockResult() in
+   * lib/transcript.ts. These are generated as a fallback when Whisper is
+   * unavailable and must NOT be treated as real caption content.
+   */
+  private isSyntheticTranscript(transcript: string): boolean {
+    if (!transcript || transcript.length < 10) return false;
+    // Match the exact pattern produced by generateMockResult():
+    //   "This is synthetic transcript segment N from filename.ext."
+    return /this is synthetic transcript segment \d+/i.test(
+      transcript.slice(0, 500)
+    );
   }
 
   /**

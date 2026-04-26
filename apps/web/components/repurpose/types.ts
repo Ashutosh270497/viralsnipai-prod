@@ -19,6 +19,7 @@ export interface ProjectAsset {
 
 export interface ProjectClip {
   id: string;
+  assetId?: string | null;
   startMs: number;
   endMs: number;
   title?: string | null;
