@@ -61,6 +61,12 @@ export default function RepurposeExportPage() {
     return clip?.captionSrt ?? null;
   }, [project?.clips, selectedClipIds]);
 
+  // Caption animation type of the first selected clip — drives Remotion indicator.
+  const selectedCaptionAnimationType = useMemo(() => {
+    const clip = project?.clips.find((c) => selectedClipIds.includes(c.id));
+    return clip?.captionStyle?.animation?.type ?? null;
+  }, [project?.clips, selectedClipIds]);
+
   const pendingExportCount = useMemo(
     () =>
       project?.exports.filter((e) => e.status !== "done" && e.status !== "failed").length ?? 0,
@@ -216,6 +222,7 @@ export default function RepurposeExportPage() {
               onPresetChange={setSelectedPreset}
               captionSrt={selectedCaptionSrt}
               clipTitle={previewClip?.title}
+              captionAnimationType={selectedCaptionAnimationType}
             />
           </AppCard>
 

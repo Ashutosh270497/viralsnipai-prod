@@ -21,6 +21,15 @@ const schema = z.object({
   clipIds: z.array(z.string()).min(1),
   preset: z.enum(['shorts_9x16_1080', 'square_1x1_1080', 'portrait_4x5_1080', 'landscape_16x9_1080']),
   includeCaptions: z.boolean().optional().default(false),
+  /**
+   * Export quality tier.
+   * "high"     → CRF 16, slow preset, 256k audio (default — visually near-lossless).
+   * "standard" → CRF 20, medium preset, 192k audio (faster, smaller files).
+   *
+   * Stored in the export job log. The render worker reads this to select
+   * the appropriate quality policy from video-quality-policy.ts.
+   */
+  exportQuality: z.enum(['high', 'standard']).optional().default('high'),
 });
 
 /**
@@ -52,13 +61,14 @@ export const POST = withErrorHandling(async (request: Request) => {
     });
   }
 
-  const { projectId, clipIds, preset, includeCaptions } = result.data;
+  const { projectId, clipIds, preset, includeCaptions, exportQuality } = result.data;
 
   logger.info('Export started', {
     projectId,
     clipIds,
     preset,
     includeCaptions,
+    exportQuality,
     userId: user.id,
   });
 

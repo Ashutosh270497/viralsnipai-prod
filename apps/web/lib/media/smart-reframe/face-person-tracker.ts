@@ -168,27 +168,44 @@ export async function sampleAndDetect(params: {
 
   let framePaths: string[] = [];
   try {
+    const extractStart = Date.now();
     framePaths = await extractSampleFrames({
       sourcePath: params.sourcePath,
       startMs: params.startMs,
       endMs: params.endMs,
     });
+    const extractDurationMs = Date.now() - extractStart;
 
     if (framePaths.length === 0) {
       logger.info("smart-reframe: no frames extracted", {
         sourcePath: params.sourcePath,
         startMs: params.startMs,
         endMs: params.endMs,
+        extractDurationMs,
       });
       return { faceBoxes: [], personBoxes: [], totalFrames: 0 };
     }
 
     logger.info("smart-reframe: extracted frames for detection", {
       frameCount: framePaths.length,
-      sourcePath: params.sourcePath,
+      extractDurationMs,
     });
 
-    return await aggregateFrameDetections(framePaths, params.provider);
+    const detectionStart = Date.now();
+    const aggregated = await aggregateFrameDetections(framePaths, params.provider);
+    const detectionDurationMs = Date.now() - detectionStart;
+    const totalDetections = aggregated.faceBoxes.length + aggregated.personBoxes.length;
+
+    logger.info("smart-reframe: detection complete", {
+      sampledFrames: aggregated.totalFrames,
+      faceDetections: aggregated.faceBoxes.length,
+      personDetections: aggregated.personBoxes.length,
+      totalDetections,
+      detectionDurationMs,
+      fallback: totalDetections === 0,
+    });
+
+    return aggregated;
   } catch (err) {
     logger.warn("smart-reframe: sampleAndDetect failed", {
       error: err instanceof Error ? err.message : String(err),

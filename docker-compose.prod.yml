@@ -1,0 +1,128 @@
+version: "3.9"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PRODUCTION STACK — ViralSnipAI
+#
+# Services:
+#   web          → Next.js application (port 3000)
+#   cv-worker    → Python CV service — face/person detection, scene cuts (port 8010)
+#   postgres     → PostgreSQL 16 (override with Supabase URL in .env.production)
+#
+# Usage:
+#   cp .env.production.example .env.production
+#   # Fill in all required values in .env.production
+#   docker compose -f docker-compose.prod.yml up -d
+#   docker compose -f docker-compose.prod.yml logs -f
+#
+# Health checks:
+#   curl http://localhost:3000/api/health
+#   curl http://localhost:8010/health
+#   curl http://localhost:3000/api/media/cv-worker/health
+# ─────────────────────────────────────────────────────────────────────────────
+
+x-restart: &restart
+  restart: unless-stopped
+
+x-logging: &logging
+  logging:
+    driver: json-file
+    options:
+      max-size: "20m"
+      max-file: "5"
+
+services:
+  # ── Web application ──────────────────────────────────────────────────────────
+  web:
+    <<: [*restart, *logging]
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        - NODE_ENV=production
+    image: viralsnipai-web:latest
+    ports:
+      - "${WEB_PORT:-3000}:3000"
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=${DATABASE_URL}
+      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET}
+      - NEXTAUTH_URL=${NEXTAUTH_URL}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - CV_WORKER_URL=http://cv-worker:8010
+      - SMART_REFRAME_ENABLED=${SMART_REFRAME_ENABLED:-true}
+      - SMART_REFRAME_DETECTOR_PROVIDER=${SMART_REFRAME_DETECTOR_PROVIDER:-auto}
+      - REMOTION_RENDERER_ENABLED=${REMOTION_RENDERER_ENABLED:-false}
+      - REMOTION_RENDERER_MODE=${REMOTION_RENDERER_MODE:-node}
+      - REMOTION_EXPORT_CRF=${REMOTION_EXPORT_CRF:-18}
+      - REMOTION_EXPORT_AUDIO_BITRATE=${REMOTION_EXPORT_AUDIO_BITRATE:-256k}
+      - TRANSCRIBE_PROVIDER=${TRANSCRIBE_PROVIDER:-openai}
+      - USE_MOCK_TRANSCRIBE=${USE_MOCK_TRANSCRIBE:-false}
+      - NEXT_PUBLIC_APP_VERSION=${APP_VERSION:-1.0.0}
+      - MAX_UPLOAD_MB=${MAX_UPLOAD_MB:-500}
+    volumes:
+      - media-uploads:/app/uploads
+    depends_on:
+      cv-worker:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:3000/api/health | grep -q '\"overall\"'"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # ── CV Worker ────────────────────────────────────────────────────────────────
+  cv-worker:
+    <<: [*restart, *logging]
+    build:
+      context: apps/cv-worker
+      dockerfile: Dockerfile
+    image: viralsnipai-cv-worker:latest
+    ports:
+      - "${CV_WORKER_PORT:-8010}:8010"
+    environment:
+      - CV_WORKER_URL=http://cv-worker:8010
+      - CV_YOLO_MODEL_PATH=${CV_YOLO_MODEL_PATH:-}
+      - CV_SCENE_PROVIDER=${CV_SCENE_PROVIDER:-pyscenedetect}
+      - DEFAULT_SAMPLE_INTERVAL_MS=${SMART_REFRAME_SAMPLE_INTERVAL_MS:-750}
+      - MAX_FRAMES=${SMART_REFRAME_MAX_FRAMES:-24}
+    volumes:
+      - media-uploads:/app/uploads:ro
+      - cv-models:/app/models
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8010/health')\""]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # ── PostgreSQL (local / dev override) ────────────────────────────────────────
+  # In production, set DATABASE_URL to point to Supabase (or managed PG)
+  # and remove or comment out this service.
+  postgres:
+    <<: [*restart, *logging]
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-clippers}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
+      POSTGRES_DB: ${POSTGRES_DB:-clippers}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-clippers}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres-data:
+    driver: local
+  media-uploads:
+    driver: local
+  cv-models:
+    driver: local

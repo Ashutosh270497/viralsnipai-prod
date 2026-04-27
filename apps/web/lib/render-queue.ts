@@ -1,16 +1,19 @@
 import { promises as fs } from "fs";
 import path from "path";
+import os from "os";
 
 import { enqueueRender, processJobs } from "@clippers/jobs";
 
 import { prisma } from "@/lib/prisma";
-import { renderExport, PRESETS, probeSourceMetadata } from "@/lib/ffmpeg";
+import { renderExport, PRESETS, probeSourceMetadata, extractAndRenderSegment } from "@/lib/ffmpeg";
 import { getLocalUploadDir } from "@/lib/storage";
 import { generateWatermarkOverlayBuffer, resolveWatermarkStyle } from "@/lib/watermark";
 import { logger } from "@/lib/logger";
 import { resolveTranscriptEditRanges } from "@/lib/repurpose/transcript-edit-ranges";
 import { selectBestReframePlan } from "@/lib/repurpose/clip-optimization";
 import { normalizeClipCaptionStyle } from "@/lib/repurpose/caption-style-config";
+import { concatClipsPassthrough } from "@/lib/ffmpeg";
+import { shouldUseRemotionRenderer, renderWithRemotion, REMOTION_RENDERER_ENABLED } from "@/lib/media/remotion-renderer";
 import type { ClipReframePlan } from "@/lib/types";
 
 processJobs();
@@ -101,6 +104,15 @@ export function isExportJobActive(exportId: string) {
 
 export function getExportRuntimeState(exportId: string) {
   return exportRuntimeState.get(exportId) ?? null;
+}
+
+/** Live snapshot of the in-process export queue — used by the health endpoint. */
+export function getExportQueueSnapshot(): { activeJobs: number; stages: Record<string, number> } {
+  const stages: Record<string, number> = {};
+  for (const [, state] of exportRuntimeState) {
+    stages[state.stage] = (stages[state.stage] ?? 0) + 1;
+  }
+  return { activeJobs: activeExportJobs.size, stages };
 }
 
 export async function queueExportJob(exportId: string) {
@@ -324,6 +336,46 @@ export async function queueExportJob(exportId: string) {
                 }
               }
 
+              // ── Renderer selection ──────────────────────────────────────────
+              // Remotion path: animated captions (karaoke, pop, fade, slide, bounce)
+              // FFmpeg path: static captions or animation disabled
+              //
+              // Routing: check if any segment has an animated caption style AND
+              // the Remotion renderer is enabled via REMOTION_RENDERER_ENABLED=true.
+              const hasAnimatedCaptions =
+                includeCaptions &&
+                segments.some((seg) => shouldUseRemotionRenderer(seg.captionStyle));
+
+              if (hasAnimatedCaptions && REMOTION_RENDERER_ENABLED) {
+                await renderWithRemotionPath({
+                  exportId,
+                  segments,
+                  preset: presetKey,
+                  outputPath: exportRecord.storagePath,
+                  captionPaths,
+                  // BrandKit has no watermarkText field — use a generic branded label
+                  watermarkText: watermarkStyle.enabled ? "ViralSnipAI" : null,
+                  attempt,
+                  maxAttempts: MAX_RENDER_ATTEMPTS,
+                  onProgress: (stage, progressPct) => {
+                    setRuntimeState(exportId, {
+                      stage,
+                      progressPct,
+                      attempts: attempt,
+                      maxAttempts: MAX_RENDER_ATTEMPTS,
+                      retryable: attempt < MAX_RENDER_ATTEMPTS,
+                    });
+                  },
+                });
+              } else {
+                // Standard FFmpeg path (default / fallback)
+                if (hasAnimatedCaptions && !REMOTION_RENDERER_ENABLED) {
+                  logger.info("render:remotion_disabled — using FFmpeg static captions", {
+                    exportId,
+                    hint: "Set REMOTION_RENDERER_ENABLED=true to enable animated caption exports.",
+                  });
+                }
+
               await renderExport({
                 segments,
                 preset: presetKey,
@@ -340,8 +392,16 @@ export async function queueExportJob(exportId: string) {
                   });
                 },
               });
+              } // end else (FFmpeg path)
+
               await persistExportStatus(exportId, "done", null);
-              logger.info("Export processing completed", { exportId, attempt });
+              logger.info("Export processing completed", {
+                exportId,
+                attempt,
+                renderMethod: hasAnimatedCaptions && REMOTION_RENDERER_ENABLED ? "remotion" : "ffmpeg",
+                segmentCount: segments.length,
+                withCaptions: includeCaptions,
+              });
               setRuntimeState(exportId, {
                 stage: "done",
                 progressPct: 100,
@@ -452,6 +512,165 @@ async function persistExportStatus(
   });
   throw lastError instanceof Error ? lastError : new Error("Failed to persist export status");
 }
+
+// ── Remotion render path ──────────────────────────────────────────────────────
+
+/**
+ * Render all segments with Remotion (animated captions) then concat.
+ *
+ * Steps per segment:
+ *   1. FFmpeg: extract + crop/scale (no caption burn) → temp pre-cropped clip
+ *   2. Remotion: pre-cropped clip + animated captions → rendered clip
+ *
+ * Final step: FFmpeg stream-copy concat all rendered clips → output.
+ *
+ * Falls back to FFmpeg static captions if Remotion fails on any segment.
+ */
+async function renderWithRemotionPath(params: {
+  exportId: string;
+  segments: Array<{
+    id: string;
+    startMs: number;
+    endMs: number;
+    sourcePath: string;
+    reframePlan?: import("@/lib/types").ClipReframePlan | null;
+    captionStyle?: ReturnType<typeof normalizeClipCaptionStyle> | null;
+  }>;
+  preset: keyof typeof PRESETS;
+  outputPath: string;
+  captionPaths: Record<string, string | undefined | null>;
+  watermarkText: string | null;
+  attempt: number;
+  maxAttempts: number;
+  onProgress: (stage: ExportStage, pct: number) => void;
+}): Promise<void> {
+  const { exportId, segments, preset, outputPath, captionPaths, watermarkText, attempt, maxAttempts } = params;
+  const presetDims = PRESETS[preset];
+
+  const tempDir = `${outputPath}_remotion_${Date.now()}`;
+  await fs.mkdir(tempDir, { recursive: true });
+
+  const renderedPaths: string[] = [];
+
+  try {
+    const segmentCount = segments.length;
+
+    for (let idx = 0; idx < segments.length; idx++) {
+      const seg = segments[idx];
+      const segPct = idx / segmentCount;
+      params.onProgress("extracting", Math.round(15 + segPct * 30));
+
+      // Step 1: FFmpeg crop + scale (no caption burn) → pre-cropped temp clip
+      const preCroppedPath = path.join(tempDir, `pre_${seg.id}.mp4`);
+      await extractAndRenderSegment({
+        inputPath: seg.sourcePath,
+        startMs: seg.startMs,
+        endMs: seg.endMs,
+        outputPath: preCroppedPath,
+        preset,
+        reframePlan: seg.reframePlan,
+        srtPath: null,          // no caption burn in this pass
+        captionStyle: null,     // captions handled by Remotion
+        quality: "export",
+      });
+
+      params.onProgress("styling", Math.round(45 + segPct * 35));
+
+      // Step 2: Remotion renders pre-cropped clip + animated captions
+      const captionSrtOrText = captionPaths[seg.id];
+      let entries: import("@/lib/srt-utils").CaptionEntry[] = [];
+      if (captionSrtOrText) {
+        const { srtUtils } = await import("@/lib/srt-utils");
+        entries = srtUtils.parseSRT(captionSrtOrText);
+      }
+
+      const remotionOutPath = path.join(tempDir, `rendered_${seg.id}.mp4`);
+
+      try {
+        await renderWithRemotion({
+          preVideoPath: preCroppedPath,
+          outputPath: remotionOutPath,
+          durationMs: seg.endMs - seg.startMs,
+          entries,
+          captionStyle: seg.captionStyle ?? {
+            presetId: "modern",
+            fontFamily: "Arial",
+            fontSize: 54,
+            primaryColor: "#FFFFFF",
+            emphasisColor: "#34d399",
+            position: "bottom",
+            outline: true,
+            outlineColor: "#000000",
+            background: true,
+            backgroundColor: "#0B0B12",
+            backgroundOpacity: 0.42,
+            karaoke: false,
+            maxWordsPerLine: 7,
+            align: "center",
+            animation: { type: "none", wordHighlight: false, speed: "normal" },
+            safeZoneAware: true,
+            hookOverlays: [],
+          },
+          captionsEnabled: Boolean(captionSrtOrText),
+          watermarkText,
+          onProgress: (pct) => {
+            params.onProgress("styling", Math.round(45 + (segPct + pct / 100 / segmentCount) * 35));
+          },
+        });
+
+        renderedPaths.push(remotionOutPath);
+      } catch (remotionError) {
+        logger.warn("render:remotion_segment_failed — falling back to FFmpeg static captions", {
+          exportId,
+          segmentId: seg.id,
+          error: remotionError instanceof Error ? remotionError.message : String(remotionError),
+        });
+
+        // Fall back: re-run FFmpeg with caption burn on the pre-cropped clip
+        const fallbackPath = path.join(tempDir, `fallback_${seg.id}.mp4`);
+        const { applyCaptionAndOverlayStyling } = await import("@/lib/ffmpeg");
+
+        const srtContent = captionPaths[seg.id];
+        const hasCaptions = Boolean(srtContent || seg.captionStyle?.hookOverlays?.length);
+
+        if (hasCaptions) {
+          let tempSrtPath: string | undefined;
+          if (srtContent) {
+            tempSrtPath = path.join(tempDir, `${seg.id}.srt`);
+            await fs.writeFile(tempSrtPath, srtContent, "utf-8");
+          }
+          await applyCaptionAndOverlayStyling({
+            inputPath: preCroppedPath,
+            outputPath: fallbackPath,
+            preset,
+            srtPath: tempSrtPath,
+            captionStyle: seg.captionStyle,
+          });
+          renderedPaths.push(fallbackPath);
+        } else {
+          renderedPaths.push(preCroppedPath);
+        }
+      }
+    }
+
+    params.onProgress("stitching", 85);
+
+    // Step 3: Stream-copy concat (all Remotion outputs are H.264/AAC, same dims)
+    await concatClipsPassthrough({ clipPaths: renderedPaths, outputPath });
+
+    params.onProgress("finalizing", 97);
+
+    logger.info("render:remotion_path_complete", {
+      exportId,
+      segmentCount: segments.length,
+      renderedSegments: renderedPaths.length,
+    });
+  } finally {
+    await fs.rm(tempDir, { recursive: true, force: true }).catch(() => null);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 async function resolveLocalSourcePath(
   candidates: Array<string | null | undefined>,

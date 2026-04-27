@@ -289,98 +289,148 @@ Implemented files:
 
 ## Phase 8: Remotion Premium Renderer
 
-Status: Pending
+Status: Completed
 
 Tasks:
-- Add `@remotion/renderer`.
-- Implement `RemotionCaptionRenderer`.
-- Add feature flags:
-  - `REMOTION_RENDERER_ENABLED=true`
-  - `REMOTION_RENDERER_MODE=node`
-- Select renderer:
+- Add `@remotion/renderer` and `@remotion/bundler`. Done.
+- Implement `ClipExportComposition` (server-side composition with `OffthreadVideo`). Done.
+- Implement `RemotionBundleManager` (singleton bundle cache). Done.
+- Implement `renderWithRemotion()` render service. Done.
+- Add feature flag `REMOTION_RENDERER_ENABLED=true`. Done (env var, defaults false for safe opt-in).
+- Select renderer based on `captionStyle.animation.type`. Done in `render-queue.ts`.
+- Remotion failure falls back to FFmpeg static captions per segment. Done.
+- Jest module resolution fixed to prevent `remotion/` local dir shadowing npm package. Done.
 
+Renderer selection logic (render-queue.ts):
 ```txt
-animation.type === "none" -> FFmpeg
-animation.type !== "none" -> Remotion if enabled
-Remotion failure -> FFmpeg static fallback
+includeCaptions && animation.type !== "none" && REMOTION_RENDERER_ENABLED=true
+  → renderWithRemotionPath() per segment:
+      1. FFmpeg: crop + scale (no caption burn) → temp pre-cropped MP4
+      2. Remotion: pre-cropped MP4 + animated captions → rendered MP4
+         (fallback: FFmpeg static caption burn on failure)
+      3. FFmpeg stream-copy concat → final output
+
+otherwise → existing FFmpeg renderExport() path (unchanged)
 ```
 
 Remotion handles:
-- karaoke captions
-- pop captions
-- fade captions
-- slide captions
-- bounce captions
-- branded lower thirds
-- progress bars
-- motion overlays
+- karaoke captions (word-highlight based on segment timing progress)
+- pop captions (scale animation)
+- fade captions (opacity animation)
+- slide captions (translateY animation)
+- bounce captions (bounce + scale animation)
+- branded lower thirds (watermarkText overlay at bottom-right)
+- hook overlays (timed text callouts, same as preview)
+
+Environment variables:
+- `REMOTION_RENDERER_ENABLED=true` — opt-in (default: false)
+- `REMOTION_RENDERER_MODE=node` — renderer mode hint
+- `REMOTION_EXPORT_CRF=18` — output quality (default: 18)
+- `REMOTION_EXPORT_AUDIO_BITRATE=256k` — audio quality (default: 256k)
+- `REMOTION_CONCURRENCY=1` — browser threads (default: 1)
+- `REMOTION_RENDER_TIMEOUT_MS=600000` — per-render timeout (default: 10 min)
 
 Acceptance:
-- Animated captions export successfully.
-- Remotion failure falls back to static captions.
-- No extra FFmpeg re-encode after Remotion unless required.
+- Animated captions (karaoke/pop/fade/slide/bounce) export correctly. ✓
+- Remotion failure gracefully falls back to FFmpeg static captions. ✓
+- FFmpeg path is unchanged for animation.type === "none". ✓
+- Pre-cropped video from FFmpeg is the input to Remotion (original quality). ✓
+- Preview files are never used as export input. ✓
+- 16 new tests passing for renderer routing logic and quality constants. ✓
+
+Implemented files:
+- `apps/web/remotion-compositions/index.ts`
+- `apps/web/remotion-compositions/ClipExportComposition.tsx`
+- `apps/web/lib/media/remotion-bundle.ts`
+- `apps/web/lib/media/remotion-renderer.ts`
+- `apps/web/lib/__tests__/remotion-renderer.test.ts`
+- `apps/web/lib/render-queue.ts` (Remotion routing added)
+- `apps/web/package.json` (@remotion/renderer, @remotion/bundler added)
+- `apps/web/tsconfig.json` (moduleResolution: Bundler; remotion-compositions excluded)
+- `apps/web/jest.config.js` (remotion moduleNameMapper fixed)
 
 ## Phase 9: Production Deployment
 
-Status: Pending
+Status: Completed
 
-Services:
-
-```txt
-web: Next.js
-render-worker: existing export/render queue
-cv-worker: Python CV service
-storage: local/S3-compatible
-queue: existing queue or Redis-backed queue
-```
-
-Health checks:
-- Web health
-- CV worker health
-- model loaded status
-- FFmpeg available
-- Remotion renderer available
-
-Observability:
-- detection duration
-- scene detection duration
-- sampled frame count
-- fallback rate
-- render duration
-- output file size
-- render method
+Tasks:
+- Extend `/api/health` to cover all services. Done.
+- Add `/api/media/render-queue/health` snapshot endpoint. Done.
+- Create `lib/health/health-service.ts` aggregation service. Done.
+- Add per-service health checks: database, environment, FFmpeg, Remotion, CV worker, export queue. Done.
+- Add `getExportQueueSnapshot()` export to `render-queue.ts`. Done.
+- Add `renderMethod` ("ffmpeg" | "remotion") to render completion logs. Done.
+- Add `detectionDurationMs` + `fallback` to face/person tracker logs. Done.
+- Add `sceneDurationMs` + `totalDurationMs` to scene detection logs. Done.
+- Create `docker-compose.prod.yml` with web + cv-worker + postgres services. Done.
+- Create `apps/web/Dockerfile` (multi-stage, Node 20 Alpine, includes FFmpeg). Done.
+- Create `apps/web/.env.production.example` with all variables annotated. Done.
+- Create `docs/PRODUCTION_DEPLOYMENT.md` deployment guide. Done.
+- Add 15 health service tests. Done.
 
 Acceptance:
-- CV worker can be deployed independently.
-- Web app degrades gracefully if CV worker is unavailable.
-- Render queue remains stable.
+- CV worker can be deployed independently (separate Dockerfile + docker-compose service). ✓
+- Web app degrades gracefully if CV worker is unavailable (all fallback paths preserved). ✓
+- Render queue remains stable (no changes to queue logic, new snapshot export only). ✓
+- All 110 relevant tests passing. ✓
+- 0 TypeScript errors in new production files. ✓
+
+Implemented files:
+- `apps/web/lib/health/health-service.ts`
+- `apps/web/app/api/health/route.ts` (extended)
+- `apps/web/app/api/media/render-queue/health/route.ts`
+- `apps/web/lib/__tests__/health-service.test.ts`
+- `apps/web/lib/render-queue.ts` (getExportQueueSnapshot + renderMethod log)
+- `apps/web/lib/media/smart-reframe/face-person-tracker.ts` (detectionDurationMs)
+- `apps/web/lib/repurpose/scene-detection.ts` (sceneDurationMs)
+- `apps/web/Dockerfile`
+- `docker-compose.prod.yml`
+- `apps/web/.env.production.example`
+- `docs/PRODUCTION_DEPLOYMENT.md`
 
 ## Phase 10: Productization
 
-Status: Pending
+Status: Completed
 
-UI controls:
-- Stable Smart Crop
-- Dynamic Face Tracking
-- Dynamic Person Tracking
-- Center Crop
-- Blurred Background
-- Tracking smoothness
-- Subject position
-- Re-analyze tracking
-- Show tracking overlay
-- Show safe-zone overlay
-- Confidence score
-- Fallback reason
+UI controls implemented:
+- Stable Smart Crop. Done.
+- Dynamic Face Tracking. Done — with "Pro" badge.
+- Dynamic Person Tracking. Done — with "Pro" badge.
+- Center Crop. Done.
+- Blurred Background. Done — disabled (Phase 2 label).
+- Tracking smoothness (low/medium/high). Done — visible only for dynamic modes.
+- Subject position (center/slightly_up/slightly_down). Done — visible only for dynamic modes.
+- Re-analyze tracking. Done — calls `/api/clips/{id}/reframe/analyze` (all modes).
+- Show crop overlay. Done — SVG overlay on thumbnail with crop rectangle, corner ticks, keyframe path.
+- Show safe-zone overlay. Done — SVG colored bands (amber top, red caption zone) inside crop window.
+- Confidence score. Done — color-coded (green/amber/muted).
+- Fallback reason. Done — amber info box below stats.
+- Keyframe count. Done — displayed in stats grid.
+
+Export panel:
+- Quality selector: "High quality" (CRF 16, 256k) vs "Standard" (CRF 20, 192k). Done.
+- Animation type info + Remotion badge. Done — shows animation type, "Remotion"/"FFmpeg" renderer badge.
+- `exportQuality` passed through to exports API + logged. Done.
+- `captionAnimationType` prop wired from export page → ExportPanel. Done.
 
 Packaging:
-- FFmpeg static exports remain default V1.
-- Dynamic tracking can be premium.
-- Remotion animated exports can be premium.
+- FFmpeg static exports remain default V1. ✓
+- Dynamic tracking modes show "Pro" badge; soft block with upgrade toast for free users. ✓
+- Remotion animated exports show renderer status badge in export panel. ✓
 
 Acceptance:
-- V1 remains focused and stable.
-- Premium features improve output quality without confusing launch scope.
+- V1 remains focused and stable — no behavioral changes to free path. ✓
+- Premium features improve output quality with clear visual indicators. ✓
+- All 133 tests passing. ✓
+- 0 TypeScript errors in new production files. ✓
+
+Implemented files:
+- `apps/web/components/repurpose/framing-panel.tsx` (full rewrite — CropWindowPreview, premium gates, thumbnail, overlay logic)
+- `apps/web/components/repurpose/export-panel.tsx` (quality selector, animation info, Remotion badge)
+- `apps/web/app/(workspace)/repurpose/export/page.tsx` (captionAnimationType wired)
+- `apps/web/app/(workspace)/repurpose/editor/page.tsx` (thumbnail passed to FramingPanel)
+- `apps/web/app/api/exports/route.ts` (exportQuality schema field)
+- `apps/web/lib/__tests__/phase10-productization.test.ts` (23 tests)
 
 ## Recommended Implementation Order
 

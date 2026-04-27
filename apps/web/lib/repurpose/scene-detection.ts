@@ -23,34 +23,32 @@ export async function detectRepurposeSceneCuts({
   inputPath: string;
   maxCuts?: number;
 }): Promise<RepurposeSceneDetectionResult> {
+  const overallStart = Date.now();
+
   if (getCvWorkerBaseUrl()) {
     try {
+      const cvStart = Date.now();
       const cvResult = await detectScenesWithCvWorker(
-        {
-          sourcePath: inputPath,
-          threshold: Number(process.env.CV_SCENE_THRESHOLD ?? 27),
-          maxCuts,
-        },
+        { sourcePath: inputPath, threshold: Number(process.env.CV_SCENE_THRESHOLD ?? 27), maxCuts },
         { timeoutMs: 45_000 }
       );
+      const sceneDurationMs = Date.now() - cvStart;
 
       const cutsMs = normalizeCuts(cvResult?.cutsMs ?? [], maxCuts);
       if (cvResult && cutsMs.length > 0) {
         logger.info("Scene detection completed with CV worker", {
           provider: cvResult.provider,
           cuts: cutsMs.length,
+          sceneDurationMs,
+          totalDurationMs: Date.now() - overallStart,
           fallbackReason: cvResult.fallbackReason,
         });
-        return {
-          cutsMs,
-          provider: "cv-worker",
-          cvProvider: cvResult.provider,
-          fallbackReason: cvResult.fallbackReason,
-        };
+        return { cutsMs, provider: "cv-worker", cvProvider: cvResult.provider, fallbackReason: cvResult.fallbackReason };
       }
 
       logger.warn("CV worker scene detection returned no cuts; falling back to FFmpeg", {
         cvProvider: cvResult?.provider,
+        sceneDurationMs,
         fallbackReason: cvResult?.fallbackReason,
       });
     } catch (error) {
@@ -61,15 +59,17 @@ export async function detectRepurposeSceneCuts({
   }
 
   try {
+    const ffStart = Date.now();
     const cutsMs = normalizeCuts(
-      await detectSceneChanges({
-        inputPath,
-        threshold: 0.34,
-        maxCuts,
-      }),
+      await detectSceneChanges({ inputPath, threshold: 0.34, maxCuts }),
       maxCuts
     );
-
+    logger.info("Scene detection completed with FFmpeg", {
+      provider: "ffmpeg",
+      cuts: cutsMs.length,
+      sceneDurationMs: Date.now() - ffStart,
+      totalDurationMs: Date.now() - overallStart,
+    });
     return {
       cutsMs,
       provider: cutsMs.length > 0 ? "ffmpeg" : "none",
@@ -78,11 +78,8 @@ export async function detectRepurposeSceneCuts({
   } catch (error) {
     logger.warn("FFmpeg scene detection failed", {
       error: error instanceof Error ? error.message : String(error),
+      totalDurationMs: Date.now() - overallStart,
     });
-    return {
-      cutsMs: [],
-      provider: "none",
-      fallbackReason: error instanceof Error ? error.message : String(error),
-    };
+    return { cutsMs: [], provider: "none", fallbackReason: error instanceof Error ? error.message : String(error) };
   }
 }

@@ -583,6 +583,7 @@ export default function RepurposeEditorPage() {
                 <TabsContent value="framing" className="m-0 p-5">
                   <FramingPanel
                     clipId={activeClip.id}
+                    thumbnail={activeClip.thumbnail}
                     smartReframePlan={
                       (activeClip.viralityFactors?.metadata?.smartReframe as import("@/lib/media/smart-reframe").SmartReframePlan | undefined) ?? null
                     }

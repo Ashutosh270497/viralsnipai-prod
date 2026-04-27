@@ -10,6 +10,10 @@ const customJestConfig = {
   setupFilesAfterEnv: ['<rootDir>/jest.setup.js'],
   testEnvironment: 'jest-environment-jsdom',
   moduleNameMapper: {
+    // Remotion packages must resolve to node_modules, not local directories.
+    // nextJest converts baseUrl paths which would otherwise shadow the npm package.
+    '^remotion$': '<rootDir>/node_modules/remotion',
+    '^@remotion/(.*)$': '<rootDir>/node_modules/@remotion/$1',
     '^@/(.*)$': '<rootDir>/$1',
   },
   testMatch: [
