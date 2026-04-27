@@ -272,6 +272,102 @@ function escapeFilterExpression(value: string) {
   return value.replace(/,/g, "\\,");
 }
 
+function downsampleDynamicCropPath(
+  path: NonNullable<ClipReframePlan["dynamicCropPath"]>,
+  maxKeyframes = 120
+) {
+  if (path.length <= maxKeyframes) return path;
+
+  const stride = Math.ceil(path.length / maxKeyframes);
+  const sampled = path.filter((_, index) => index === 0 || index === path.length - 1 || index % stride === 0);
+  return sampled[sampled.length - 1] === path[path.length - 1]
+    ? sampled
+    : [...sampled, path[path.length - 1]];
+}
+
+function buildPiecewiseLinearExpression(points: Array<{ t: number; value: number }>) {
+  const first = points[0];
+  const last = points[points.length - 1];
+  let expression = last.value.toFixed(6);
+
+  for (let index = points.length - 2; index >= 0; index -= 1) {
+    const current = points[index];
+    const next = points[index + 1];
+    const duration = Math.max(0.001, next.t - current.t);
+    const linear = `(${current.value.toFixed(6)}+(${(next.value - current.value).toFixed(6)})*((t-${current.t.toFixed(4)})/${duration.toFixed(4)}))`;
+    expression = `if(lte(t,${next.t.toFixed(4)}),${linear},${expression})`;
+  }
+
+  return `if(lte(t,${first.t.toFixed(4)}),${first.value.toFixed(6)},${expression})`;
+}
+
+function buildDynamicCropVideoFilter({
+  preset,
+  reframePlan,
+}: {
+  preset: keyof typeof PRESETS;
+  reframePlan: ClipReframePlan;
+}) {
+  const path = reframePlan.dynamicCropPath;
+  const source = reframePlan.dynamicCropSource;
+  if (!path || path.length < 2 || !source?.width || !source.height) {
+    return null;
+  }
+
+  try {
+    const { width, height } = getPresetDimensions(preset);
+    const sorted = downsampleDynamicCropPath([...path].sort((a, b) => a.timeMs - b.timeMs));
+    const firstTimeMs = sorted[0].timeMs;
+    const sourceWidth = Number(source.width);
+    const sourceHeight = Number(source.height);
+
+    const points = sorted
+      .map((keyframe) => ({
+        t: Math.max(0, (keyframe.timeMs - firstTimeMs) / 1000),
+        x: keyframe.x / sourceWidth,
+        y: keyframe.y / sourceHeight,
+        width: keyframe.width / sourceWidth,
+        height: keyframe.height / sourceHeight,
+      }))
+      .filter((point) =>
+        [point.t, point.x, point.y, point.width, point.height].every(Number.isFinite) &&
+        point.width > 0 &&
+        point.height > 0 &&
+        point.width <= 1.01 &&
+        point.height <= 1.01
+      );
+
+    if (points.length < 2) {
+      return null;
+    }
+
+    const cropWidthRatio = Math.min(1, Math.max(0.01, points.reduce((sum, point) => sum + point.width, 0) / points.length));
+    const cropHeightRatio = Math.min(1, Math.max(0.01, points.reduce((sum, point) => sum + point.height, 0) / points.length));
+    const cropWidthRaw = `trunc(iw*${cropWidthRatio.toFixed(6)}/2)*2`;
+    const cropHeightRaw = `trunc(ih*${cropHeightRatio.toFixed(6)}/2)*2`;
+    const cropXNorm = buildPiecewiseLinearExpression(points.map((point) => ({ t: point.t, value: point.x })));
+    const cropYNorm = buildPiecewiseLinearExpression(points.map((point) => ({ t: point.t, value: point.y })));
+    const cropXRaw = `max(0,min(iw-(${cropWidthRaw}),iw*(${cropXNorm})))`;
+    const cropYRaw = `max(0,min(ih-(${cropHeightRaw}),ih*(${cropYNorm})))`;
+
+    logger.info("[SmartReframe] dynamic crop filter enabled", {
+      preset,
+      keyframes: points.length,
+      sourceWidth,
+      sourceHeight,
+      cropWidthRatio: Number(cropWidthRatio.toFixed(4)),
+      cropHeightRatio: Number(cropHeightRatio.toFixed(4)),
+    });
+
+    return `crop=${escapeFilterExpression(cropWidthRaw)}:${escapeFilterExpression(cropHeightRaw)}:${escapeFilterExpression(cropXRaw)}:${escapeFilterExpression(cropYRaw)},scale=${width}:${height}:flags=lanczos,setsar=1`;
+  } catch (error) {
+    logger.warn("[SmartReframe] dynamic crop filter unavailable; falling back to stable crop", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
+}
+
 export function buildPresetVideoFilter({
   preset,
   reframePlan,
@@ -286,6 +382,11 @@ export function buildPresetVideoFilter({
 
   if (!reframePlan || reframePlan.mode === "letterbox") {
     return `scale=${width}:${height}:force_original_aspect_ratio=decrease:flags=lanczos,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1`;
+  }
+
+  const dynamicCropFilter = buildDynamicCropVideoFilter({ preset, reframePlan });
+  if (dynamicCropFilter) {
+    return dynamicCropFilter;
   }
 
   const { centerX, centerY } = getPlanAnchorCenter(reframePlan);

@@ -18,6 +18,15 @@ jest.mock("@/lib/openrouter-client", () => ({
   routedChatCompletion: jest.fn(),
 }));
 
+const mockDetectClipWithCvWorker = jest.fn();
+let mockCvWorkerBaseUrl: string | null = null;
+
+jest.mock("@/lib/media/cv-worker-client", () => ({
+  detectClipWithCvWorker: (...args: unknown[]) => mockDetectClipWithCvWorker(...args),
+  getCvWorkerBaseUrl: () => mockCvWorkerBaseUrl,
+  trackSubjectWithCvWorker: jest.fn(),
+}));
+
 import {
   computeStableCropWindow,
   cropWindowToSafeZone,
@@ -31,7 +40,11 @@ import {
 } from "../media/smart-reframe";
 import { DEFAULT_SHORT_FORM_SAFE_ZONE } from "../media/smart-reframe/safe-zones";
 import { FallbackDetectionProvider } from "../media/smart-reframe/vision-api-detector";
-import { buildViralityFactorsPatch, applySmartReframeToPlan } from "../media/smart-reframe/smart-reframe.service";
+import {
+  buildViralityFactorsPatch,
+  applySmartReframeToPlan,
+  generateStableSmartReframePlan,
+} from "../media/smart-reframe/smart-reframe.service";
 import type { AggregatedDetections, DetectionBox } from "../media/smart-reframe/tracking-types";
 import type { ClipReframePlan } from "../types";
 
@@ -39,6 +52,11 @@ import type { ClipReframePlan } from "../types";
 
 const SRC = { w: 1920, h: 1080 };   // 16:9 landscape
 const TGT = { w: 1080, h: 1920 };   // 9:16 portrait
+
+afterEach(() => {
+  mockCvWorkerBaseUrl = null;
+  mockDetectClipWithCvWorker.mockReset();
+});
 
 function emptyAgg(): AggregatedDetections {
   return { faceBoxes: [], personBoxes: [], totalFrames: 0 };
@@ -400,5 +418,76 @@ describe("dynamic smart reframe path", () => {
     });
     expect(result.strategy).toBe("face_tracking");
     expect(result.primaryTrackLength).toBe(4);
+  });
+});
+
+describe("local CV worker stable smart reframe", () => {
+  it("uses CV worker detections before falling back to OpenRouter/frame sampling", async () => {
+    mockCvWorkerBaseUrl = "http://localhost:8010";
+    mockDetectClipWithCvWorker.mockResolvedValue({
+      frames: [
+        {
+          timeMs: 0,
+          faces: [{ x: 0.2, y: 0.25, width: 0.1, height: 0.14, confidence: 0.91, label: "face" }],
+          persons: [],
+        },
+      ],
+      provider: "mediapipe",
+      sampledFrames: 1,
+      modelVersions: { face: "mediapipe-face-detector", person: "yolo-onnx" },
+    });
+
+    const plan = await generateStableSmartReframePlan({
+      sourcePath: "/tmp/source.mp4",
+      clipStartMs: 0,
+      clipEndMs: 1000,
+      sourceWidth: SRC.w,
+      sourceHeight: SRC.h,
+      targetWidth: TGT.w,
+      targetHeight: TGT.h,
+      mode: "smart_face",
+      captionSafeZone: DEFAULT_SHORT_FORM_SAFE_ZONE,
+    });
+
+    expect(mockDetectClipWithCvWorker).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sourcePath: "/tmp/source.mp4",
+        detectFaces: true,
+        detectPersons: false,
+      }),
+      expect.objectContaining({ timeoutMs: 45000 })
+    );
+    expect(plan.strategy).toBe("face_tracking");
+    expect(plan.faceDetections).toBe(1);
+  });
+
+  it("respects SMART_REFRAME_DETECTOR_PROVIDER=fallback by skipping local CV and API detection", async () => {
+    const previous = process.env.SMART_REFRAME_DETECTOR_PROVIDER;
+    process.env.SMART_REFRAME_DETECTOR_PROVIDER = "fallback";
+    mockCvWorkerBaseUrl = "http://localhost:8010";
+
+    try {
+      const plan = await generateStableSmartReframePlan({
+        sourcePath: "/tmp/source.mp4",
+        clipStartMs: 0,
+        clipEndMs: 1000,
+        sourceWidth: SRC.w,
+        sourceHeight: SRC.h,
+        targetWidth: TGT.w,
+        targetHeight: TGT.h,
+        mode: "smart_face",
+        captionSafeZone: DEFAULT_SHORT_FORM_SAFE_ZONE,
+      });
+
+      expect(mockDetectClipWithCvWorker).not.toHaveBeenCalled();
+      expect(plan.strategy).toBe("center_crop");
+      expect(plan.fallbackReason).toBeTruthy();
+    } finally {
+      if (previous === undefined) {
+        delete process.env.SMART_REFRAME_DETECTOR_PROVIDER;
+      } else {
+        process.env.SMART_REFRAME_DETECTOR_PROVIDER = previous;
+      }
+    }
   });
 });

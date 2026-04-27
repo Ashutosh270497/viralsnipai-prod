@@ -2,15 +2,16 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Save, Type, RefreshCw, AlertTriangle, Search, Scissors } from "lucide-react";
-import { createVttBlobUrl, type VttBlobHandle } from "@/lib/captions/webvtt";
 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/components/ui/use-toast";
 import { CaptionOverlayStudio } from "@/components/repurpose/caption-overlay-studio";
+import { RemotionClipPreview, type RemotionClipPreviewHandle } from "@/components/repurpose/remotion-clip-preview";
 import { srtUtils, type CaptionEntry } from "@/lib/srt-utils";
 import { getCaptionQuality, isPlaceholderCaptionText } from "@/lib/caption-quality";
+import type { SmartReframePlan } from "@/lib/media/smart-reframe";
 import {
   DEFAULT_CLIP_CAPTION_STYLE,
   normalizeClipCaptionStyle,
@@ -27,6 +28,7 @@ interface TranscriptEditorProps {
   startMs: number;
   endMs: number;
   previewPath?: string | null;
+  smartReframePlan?: SmartReframePlan | null;
   onSave: () => Promise<void>;
   onGenerateCaptions?: () => void;
   isGenerating?: boolean;
@@ -431,16 +433,16 @@ export function TranscriptEditor({
   startMs,
   endMs,
   previewPath,
+  smartReframePlan,
   onSave,
   onGenerateCaptions,
   isGenerating,
 }: TranscriptEditorProps) {
   const { toast } = useToast();
-  const videoRef = useRef<HTMLVideoElement>(null);
+  const remotionPreviewRef = useRef<RemotionClipPreviewHandle>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [videoProgress, setVideoProgress] = useState(0);
   const [currentMs, setCurrentMs] = useState(0);
-  const vttHandleRef = useRef<VttBlobHandle | null>(null);
 
   const [entries, setEntries] = useState<CaptionEntry[]>([]);
   const [initialEntries, setInitialEntries] = useState<CaptionEntry[]>([]);
@@ -480,21 +482,6 @@ export function TranscriptEditor({
     JSON.stringify(safeCaptionStyle) !== JSON.stringify(initialCaptionStyle);
   const hasChanges = hasEntryChanges || hasStyleChanges;
   const wordTimeline = useMemo(() => buildWordTimeline(entries), [entries]);
-
-  // Build a VTT Blob URL from the current entries so the native browser player
-  // shows CC controls. Regenerate whenever entries change; revoke the old URL.
-  const vttBlobUrl = useMemo(() => {
-    const previous = vttHandleRef.current;
-    if (previous) previous.revoke();
-    const handle = createVttBlobUrl(entries);
-    vttHandleRef.current = handle;
-    return handle?.url ?? null;
-  }, [entries]);
-
-  // Final cleanup on unmount.
-  useEffect(() => {
-    return () => { vttHandleRef.current?.revoke(); };
-  }, []);
 
   const clipScopedCaptionSrt = useMemo(() => {
     if (entries.length === 0) {
@@ -715,37 +702,23 @@ export function TranscriptEditor({
   }
 
   // ── Video progress bar sync ──────────────────────────────────────────────────
-  useEffect(() => {
-    const video = videoRef.current;
-    if (!video) return;
-    function handleTimeUpdate() {
-      const dur = video!.duration || 1;
-      setVideoProgress((video!.currentTime / dur) * 100);
-      setCurrentMs(Math.round(video!.currentTime * 1000));
-    }
-    video.addEventListener("timeupdate", handleTimeUpdate);
-    return () => video.removeEventListener("timeupdate", handleTimeUpdate);
-  }, []);
+  const handlePreviewTimeUpdate = useCallback((ms: number) => {
+    const durationMs = Math.max(1, endMs - startMs);
+    setVideoProgress(Math.min(100, Math.max(0, (ms / durationMs) * 100)));
+    setCurrentMs(ms);
+  }, [endMs, startMs]);
 
   const videoPlayer = previewPath ? (
-    <div className="relative w-full overflow-hidden rounded-lg bg-black">
-      <video
-        ref={videoRef}
-        src={previewPath}
-        className="w-full object-contain"
-        style={{ maxHeight: "240px" }}
-        preload="metadata"
-        controls
-        crossOrigin="anonymous"
-      >
-        {vttBlobUrl && (
-          <track kind="captions" src={vttBlobUrl} srcLang="en" label="English" />
-        )}
-      </video>
-      {subtitlesPreviewEnabled && (
-        <CaptionPreviewOverlay captionStyle={safeCaptionStyle} entries={entries} currentMs={currentMs} />
-      )}
-    </div>
+    <RemotionClipPreview
+      ref={remotionPreviewRef}
+      previewPath={previewPath}
+      entries={entries}
+      captionStyle={safeCaptionStyle}
+      subtitlesEnabled={subtitlesPreviewEnabled}
+      durationMs={Math.max(1, endMs - startMs)}
+      smartReframePlan={smartReframePlan}
+      onTimeUpdate={handlePreviewTimeUpdate}
+    />
   ) : null;
 
   const missingPreviewNotice =
@@ -850,6 +823,11 @@ export function TranscriptEditor({
           {displayEntries.length}
           {searchQuery.trim() ? `/${entries.length}` : ""} segment{entries.length !== 1 ? "s" : ""}
         </span>
+        {entries.length === 1 ? (
+          <Badge variant="outline" className="border-border/40 bg-muted/30 text-[10px] text-muted-foreground">
+            Single segment
+          </Badge>
+        ) : null}
 
         {hasChanges ? (
           <Badge variant="outline" className="border-amber-500/30 bg-amber-500/10 text-[10px] text-amber-600 dark:text-amber-300">
@@ -904,7 +882,10 @@ export function TranscriptEditor({
               onTextChange={updateEntryText}
               onSplit={splitEntry}
               onMerge={mergeWithNext}
-              onSeek={(ms) => { if (videoRef.current) videoRef.current.currentTime = ms / 1000; }}
+              onSeek={(ms) => {
+                remotionPreviewRef.current?.seekToMs(ms);
+                handlePreviewTimeUpdate(ms);
+              }}
             />
           ))
         )}
@@ -997,72 +978,5 @@ function SegmentRow({
         )}
       </div>
     </div>
-  );
-}
-
-// ── Caption preview overlay (video layer) ─────────────────────────────────────
-
-function CaptionPreviewOverlay({
-  captionStyle,
-  entries,
-  currentMs,
-}: {
-  captionStyle: ClipCaptionStyleConfig;
-  entries: CaptionEntry[];
-  currentMs: number;
-}) {
-  const activeCaption =
-    entries.find((e) => currentMs >= e.startMs && currentMs < e.endMs)?.text ??
-    entries[0]?.text ??
-    "";
-
-  const activeHook = captionStyle.hookOverlays.find(
-    (overlay) => currentMs >= overlay.startMs && currentMs <= overlay.endMs
-  );
-
-  return (
-    <>
-      {activeHook && (
-        <div
-          className={cn(
-            "pointer-events-none absolute max-w-[80%] rounded-xl px-4 py-2 text-center shadow-xl",
-            activeHook.position === "top" && "left-1/2 top-[10%] -translate-x-1/2",
-            activeHook.position === "center" && "left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2",
-            activeHook.position === "bottom" && "left-1/2 bottom-[16%] -translate-x-1/2"
-          )}
-          style={{
-            color: activeHook.textColor,
-            backgroundColor: `${activeHook.backgroundColor}${Math.round(activeHook.backgroundOpacity * 255).toString(16).padStart(2, "0")}`,
-            fontSize: `${Math.max(16, Math.round(activeHook.fontSize * 0.34))}px`,
-            fontWeight: activeHook.bold ? 700 : 500,
-            fontStyle: activeHook.italic ? "italic" : "normal",
-          }}
-        >
-          {activeHook.text}
-        </div>
-      )}
-
-      <div
-        className={cn(
-          "pointer-events-none absolute left-1/2 max-w-[86%] -translate-x-1/2 rounded-xl px-4 py-2 text-center shadow-xl transition-opacity duration-100",
-          captionStyle.position === "top" && "top-[14%]",
-          captionStyle.position === "middle" && "top-1/2 -translate-y-1/2",
-          captionStyle.position === "bottom" && "bottom-[10%]",
-          !activeCaption.trim() && "opacity-0"
-        )}
-        style={{
-          color: captionStyle.primaryColor,
-          fontSize: `${Math.max(15, Math.round(captionStyle.fontSize * 0.34))}px`,
-          fontFamily: captionStyle.fontFamily,
-          fontWeight: 700,
-          WebkitTextStroke: captionStyle.outline ? `1px ${captionStyle.outlineColor}` : undefined,
-          backgroundColor: captionStyle.background
-            ? `${captionStyle.backgroundColor}${Math.round(captionStyle.backgroundOpacity * 255).toString(16).padStart(2, "0")}`
-            : "transparent",
-        }}
-      >
-        {normalizeEntryText(activeCaption) || ""}
-      </div>
-    </>
   );
 }

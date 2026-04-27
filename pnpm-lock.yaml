@@ -85,6 +85,9 @@ importers:
       '@radix-ui/react-tooltip':
         specifier: ^1.0.7
         version: 1.2.8(@types/react-dom@18.3.7)(@types/react@18.3.26)(react-dom@18.2.0)(react@18.2.0)
+      '@remotion/player':
+        specifier: ^4.0.452
+        version: 4.0.452(react-dom@18.2.0)(react@18.2.0)
       '@supabase/supabase-js':
         specifier: ^2.94.0
         version: 2.94.0
@@ -187,6 +190,9 @@ importers:
       remark-gfm:
         specifier: ^4.0.1
         version: 4.0.1
+      remotion:
+        specifier: ^4.0.452
+        version: 4.0.452(react-dom@18.2.0)(react@18.2.0)
       server-only:
         specifier: ^0.0.1
         version: 0.0.1
@@ -5184,6 +5190,17 @@ packages:
 
   /@remirror/core-constants@3.0.0:
     resolution: {integrity: sha512-42aWfPrimMfDKDi4YegyS7x+/0tlzaqwPQCULLanv3DMIlu96KTJR0fM5isWX2UViOqlGnX6YFgqWepcX+XMNg==}
+    dev: false
+
+  /@remotion/player@4.0.452(react-dom@18.2.0)(react@18.2.0):
+    resolution: {integrity: sha512-qlju3KTW+4PeHOtM9Ew4IKibJMt25Zx1ayzxTFVW//1SBByuBobd5M1RWwBO3YTevKCK2aP5xHP65gZSpOC1YA==}
+    peerDependencies:
+      react: '>=16.8.0'
+      react-dom: '>=16.8.0'
+    dependencies:
+      react: 18.2.0
+      react-dom: 18.2.0(react@18.2.0)
+      remotion: 4.0.452(react-dom@18.2.0)(react@18.2.0)
     dev: false
 
   /@rtsao/scc@1.1.0:
@@ -12445,6 +12462,16 @@ packages:
       '@types/mdast': 4.0.4
       mdast-util-to-markdown: 2.1.2
       unified: 11.0.5
+    dev: false
+
+  /remotion@4.0.452(react-dom@18.2.0)(react@18.2.0):
+    resolution: {integrity: sha512-6UqiiFo00meR2bOjJAEIdQU95m2XPXLjyC8V28IeJnoZ9uwnYWCa1pATXbUy/UHrYd6mmBsXWJ/OuAde2eSg/Q==}
+    peerDependencies:
+      react: '>=16.8.0'
+      react-dom: '>=16.8.0'
+    dependencies:
+      react: 18.2.0
+      react-dom: 18.2.0(react@18.2.0)
     dev: false
 
   /require-directory@2.1.1:

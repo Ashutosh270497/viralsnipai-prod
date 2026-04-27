@@ -84,6 +84,16 @@ export interface ClipReframeTracking {
   easing: 'linear' | 'ease_in_out';
 }
 
+export interface ClipDynamicCropKeyframe {
+  timeMs: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  confidence: number;
+  detectionType: 'face' | 'person' | 'interpolated' | 'fallback';
+}
+
 export interface ClipReframePlan {
   ratio: ClipOutputRatio;
   mode: ReframeMode;
@@ -96,6 +106,11 @@ export interface ClipReframePlan {
     height: number;
   };
   tracking?: ClipReframeTracking;
+  dynamicCropPath?: ClipDynamicCropKeyframe[];
+  dynamicCropSource?: {
+    width: number;
+    height: number;
+  };
   reasoning: string;
 }
 

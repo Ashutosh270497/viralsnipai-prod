@@ -13,6 +13,8 @@ import { logger } from "@/lib/logger";
 import { openRouterClient } from "@/lib/openrouter-client";
 import type { FrameDetectionProvider, FrameDetectionResult, DetectionBox } from "./tracking-types";
 
+export type SmartReframeDetectorProviderPreference = "auto" | "local_cv" | "openrouter" | "fallback";
+
 // Model preference for vision detection. Cheap multimodal model is ideal.
 const VISION_DETECTION_MODEL =
   process.env.SMART_REFRAME_VISION_MODEL ?? "google/gemini-3.1-flash-lite-preview";
@@ -160,7 +162,21 @@ function parseDetectionResponse(raw: string): FrameDetectionResult {
  * Create the appropriate detection provider based on environment config.
  * Never throws.
  */
+export function getSmartReframeDetectorProviderPreference(): SmartReframeDetectorProviderPreference {
+  const raw = (process.env.SMART_REFRAME_DETECTOR_PROVIDER ?? "auto").trim().toLowerCase();
+  if (raw === "local_cv" || raw === "openrouter" || raw === "fallback") {
+    return raw;
+  }
+  return "auto";
+}
+
 export function createDetectionProvider(): FrameDetectionProvider {
+  const preference = getSmartReframeDetectorProviderPreference();
+  if (preference === "fallback" || preference === "local_cv") {
+    logger.info("smart-reframe: using fallback detector for frame sampling", { preference });
+    return new FallbackDetectionProvider();
+  }
+
   if (!openRouterClient) {
     logger.info("smart-reframe: OpenRouter unavailable, using fallback detector");
     return new FallbackDetectionProvider();

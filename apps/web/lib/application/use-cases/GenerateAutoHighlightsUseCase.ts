@@ -29,13 +29,14 @@ import { AppError } from '@/lib/utils/error-handler';
 import type { Clip, ViralityFactors as ClipViralityFactors, EnhancementData } from '@/lib/types';
 import type { TranscriptionSegment } from '@/lib/transcript';
 import { buildSRT, type CaptionEntry } from '@/lib/srt-utils';
-import { detectSceneChanges, PRESETS, probeVideoGeometry } from '@/lib/ffmpeg';
+import { PRESETS, probeVideoGeometry } from '@/lib/ffmpeg';
 import {
   analyzeClipQuality,
   blendViralityScore,
   buildClipReframePlans,
   selectBestReframePlan,
 } from '@/lib/repurpose/clip-optimization';
+import { detectRepurposeSceneCuts } from '@/lib/repurpose/scene-detection';
 import path from 'path';
 import fs from 'fs/promises';
 import { nanoid } from 'nanoid';
@@ -166,10 +167,17 @@ export class GenerateAutoHighlightsUseCase {
     // Step 4: Detect scene transitions (visual motion proxy) for cleaner cuts.
     let sceneCutsMs: number[] = [];
     try {
-      sceneCutsMs = await detectSceneChanges({
+      const sceneDetection = await detectRepurposeSceneCuts({
         inputPath: transcriptionSourcePath,
-        threshold: 0.34,
         maxCuts: 350,
+      });
+      sceneCutsMs = sceneDetection.cutsMs;
+      logger.info('Scene detection completed for auto-highlights', {
+        assetId,
+        provider: sceneDetection.provider,
+        cvProvider: sceneDetection.cvProvider,
+        cuts: sceneCutsMs.length,
+        fallbackReason: sceneDetection.fallbackReason,
       });
     } catch (error) {
       logger.warn('Scene detection failed, continuing with transcript-only alignment', {

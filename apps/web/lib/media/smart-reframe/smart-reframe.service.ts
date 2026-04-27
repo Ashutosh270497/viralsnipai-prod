@@ -23,9 +23,16 @@ import type {
 import { getDefaultCaptionSafeZone } from "./safe-zones";
 import { computeStableCropWindow, cropWindowToSafeZone } from "./crop-window";
 import { sampleAndDetect } from "./face-person-tracker";
-import { createDetectionProvider } from "./vision-api-detector";
+import { createDetectionProvider, getSmartReframeDetectorProviderPreference } from "./vision-api-detector";
 import { buildDynamicPlanFromStableFallback, generateDynamicCropPathFromDetections } from "./dynamic-tracking";
 import type { ClipReframePlan, ClipReframeTracking, ViralityFactors } from "@/lib/types";
+import {
+  detectClipWithCvWorker,
+  getCvWorkerBaseUrl,
+  trackSubjectWithCvWorker,
+  type CvClipDetectionResponse,
+} from "@/lib/media/cv-worker-client";
+import type { AggregatedDetections, DetectionBox } from "./tracking-types";
 
 // Target dimensions for 9:16 short-form export
 const DEFAULT_TARGET_WIDTH = 1080;
@@ -48,6 +55,219 @@ export interface GenerateSmartReframeInput {
 }
 
 // ── Main service function ─────────────────────────────────────────────────────
+
+function cvDetectionsToAggregated(detections: CvClipDetectionResponse): AggregatedDetections {
+  return {
+    totalFrames: detections.frames.length,
+    faceBoxes: detections.frames.flatMap((frame, frameIndex) =>
+      frame.faces.map((box) => ({ box: box as DetectionBox, frameIndex }))
+    ),
+    personBoxes: detections.frames.flatMap((frame, frameIndex) =>
+      frame.persons.map((box) => ({ box: box as DetectionBox, frameIndex }))
+    ),
+  };
+}
+
+async function tryDetectClipWithCvWorker(params: {
+  sourcePath: string;
+  clipStartMs: number;
+  clipEndMs: number;
+  mode: SmartReframeMode;
+  timeoutMs?: number;
+}): Promise<AggregatedDetections | null> {
+  const preference = getSmartReframeDetectorProviderPreference();
+  if (preference === "openrouter" || preference === "fallback" || !getCvWorkerBaseUrl()) {
+    return null;
+  }
+
+  try {
+    const detectionResult = await detectClipWithCvWorker(
+      {
+        sourcePath: params.sourcePath,
+        clipStartMs: params.clipStartMs,
+        clipEndMs: params.clipEndMs,
+        sampleIntervalMs: Number(process.env.SMART_REFRAME_SAMPLE_INTERVAL_MS ?? 750),
+        maxFrames: Number(process.env.SMART_REFRAME_MAX_FRAMES ?? 24),
+        detectFaces: params.mode !== "smart_person" && params.mode !== "dynamic_person",
+        detectPersons: params.mode !== "smart_face" && params.mode !== "dynamic_face",
+      },
+      { timeoutMs: params.timeoutMs ?? 45_000 }
+    );
+
+    if (!detectionResult || detectionResult.frames.length === 0) {
+      logger.warn("smart-reframe: CV worker returned no detection frames", {
+        mode: params.mode,
+        fallbackReason: detectionResult?.fallbackReason,
+      });
+      return null;
+    }
+
+    const aggregated = cvDetectionsToAggregated(detectionResult);
+    const detectionCount = aggregated.faceBoxes.length + aggregated.personBoxes.length;
+    if (detectionCount === 0) {
+      logger.warn("smart-reframe: CV worker returned sampled frames with no usable detections; falling back", {
+        mode: params.mode,
+        provider: detectionResult.provider,
+        sampledFrames: aggregated.totalFrames,
+        fallbackReason: detectionResult.fallbackReason,
+      });
+      return null;
+    }
+
+    logger.info("smart-reframe: CV worker detections received", {
+      mode: params.mode,
+      provider: detectionResult.provider,
+      sampledFrames: aggregated.totalFrames,
+      faceDetections: aggregated.faceBoxes.length,
+      personDetections: aggregated.personBoxes.length,
+      fallbackReason: detectionResult.fallbackReason,
+    });
+    return aggregated;
+  } catch (error) {
+    logger.warn("smart-reframe: CV worker detection failed", {
+      mode: params.mode,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
+}
+
+async function tryGenerateDynamicPlanWithCvWorker(params: {
+  sourcePath: string;
+  clipStartMs: number;
+  clipEndMs: number;
+  sourceWidth: number;
+  sourceHeight: number;
+  targetWidth: number;
+  targetHeight: number;
+  mode: SmartReframeMode;
+  safeZone: CaptionSafeZone;
+  trackingSmoothness: TrackingSmoothness;
+  subjectPosition: SubjectPosition;
+}): Promise<SmartReframePlan | null> {
+  const preference = getSmartReframeDetectorProviderPreference();
+  if (preference === "openrouter" || preference === "fallback" || !getCvWorkerBaseUrl() || !params.mode.startsWith("dynamic_")) {
+    return null;
+  }
+
+  try {
+    const detectionResult = await detectClipWithCvWorker(
+      {
+        sourcePath: params.sourcePath,
+        clipStartMs: params.clipStartMs,
+        clipEndMs: params.clipEndMs,
+        sampleIntervalMs: Number(process.env.SMART_REFRAME_SAMPLE_INTERVAL_MS ?? 750),
+        maxFrames: Number(process.env.SMART_REFRAME_MAX_FRAMES ?? 24),
+        detectFaces: params.mode !== "dynamic_person",
+        detectPersons: params.mode !== "dynamic_face",
+      },
+      { timeoutMs: 45_000 }
+    );
+
+    if (!detectionResult || detectionResult.frames.length === 0) {
+      return null;
+    }
+
+    const aggregated = cvDetectionsToAggregated(detectionResult);
+    const detectionCount = aggregated.faceBoxes.length + aggregated.personBoxes.length;
+    if (detectionCount === 0) {
+      logger.warn("smart-reframe: CV worker dynamic analysis returned no usable detections", {
+        mode: params.mode,
+        provider: detectionResult.provider,
+        sampledFrames: aggregated.totalFrames,
+        fallbackReason: detectionResult.fallbackReason,
+      });
+      return null;
+    }
+
+    const stablePlan = computeStableCropWindow({
+      aggregated,
+      sourceWidth: params.sourceWidth,
+      sourceHeight: params.sourceHeight,
+      targetWidth: params.targetWidth,
+      targetHeight: params.targetHeight,
+      safeZone: params.safeZone,
+      preferFaces: params.mode !== "dynamic_person",
+      preferPersons: params.mode !== "dynamic_face",
+    });
+
+    const trackingResult = await trackSubjectWithCvWorker(
+      {
+        sourcePath: params.sourcePath,
+        clipStartMs: params.clipStartMs,
+        clipEndMs: params.clipEndMs,
+        sourceWidth: params.sourceWidth,
+        sourceHeight: params.sourceHeight,
+        targetWidth: params.targetWidth,
+        targetHeight: params.targetHeight,
+        mode: params.mode as "dynamic_auto" | "dynamic_face" | "dynamic_person",
+        smoothness: params.trackingSmoothness,
+        subjectPosition: params.subjectPosition,
+        detections: detectionResult.frames,
+      },
+      { timeoutMs: 20_000 }
+    );
+
+    const reliableDynamicPath =
+      trackingResult &&
+      trackingResult.cropPath.length >= Math.min(3, Math.max(1, detectionResult.frames.length)) &&
+      trackingResult.confidence >= 0.35 &&
+      trackingResult.primaryTrackLength >= 2;
+
+    if (!trackingResult || !reliableDynamicPath) {
+      logger.warn("smart-reframe: CV worker dynamic fallback to stable crop", {
+        reason: trackingResult?.fallbackReason,
+        confidence: trackingResult?.confidence,
+        primaryTrackLength: trackingResult?.primaryTrackLength,
+        sampledFrames: detectionResult.sampledFrames,
+      });
+      return buildDynamicPlanFromStableFallback(
+        stablePlan,
+        trackingResult?.fallbackReason ?? "CV worker dynamic tracking was not reliable enough."
+      );
+    }
+
+    const representative = trackingResult.cropPath[Math.floor(trackingResult.cropPath.length / 2)];
+    const plan: SmartReframePlan = {
+      ...stablePlan,
+      strategy: trackingResult.strategy,
+      mode: "dynamic",
+      confidence: trackingResult.confidence,
+      cropWindow: {
+        x: representative.x,
+        y: representative.y,
+        width: representative.width,
+        height: representative.height,
+      },
+      cropPath: trackingResult.cropPath,
+      sampledFrames: trackingResult.sampledFrames,
+      faceDetections: trackingResult.faceDetections,
+      personDetections: trackingResult.personDetections,
+      primaryTrackLength: trackingResult.primaryTrackLength,
+      fallbackReason: undefined,
+      smoothing: params.trackingSmoothness,
+      subjectPosition: params.subjectPosition,
+    };
+
+    logger.info("smart-reframe: CV worker dynamic plan computed", {
+      strategy: plan.strategy,
+      confidence: plan.confidence,
+      sampledFrames: plan.sampledFrames,
+      primaryTrackLength: plan.primaryTrackLength,
+      cropPathLength: plan.cropPath?.length ?? 0,
+      interpolatedKeyframes: trackingResult.interpolatedKeyframes ?? 0,
+      fallbackKeyframes: trackingResult.fallbackKeyframes ?? 0,
+      fallbackReason: trackingResult.fallbackReason,
+    });
+
+    return plan;
+  } catch (error) {
+    logger.warn("smart-reframe: CV worker dynamic analysis failed", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
+}
 
 /**
  * Generate a stable smart reframe plan for a clip segment.
@@ -93,12 +313,23 @@ export async function generateStableSmartReframePlan(
   const provider = createDetectionProvider();
 
   try {
-    const aggregated = await sampleAndDetect({
+    const preference = getSmartReframeDetectorProviderPreference();
+    const cvAggregated = await tryDetectClipWithCvWorker({
       sourcePath,
-      startMs: clipStartMs,
-      endMs: clipEndMs,
-      provider,
+      clipStartMs,
+      clipEndMs,
+      mode,
     });
+    const aggregated =
+      cvAggregated ??
+      (preference === "fallback"
+        ? { faceBoxes: [], personBoxes: [], totalFrames: 0 }
+        : await sampleAndDetect({
+            sourcePath,
+            startMs: clipStartMs,
+            endMs: clipEndMs,
+            provider,
+          }));
 
     const plan = computeStableCropWindow({
       aggregated,
@@ -148,8 +379,8 @@ export async function generateStableSmartReframePlan(
  * Generate a dynamic smart reframe plan with crop keyframes.
  *
  * Exports still have a stable fallback path: the 9:16 ClipReframePlan is patched
- * from the median/first dynamic window, while the full cropPath is stored in
- * metadata for UI/debugging and future dynamic renderers.
+ * from the median/first dynamic window, and the full cropPath is also copied
+ * into the ClipReframePlan so FFmpeg can render dynamic crop keyframes.
  */
 export async function generateDynamicSmartReframePlan(
   input: GenerateSmartReframeInput
@@ -173,6 +404,23 @@ export async function generateDynamicSmartReframePlan(
   const provider = createDetectionProvider();
 
   try {
+    const cvWorkerPlan = await tryGenerateDynamicPlanWithCvWorker({
+      sourcePath,
+      clipStartMs,
+      clipEndMs,
+      sourceWidth,
+      sourceHeight,
+      targetWidth,
+      targetHeight,
+      mode,
+      safeZone,
+      trackingSmoothness,
+      subjectPosition,
+    });
+    if (cvWorkerPlan) {
+      return cvWorkerPlan;
+    }
+
     const aggregated = await sampleAndDetect({
       sourcePath,
       startMs: clipStartMs,
@@ -376,6 +624,17 @@ export function applySmartReframeToPlan(
       anchor: "speaker" as const,
       safeZone: newSafeZone,
       tracking: dynamicTracking?.tracking ?? plan.tracking,
+      dynamicCropPath:
+        smartPlan.mode === "dynamic" && smartPlan.cropPath?.length
+          ? smartPlan.cropPath.map((keyframe) => ({ ...keyframe }))
+          : undefined,
+      dynamicCropSource:
+        smartPlan.mode === "dynamic" && smartPlan.cropPath?.length
+          ? {
+              width: smartPlan.sourceWidth,
+              height: smartPlan.sourceHeight,
+            }
+          : undefined,
       reasoning: `Smart reframe: ${smartPlan.strategy} (confidence ${(smartPlan.confidence * 100).toFixed(0)}%). ` +
         (smartPlan.mode === "dynamic" ? "Dynamic crop tracking enabled. " : "") +
         (smartPlan.fallbackReason ? `Fallback: ${smartPlan.fallbackReason}` : ""),

@@ -570,6 +570,9 @@ export default function RepurposeEditorPage() {
                     startMs={activeClip.startMs}
                     endMs={activeClip.endMs}
                     previewPath={activeClip.previewPath}
+                    smartReframePlan={
+                      (activeClip.viralityFactors?.metadata?.smartReframe as import("@/lib/media/smart-reframe").SmartReframePlan | undefined) ?? null
+                    }
                     onSave={invalidate}
                     onGenerateCaptions={() => handleGenerateCaptions(activeClip.id)}
                     isGenerating={captionLoading === activeClip.id}

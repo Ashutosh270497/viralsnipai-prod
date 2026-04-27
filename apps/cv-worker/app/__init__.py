@@ -1,0 +1,1 @@
+"""ViralSnipAI CV worker package."""
