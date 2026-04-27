@@ -176,6 +176,8 @@ export async function renderWithRemotion(input: RemotionRenderInput): Promise<Re
       overwrite: true,
       concurrency: REMOTION_CONCURRENCY,
       chromiumOptions: {
+        // Use system Chrome if available (faster than downloading Chromium)
+        executablePath: process.env.PUPPETEER_EXECUTABLE_PATH ?? undefined,
         // swiftshader: software GL, works on servers without GPU
         gl: "swiftshader",
         // Allow file:// sources in OffthreadVideo

@@ -100,14 +100,12 @@ function checkEnvironment(): ServiceCheck {
 async function checkFfmpeg(): Promise<ServiceCheck> {
   const start = Date.now();
 
-  let binary = process.env.FFMPEG_PATH ?? "ffmpeg";
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const ffmpegStatic = require("ffmpeg-static") as string | null;
-    if (ffmpegStatic && typeof ffmpegStatic === "string") binary = ffmpegStatic;
-  } catch {
-    // fall through to PATH lookup
-  }
+  // FFMPEG_PATH is injected by next.config.mjs via the `env` block using the
+  // resolved ffmpeg-static path. Use that directly — never require("ffmpeg-static")
+  // inside the server bundle because webpack resolves it to a vendor-chunk path.
+  const binary =
+    process.env.FFMPEG_PATH ??
+    "/opt/homebrew/bin/ffmpeg";  // macOS Homebrew fallback
 
   return new Promise((resolve) => {
     let output = "";
@@ -142,16 +140,31 @@ async function checkRemotionRenderer(): Promise<ServiceCheck> {
     const entryPoint = path.join(process.cwd(), "remotion-compositions", "index.ts");
     await fs.access(entryPoint);
 
-    // Verify @remotion/renderer is importable (dynamic so it never blocks the bundle)
+    // Verify @remotion/renderer is importable
     await import("@remotion/renderer");
 
+    // Resolve Chrome path — Remotion uses Puppeteer/Chrome for headless rendering
+    const chromePath =
+      process.env.PUPPETEER_EXECUTABLE_PATH ??
+      "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+
+    let chromeStatus = "not checked";
+    try {
+      await fs.access(chromePath);
+      chromeStatus = "found";
+    } catch {
+      chromeStatus = "not found at expected path";
+    }
+
     return {
-      status: "ok",
+      status: chromeStatus === "found" ? "ok" : "degraded",
       details: {
         crf: Number(process.env.REMOTION_EXPORT_CRF ?? 18),
         audioBitrate: process.env.REMOTION_EXPORT_AUDIO_BITRATE ?? "256k",
         concurrency: Number(process.env.REMOTION_CONCURRENCY ?? 1),
         mode: process.env.REMOTION_RENDERER_MODE ?? "node",
+        chromePath,
+        chromeStatus,
       },
     };
   } catch (error) {

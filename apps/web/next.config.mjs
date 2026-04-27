@@ -64,6 +64,35 @@ const nextConfig = {
   },
   compress: true,
   reactStrictMode: true,
+  webpack(config, { isServer }) {
+    if (isServer) {
+      // @remotion/bundler uses @rspack/core which ships native .node binaries
+      // (e.g. rspack.darwin-arm64.node). Webpack cannot parse binary files, so
+      // we mark the entire @rspack family and @remotion/bundler as external —
+      // Node.js loads them at runtime instead of webpack trying to bundle them.
+      const existingExternals = Array.isArray(config.externals)
+        ? config.externals
+        : config.externals
+          ? [config.externals]
+          : [];
+
+      config.externals = [
+        ...existingExternals,
+        ({ request }, callback) => {
+          if (
+            request &&
+            (request.startsWith("@rspack") ||
+              request.startsWith("@remotion/bundler") ||
+              request.endsWith(".node"))
+          ) {
+            return callback(null, `commonjs ${request}`);
+          }
+          callback();
+        },
+      ];
+    }
+    return config;
+  },
   productionBrowserSourceMaps: false,
   swcMinify: true,
   // Strip console.* calls from production client bundles
