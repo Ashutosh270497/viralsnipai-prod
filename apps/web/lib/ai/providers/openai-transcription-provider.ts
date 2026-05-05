@@ -12,13 +12,25 @@ import { openAITranscriptionClient } from "@/lib/ai/providers/openai-transcripti
 
 const stat = promisify(fs.stat);
 
-const OPENAI_TRANSCRIBE_MODEL = process.env.OPENAI_TRANSCRIBE_MODEL ?? process.env.WHISPER_MODEL ?? "whisper-1";
+const OPENAI_TRANSCRIBE_MODEL =
+  process.env.OPENAI_TRANSCRIBE_MODEL ?? process.env.WHISPER_MODEL ?? "whisper-1";
 const OPENAI_TRANSCRIBE_TIMEOUT_MS = Number(process.env.OPENAI_TRANSCRIBE_TIMEOUT_MS ?? 180_000);
 const OPENAI_TRANSCRIBE_MAX_RETRIES = Number(process.env.OPENAI_TRANSCRIBE_MAX_RETRIES ?? 2);
 const OPENAI_MAX_AUDIO_BYTES = 24 * 1024 * 1024;
-const DIRECT_AUDIO_BYTES = Number(process.env.TRANSCRIBE_MAX_DIRECT_BYTES ?? OPENAI_MAX_AUDIO_BYTES);
+const DIRECT_AUDIO_BYTES = Number(
+  process.env.TRANSCRIBE_MAX_DIRECT_BYTES ?? OPENAI_MAX_AUDIO_BYTES,
+);
 const TRANSCRIBE_CHUNK_SECONDS = Number(process.env.OPENAI_TRANSCRIBE_CHUNK_SECONDS ?? 12 * 60);
-const AUDIO_EXTENSIONS = new Set([".mp3", ".m4a", ".aac", ".wav", ".webm", ".ogg", ".oga", ".flac"]);
+const AUDIO_EXTENSIONS = new Set([
+  ".mp3",
+  ".m4a",
+  ".aac",
+  ".wav",
+  ".webm",
+  ".ogg",
+  ".oga",
+  ".flac",
+]);
 
 export type TranscriptPrecision = "word" | "segment" | "diarized_segment" | "approximate" | "none";
 
@@ -58,13 +70,17 @@ export async function transcribeWithOpenAI(filePath: string): Promise<CanonicalT
 
   const prepared = await prepareTranscriptionSource(filePath);
   try {
-    if (await shouldChunkAudio(prepared.path)) {
-      const chunks = await splitAudioForTranscription(prepared.path);
+    const chunkDecision = await shouldChunkAudio(prepared.path);
+    if (chunkDecision.shouldChunk) {
+      const chunks = await splitAudioForTranscription(prepared.path, chunkDecision.durationSec);
       try {
         logger.info("OpenAI transcription chunking enabled", {
           sourcePath: prepared.path,
+          reason: chunkDecision.reason,
+          sizeBytes: chunkDecision.sizeBytes,
+          durationSec: chunkDecision.durationSec,
           chunkCount: chunks.length,
-          chunkDurationsSec: chunks.map((chunk) => Number((chunk.durationSec).toFixed(2))),
+          chunkDurationsSec: chunks.map((chunk) => Number(chunk.durationSec.toFixed(2))),
         });
         const transcripts: Array<{ transcript: CanonicalTranscript; offsetSec: number }> = [];
         for (const chunk of chunks) {
@@ -91,9 +107,81 @@ export async function transcribeWithOpenAI(filePath: string): Promise<CanonicalT
   }
 }
 
-export async function shouldChunkAudio(filePath: string): Promise<boolean> {
+export type TranscriptionChunkDecision = {
+  shouldChunk: boolean;
+  reason: "size_limit" | "duration_limit" | "both" | "not_chunked";
+  sizeBytes: number;
+  durationSec: number | null;
+  maxBytes: number;
+  chunkSeconds: number;
+};
+
+export function shouldChunkAudioByMetadata({
+  sizeBytes,
+  durationSec,
+  maxBytes = OPENAI_MAX_AUDIO_BYTES,
+  chunkSeconds = TRANSCRIBE_CHUNK_SECONDS,
+}: {
+  sizeBytes: number;
+  durationSec?: number | null;
+  maxBytes?: number;
+  chunkSeconds?: number;
+}): TranscriptionChunkDecision {
+  const exceedsSize = sizeBytes > maxBytes;
+  const safeDuration =
+    typeof durationSec === "number" && Number.isFinite(durationSec) && durationSec > 0
+      ? durationSec
+      : null;
+  const exceedsDuration = safeDuration !== null && safeDuration > chunkSeconds;
+  const reason =
+    exceedsSize && exceedsDuration
+      ? "both"
+      : exceedsSize
+        ? "size_limit"
+        : exceedsDuration
+          ? "duration_limit"
+          : "not_chunked";
+
+  return {
+    shouldChunk: reason !== "not_chunked",
+    reason,
+    sizeBytes,
+    durationSec: safeDuration,
+    maxBytes,
+    chunkSeconds,
+  };
+}
+
+export async function shouldChunkAudio(filePath: string): Promise<TranscriptionChunkDecision> {
   const stats = await stat(filePath);
-  return stats.size > OPENAI_MAX_AUDIO_BYTES;
+  let durationSec: number | null = null;
+  try {
+    const probedDuration = await probeDuration(filePath);
+    durationSec =
+      typeof probedDuration === "number" && Number.isFinite(probedDuration) && probedDuration > 0
+        ? probedDuration
+        : null;
+  } catch (error) {
+    logger.warn(
+      "Unable to probe audio duration for transcription chunk decision; using size limit only",
+      {
+        filePath,
+        error: error instanceof Error ? error.message : String(error),
+      },
+    );
+  }
+
+  const decision = shouldChunkAudioByMetadata({ sizeBytes: stats.size, durationSec });
+  logger.info("OpenAI transcription chunk decision", {
+    filePath,
+    reason: decision.reason,
+    shouldChunk: decision.shouldChunk,
+    sizeBytes: decision.sizeBytes,
+    durationSec: decision.durationSec,
+    maxBytes: decision.maxBytes,
+    chunkSeconds: decision.chunkSeconds,
+  });
+  return decision;
 }
 
 export type AudioTranscriptionChunk = {
@@ -102,8 +190,11 @@ export type AudioTranscriptionChunk = {
   durationSec: number;
 };
 
-export async function splitAudioForTranscription(filePath: string): Promise<AudioTranscriptionChunk[]> {
-  const durationSec = await probeDuration(filePath);
+export async function splitAudioForTranscription(
+  filePath: string,
+  knownDurationSec?: number | null,
+): Promise<AudioTranscriptionChunk[]> {
+  const durationSec = knownDurationSec ?? (await probeDuration(filePath));
   if (!durationSec || !Number.isFinite(durationSec) || durationSec <= 0) {
     throw new Error("Unable to probe audio duration for transcription chunking.");
   }
@@ -130,7 +221,7 @@ export async function splitAudioForTranscription(filePath: string): Promise<Audi
       if (stats.size > OPENAI_MAX_AUDIO_BYTES) {
         throw new Error(
           `Transcription chunk ${index + 1} is ${(stats.size / (1024 * 1024)).toFixed(1)} MB; ` +
-          "reduce OPENAI_TRANSCRIBE_CHUNK_SECONDS or audio bitrate."
+            "reduce OPENAI_TRANSCRIBE_CHUNK_SECONDS or audio bitrate.",
         );
       }
       chunks.push({ path: outputPath, startSec, durationSec: thisDurationSec });
@@ -166,23 +257,22 @@ export async function transcribeAudioChunk(filePath: string): Promise<CanonicalT
 
 export function hasWordLevelTimestamps(transcript: Pick<CanonicalTranscript, "segments">): boolean {
   return transcript.segments.some((segment) =>
-    segment.words?.some((word) =>
-      Number.isFinite(word.start) &&
-      Number.isFinite(word.end) &&
-      word.end > word.start
-    )
+    segment.words?.some(
+      (word) => Number.isFinite(word.start) && Number.isFinite(word.end) && word.end > word.start,
+    ),
   );
 }
 
 export function hasSegmentTimestamps(transcript: Pick<CanonicalTranscript, "segments">): boolean {
-  return transcript.segments.some((segment) =>
-    Number.isFinite(segment.start) &&
-    Number.isFinite(segment.end) &&
-    segment.end > segment.start
+  return transcript.segments.some(
+    (segment) =>
+      Number.isFinite(segment.start) && Number.isFinite(segment.end) && segment.end > segment.start,
   );
 }
 
-export function getTranscriptPrecision(transcript: Pick<CanonicalTranscript, "segments">): TranscriptPrecision {
+export function getTranscriptPrecision(
+  transcript: Pick<CanonicalTranscript, "segments">,
+): TranscriptPrecision {
   if (hasWordLevelTimestamps(transcript)) return "word";
   if (transcript.segments.some((segment) => segment.speaker && Number.isFinite(segment.start))) {
     return "diarized_segment";
@@ -221,11 +311,9 @@ export function normalizeOpenAITranscript(response: unknown, model: string): Can
 
       const segmentWords = Array.isArray(segment.words)
         ? normalizeWords(segment.words)
-        : globalWords.filter((word) =>
-            start !== null &&
-            end !== null &&
-            word.end > start - 0.05 &&
-            word.start < end + 0.05
+        : globalWords.filter(
+            (word) =>
+              start !== null && end !== null && word.end > start - 0.05 && word.start < end + 0.05,
           );
 
       return {
@@ -260,7 +348,12 @@ export function normalizeOpenAITranscript(response: unknown, model: string): Can
   }
 
   const transcript: CanonicalTranscript = {
-    text: fullText || segments.map((segment) => segment.text).join(" ").trim(),
+    text:
+      fullText ||
+      segments
+        .map((segment) => segment.text)
+        .join(" ")
+        .trim(),
     language: typeof payload.language === "string" ? payload.language : null,
     durationSec: finiteNumber(payload.duration),
     segments,
@@ -279,20 +372,20 @@ export function validateTranscriptTimestamps(transcript: CanonicalTranscript): v
     throw new Error("OpenAI transcription returned empty text.");
   }
 
-  const invalidSegment = transcript.segments.find((segment) =>
-    !Number.isFinite(segment.start) ||
-    !Number.isFinite(segment.end) ||
-    segment.end < segment.start
+  const invalidSegment = transcript.segments.find(
+    (segment) =>
+      !Number.isFinite(segment.start) ||
+      !Number.isFinite(segment.end) ||
+      segment.end < segment.start,
   );
   if (invalidSegment) {
     transcript.warnings.push(`Invalid segment timestamp detected for ${invalidSegment.id}.`);
   }
 
   for (const segment of transcript.segments) {
-    const invalidWord = segment.words?.find((word) =>
-      !Number.isFinite(word.start) ||
-      !Number.isFinite(word.end) ||
-      word.end <= word.start
+    const invalidWord = segment.words?.find(
+      (word) =>
+        !Number.isFinite(word.start) || !Number.isFinite(word.end) || word.end <= word.start,
     );
     if (invalidWord) {
       transcript.warnings.push(`Invalid word timestamp detected near "${invalidWord.word}".`);
@@ -304,7 +397,7 @@ export function validateTranscriptTimestamps(transcript: CanonicalTranscript): v
 export function offsetTranscriptTimestamps(
   transcript: CanonicalTranscript,
   offsetSec: number,
-  segmentIdPrefix = "chunk"
+  segmentIdPrefix = "chunk",
 ): CanonicalTranscript {
   const segments = transcript.segments.map((segment, segmentIndex) => ({
     ...segment,
@@ -320,9 +413,10 @@ export function offsetTranscriptTimestamps(
 
   return {
     ...transcript,
-    durationSec: transcript.durationSec !== null && transcript.durationSec !== undefined
-      ? roundSec(transcript.durationSec + offsetSec)
-      : null,
+    durationSec:
+      transcript.durationSec !== null && transcript.durationSec !== undefined
+        ? roundSec(transcript.durationSec + offsetSec)
+        : null,
     segments,
     precision: getTranscriptPrecision({ segments }),
     warnings: [...transcript.warnings],
@@ -331,14 +425,14 @@ export function offsetTranscriptTimestamps(
 
 export function mergeChunkTranscripts(
   chunks: Array<{ transcript: CanonicalTranscript; offsetSec: number }>,
-  model: string
+  model: string,
 ): CanonicalTranscript {
   if (chunks.length === 0) {
     throw new Error("Cannot merge zero OpenAI transcription chunks.");
   }
 
   const shifted = chunks.map((chunk, index) =>
-    offsetTranscriptTimestamps(chunk.transcript, chunk.offsetSec, `chunk-${index + 1}`)
+    offsetTranscriptTimestamps(chunk.transcript, chunk.offsetSec, `chunk-${index + 1}`),
   );
   const segments = shifted
     .flatMap((transcript) => transcript.segments)
@@ -361,17 +455,22 @@ export function mergeChunkTranscripts(
     })),
   }));
 
-  const durationSec = reindexedSegments.length > 0
-    ? reindexedSegments[reindexedSegments.length - 1].end
-    : null;
+  const durationSec =
+    reindexedSegments.length > 0 ? reindexedSegments[reindexedSegments.length - 1].end : null;
   const warnings = shifted.flatMap((transcript) => transcript.warnings);
   const precision = getTranscriptPrecision({ segments: reindexedSegments });
   if (precision !== "word") {
-    warnings.push("Merged OpenAI transcript does not contain word-level timestamps for every chunk.");
+    warnings.push(
+      "Merged OpenAI transcript does not contain word-level timestamps for every chunk.",
+    );
   }
 
   return {
-    text: reindexedSegments.map((segment) => segment.text).join(" ").replace(/\s+/g, " ").trim(),
+    text: reindexedSegments
+      .map((segment) => segment.text)
+      .join(" ")
+      .replace(/\s+/g, " ")
+      .trim(),
     language: shifted.find((transcript) => transcript.language)?.language ?? null,
     durationSec,
     segments: reindexedSegments,
@@ -401,7 +500,9 @@ async function callOpenAITranscription(filePath: string): Promise<unknown> {
   });
 }
 
-async function prepareTranscriptionSource(originalPath: string): Promise<{ path: string; cleanup: () => Promise<void> }> {
+async function prepareTranscriptionSource(
+  originalPath: string,
+): Promise<{ path: string; cleanup: () => Promise<void> }> {
   const originalStats = await stat(originalPath);
   const ext = path.extname(originalPath).toLowerCase();
   const isAudio = AUDIO_EXTENSIONS.has(ext);
@@ -412,7 +513,7 @@ async function prepareTranscriptionSource(originalPath: string): Promise<{ path:
 
   const targetPath = path.join(
     path.dirname(originalPath),
-    `${path.basename(originalPath, ext || undefined)}-${Date.now()}-openai-transcribe.mp3`
+    `${path.basename(originalPath, ext || undefined)}-${Date.now()}-openai-transcribe.mp3`,
   );
 
   await transcodeToMp3({ inputPath: originalPath, outputPath: targetPath });
@@ -449,7 +550,9 @@ async function extractAudioChunk({
   });
 }
 
-function normalizeWords(words: Array<{ word?: string; start?: number; end?: number; confidence?: number | null }>): TranscriptWord[] {
+function normalizeWords(
+  words: Array<{ word?: string; start?: number; end?: number; confidence?: number | null }>,
+): TranscriptWord[] {
   return words
     .map((word, index): TranscriptWord | null => {
       const text = typeof word.word === "string" ? word.word.trim() : "";
@@ -488,7 +591,9 @@ function isRetryableTranscriptionError(error: unknown) {
   const err = error as { status?: number; message?: string; code?: string | number } | null;
   if (err?.status && [408, 409, 425, 429, 500, 502, 503, 504].includes(err.status)) return true;
   const message = error instanceof Error ? error.message.toLowerCase() : "";
-  return message.includes("timeout") || message.includes("econnreset") || message.includes("rate limit");
+  return (
+    message.includes("timeout") || message.includes("econnreset") || message.includes("rate limit")
+  );
 }
 
 function sleep(ms: number) {

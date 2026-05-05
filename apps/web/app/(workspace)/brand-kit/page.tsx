@@ -1,4 +1,5 @@
 import { BrandKitForm } from "@/components/brand-kit/brand-kit-form";
+import { BrandTemplateManager } from "@/components/brand-kit/brand-template-manager";
 import { getCurrentUser } from "@/lib/auth";
 import { getBrandKit } from "@/lib/brand-kit";
 import { prisma } from "@/lib/prisma";
@@ -48,6 +49,7 @@ export default async function BrandKitPage() {
           captionStyle
         }}
       />
+      <BrandTemplateManager />
     </div>
   );
 }

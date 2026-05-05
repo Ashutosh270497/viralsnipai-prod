@@ -1,5 +1,6 @@
-import type { ViralityFactors } from "@/lib/types";
+import type { ClipReviewStatus, ViralityFactors } from "@/lib/types";
 import type { ClipCaptionStyleConfig } from "@/lib/repurpose/caption-style-config";
+import type { ClipEnhancement } from "@/lib/repurpose/creative-enhancements";
 
 export interface ProjectSummary {
   id: string;
@@ -33,18 +34,33 @@ export interface ProjectClip {
   thumbnail?: string | null;
   viralityScore?: number | null;
   viralityFactors?: ViralityFactors | null;
+  enhancements?: ClipEnhancement[];
   version: number;
+  reviewStatus?: ClipReviewStatus;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface ProjectExport {
   id: string;
+  userId?: string | null;
   clipIds?: string[];
   preset: string;
   includeCaptions?: boolean;
   status: string;
+  progress?: number | null;
+  phase?: string | null;
+  outputFormat?: string | null;
+  platformPreset?: string | null;
+  aspectRatio?: string | null;
+  captionTrackId?: string | null;
+  layoutPreset?: string | null;
   outputPath?: string;
   storagePath?: string;
   error?: string | null;
+  metadata?: Record<string, unknown> | null;
+  startedAt?: string | null;
+  completedAt?: string | null;
   createdAt?: string;
   updatedAt?: string;
 }

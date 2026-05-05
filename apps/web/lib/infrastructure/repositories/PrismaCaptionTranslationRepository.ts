@@ -66,9 +66,15 @@ export class PrismaCaptionTranslationRepository
         clipId: data.clipId,
         language: data.language,
         captionSrt: data.captionSrt,
+        ...(data.captionVtt !== undefined && { captionVtt: data.captionVtt }),
+        ...(data.label !== undefined && { label: data.label }),
+        ...(data.source !== undefined && { source: data.source }),
       },
       update: {
         captionSrt: data.captionSrt,
+        ...(data.captionVtt !== undefined && { captionVtt: data.captionVtt }),
+        ...(data.label !== undefined && { label: data.label }),
+        ...(data.source !== undefined && { source: data.source }),
       },
     });
   }

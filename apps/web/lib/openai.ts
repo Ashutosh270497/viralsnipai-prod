@@ -1,3 +1,4 @@
+import "openai/shims/node";
 import OpenAI from "openai";
 
 import { logger } from "@/lib/logger";

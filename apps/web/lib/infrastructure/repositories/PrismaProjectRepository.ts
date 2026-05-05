@@ -6,14 +6,14 @@
  * @module PrismaProjectRepository
  */
 
-import { injectable } from 'inversify';
-import { prisma } from '@/lib/prisma';
-import type { Project, ProjectSummary } from '@/lib/types';
+import { injectable } from "inversify";
+import { prisma } from "@/lib/prisma";
+import type { Project, ProjectSummary } from "@/lib/types";
 import type {
   IProjectRepository,
   CreateProjectData,
   UpdateProjectData,
-} from '@/lib/domain/repositories/IProjectRepository';
+} from "@/lib/domain/repositories/IProjectRepository";
 
 @injectable()
 export class PrismaProjectRepository implements IProjectRepository {
@@ -22,13 +22,13 @@ export class PrismaProjectRepository implements IProjectRepository {
       where: { id },
       include: {
         clips: {
-          orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
+          orderBy: [{ order: "asc" }, { createdAt: "asc" }],
         },
         assets: {
-          orderBy: { createdAt: 'desc' },
+          orderBy: { createdAt: "desc" },
         },
         exports: {
-          orderBy: { createdAt: 'desc' },
+          orderBy: { createdAt: "desc" },
         },
       },
     });
@@ -43,16 +43,16 @@ export class PrismaProjectRepository implements IProjectRepository {
       where: { userId },
       include: {
         clips: {
-          orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
+          orderBy: [{ order: "asc" }, { createdAt: "asc" }],
         },
         assets: {
-          orderBy: { createdAt: 'desc' },
+          orderBy: { createdAt: "desc" },
         },
         exports: {
-          orderBy: { createdAt: 'desc' },
+          orderBy: { createdAt: "desc" },
         },
       },
-      orderBy: { createdAt: 'desc' },
+      orderBy: { createdAt: "desc" },
     });
 
     return projects.map(this.mapToProject);
@@ -69,7 +69,7 @@ export class PrismaProjectRepository implements IProjectRepository {
           },
         },
       },
-      orderBy: { createdAt: 'desc' },
+      orderBy: { createdAt: "desc" },
     });
 
     return projects.map((p) => ({
@@ -92,13 +92,13 @@ export class PrismaProjectRepository implements IProjectRepository {
       },
       include: {
         clips: {
-          orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
+          orderBy: [{ order: "asc" }, { createdAt: "asc" }],
         },
         assets: {
-          orderBy: { createdAt: 'desc' },
+          orderBy: { createdAt: "desc" },
         },
         exports: {
-          orderBy: { createdAt: 'desc' },
+          orderBy: { createdAt: "desc" },
         },
       },
     });
@@ -116,21 +116,18 @@ export class PrismaProjectRepository implements IProjectRepository {
         ...(data.status !== undefined && { status: data.status }),
         ...(data.sceneCutThreshold !== undefined && { sceneCutThreshold: data.sceneCutThreshold }),
         ...(data.updatedAt !== undefined && {
-          updatedAt:
-            data.updatedAt instanceof Date
-              ? data.updatedAt
-              : new Date(data.updatedAt),
+          updatedAt: data.updatedAt instanceof Date ? data.updatedAt : new Date(data.updatedAt),
         }),
       },
       include: {
         clips: {
-          orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
+          orderBy: [{ order: "asc" }, { createdAt: "asc" }],
         },
         assets: {
-          orderBy: { createdAt: 'desc' },
+          orderBy: { createdAt: "desc" },
         },
         exports: {
-          orderBy: { createdAt: 'desc' },
+          orderBy: { createdAt: "desc" },
         },
       },
     });
@@ -181,6 +178,7 @@ export class PrismaProjectRepository implements IProjectRepository {
         viralityScore: clip.viralityScore,
         viralityFactors: clip.viralityFactors as any,
         version: clip.version ?? 1,
+        reviewStatus: clip.reviewStatus ?? "needs_review",
         createdAt: clip.createdAt.toISOString(),
         updatedAt: clip.updatedAt?.toISOString(),
       })),
@@ -202,13 +200,24 @@ export class PrismaProjectRepository implements IProjectRepository {
       exports: prismaProject.exports?.map((exp: any) => ({
         id: exp.id,
         projectId: exp.projectId,
+        userId: exp.userId ?? null,
         clipIds: Array.isArray(exp.clipIds) ? exp.clipIds : [],
         preset: exp.preset,
         includeCaptions: Boolean(exp.includeCaptions),
         status: exp.status,
+        progress: exp.progress ?? null,
+        phase: exp.phase ?? null,
+        outputFormat: exp.outputFormat ?? null,
+        platformPreset: exp.platformPreset ?? null,
+        aspectRatio: exp.aspectRatio ?? null,
+        captionTrackId: exp.captionTrackId ?? null,
+        layoutPreset: exp.layoutPreset ?? null,
         outputPath: exp.outputPath,
         storagePath: exp.storagePath,
         error: exp.error,
+        metadata: exp.metadata ?? null,
+        startedAt: exp.startedAt?.toISOString?.() ?? null,
+        completedAt: exp.completedAt?.toISOString?.() ?? null,
         createdAt: exp.createdAt.toISOString(),
         updatedAt: exp.updatedAt?.toISOString(),
       })),

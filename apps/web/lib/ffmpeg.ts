@@ -368,6 +368,50 @@ function buildDynamicCropVideoFilter({
   }
 }
 
+function buildManualCropVideoFilter({
+  preset,
+  reframePlan,
+}: {
+  preset: keyof typeof PRESETS;
+  reframePlan: ClipReframePlan;
+}) {
+  const cropBox = reframePlan.manualCropBox;
+  if (!cropBox) return null;
+
+  try {
+    const { width, height } = getPresetDimensions(preset);
+    const safeWidth = Math.min(1, Math.max(0.08, Number(cropBox.width)));
+    const safeHeight = Math.min(1, Math.max(0.08, Number(cropBox.height)));
+    const safeX = Math.min(1 - safeWidth, Math.max(0, Number(cropBox.x)));
+    const safeY = Math.min(1 - safeHeight, Math.max(0, Number(cropBox.y)));
+
+    if (![safeX, safeY, safeWidth, safeHeight].every(Number.isFinite)) {
+      return null;
+    }
+
+    const targetRatio = width / height;
+    const boxWidth = `(iw*${safeWidth.toFixed(6)})`;
+    const boxHeight = `(ih*${safeHeight.toFixed(6)})`;
+    const boxRatio = `(${boxWidth})/(${boxHeight})`;
+    const cropWidthRaw = `trunc(if(gte(${boxRatio},${targetRatio.toFixed(6)}),(${boxHeight})*${targetRatio.toFixed(6)},${boxWidth})/2)*2`;
+    const cropHeightRaw = `trunc(if(gte(${boxRatio},${targetRatio.toFixed(6)}),${boxHeight},(${boxWidth})/${targetRatio.toFixed(6)})/2)*2`;
+    const cropXRaw = `max(0,min(iw-(${cropWidthRaw}),iw*${safeX.toFixed(6)}+(${boxWidth}-(${cropWidthRaw}))/2))`;
+    const cropYRaw = `max(0,min(ih-(${cropHeightRaw}),ih*${safeY.toFixed(6)}+(${boxHeight}-(${cropHeightRaw}))/2))`;
+
+    logger.info("[Layout] manual crop filter enabled", {
+      preset,
+      cropBox: { x: safeX, y: safeY, width: safeWidth, height: safeHeight },
+    });
+
+    return `crop=${escapeFilterExpression(cropWidthRaw)}:${escapeFilterExpression(cropHeightRaw)}:${escapeFilterExpression(cropXRaw)}:${escapeFilterExpression(cropYRaw)},scale=${width}:${height}:flags=lanczos,setsar=1`;
+  } catch (error) {
+    logger.warn("[Layout] manual crop unavailable; falling back to stable crop", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
+}
+
 export function buildPresetVideoFilter({
   preset,
   reframePlan,
@@ -382,6 +426,11 @@ export function buildPresetVideoFilter({
 
   if (!reframePlan || reframePlan.mode === "letterbox") {
     return `scale=${width}:${height}:force_original_aspect_ratio=decrease:flags=lanczos,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1`;
+  }
+
+  const manualCropFilter = buildManualCropVideoFilter({ preset, reframePlan });
+  if (manualCropFilter) {
+    return manualCropFilter;
   }
 
   const dynamicCropFilter = buildDynamicCropVideoFilter({ preset, reframePlan });
@@ -468,6 +517,8 @@ export async function probeVideoGeometry(filePath: string): Promise<VideoGeometr
           ? "9:16"
           : Math.abs(aspectRatio - 1) < 0.05
           ? "1:1"
+          : Math.abs(aspectRatio - 4 / 5) < 0.05
+          ? "4:5"
           : Math.abs(aspectRatio - 16 / 9) < 0.08
           ? "16:9"
           : "custom";

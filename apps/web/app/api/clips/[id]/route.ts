@@ -13,6 +13,7 @@ import { withErrorHandling } from '@/lib/utils/error-handler';
 import { ApiResponseBuilder } from '@/lib/api/response';
 import { logger } from '@/lib/logger';
 import { normalizeClipCaptionStyle } from '@/lib/repurpose/caption-style-config';
+import { ASPECT_RATIO_VALUES, LAYOUT_PRESET_VALUES } from '@/lib/repurpose/layout-config';
 
 const SMART_REFRAME_MODES = [
   "smart_auto",
@@ -24,6 +25,35 @@ const SMART_REFRAME_MODES = [
   "center_crop",
   "blurred_background",
 ] as const;
+
+const layoutCropBoxSchema = z.object({
+  x: z.number().min(0).max(1),
+  y: z.number().min(0).max(1),
+  width: z.number().min(0.08).max(1),
+  height: z.number().min(0.08).max(1),
+});
+
+const layoutConfigSchema = z.object({
+  preset: z.enum(LAYOUT_PRESET_VALUES),
+  aspectRatio: z.enum(ASPECT_RATIO_VALUES),
+  cropBox: layoutCropBoxSchema,
+  speakerRegion: layoutCropBoxSchema.nullable().optional(),
+  screenRegion: layoutCropBoxSchema.nullable().optional(),
+  backgroundMode: z.enum(["crop", "blur", "letterbox", "solid"]).optional(),
+  blurBackground: z.boolean().optional(),
+  borderRadius: z.number().min(0).max(48).optional(),
+  padding: z.number().min(0).max(120).optional(),
+  safeZones: z
+    .object({
+      top: z.number().min(0).max(0.35),
+      bottom: z.number().min(0).max(0.35),
+      left: z.number().min(0).max(0.25),
+      right: z.number().min(0).max(0.25),
+    })
+    .optional(),
+  reframeConfidence: z.enum(["high", "medium", "low"]).optional(),
+  reason: z.string().max(500).optional(),
+});
 
 const patchSchema = z
   .object({
@@ -58,6 +88,9 @@ const patchSchema = z
     captionsEnabled: z.boolean().optional(),
     /** Whether to apply the caption safe zone when computing crop windows. */
     captionSafeZoneEnabled: z.boolean().optional(),
+    layoutPreset: z.enum(LAYOUT_PRESET_VALUES).optional(),
+    aspectRatio: z.enum(ASPECT_RATIO_VALUES).optional(),
+    layoutConfig: layoutConfigSchema.optional(),
   })
   .refine((data) => {
     if (data.startMs !== undefined && data.endMs !== undefined) {
@@ -101,6 +134,9 @@ export const PATCH = withErrorHandling(
     if (result.data.exportQuality !== undefined) exportSettings.exportQuality = result.data.exportQuality;
     if (result.data.captionsEnabled !== undefined) exportSettings.captionsEnabled = result.data.captionsEnabled;
     if (result.data.captionSafeZoneEnabled !== undefined) exportSettings.captionSafeZoneEnabled = result.data.captionSafeZoneEnabled;
+    if (result.data.layoutPreset !== undefined) exportSettings.layoutPreset = result.data.layoutPreset;
+    if (result.data.aspectRatio !== undefined) exportSettings.aspectRatio = result.data.aspectRatio;
+    if (result.data.layoutConfig !== undefined) exportSettings.layoutConfig = result.data.layoutConfig;
     const hasExportSettings = Object.keys(exportSettings).length > 0;
 
     const normalizedUpdates: UpdateClipInput['updates'] = {

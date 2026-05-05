@@ -31,8 +31,11 @@ export interface ClipCaptionStyleConfig {
   presetId: CaptionStyleId;
   fontFamily: string;
   fontSize: number;
+  fontWeight?: number;
   primaryColor: string;
   emphasisColor: string;
+  strokeWidth?: number;
+  shadow?: boolean;
   position: CaptionVerticalPosition;
   outline: boolean;
   outlineColor: string;
@@ -44,6 +47,10 @@ export interface ClipCaptionStyleConfig {
   align: OverlayHorizontalAlign;
   animation: CaptionAnimationConfig;
   safeZoneAware: boolean;
+  uppercase?: boolean;
+  emojiEnabled?: boolean;
+  keywordHighlightEnabled?: boolean;
+  maxLines?: number;
   hookOverlays: HookOverlay[];
 }
 
@@ -51,8 +58,11 @@ export const DEFAULT_CLIP_CAPTION_STYLE: ClipCaptionStyleConfig = {
   presetId: "modern",
   fontFamily: "Arial",
   fontSize: 54,
+  fontWeight: 800,
   primaryColor: "#FFFFFF",
   emphasisColor: "#34d399",
+  strokeWidth: 2,
+  shadow: true,
   position: "bottom",
   outline: true,
   outlineColor: "#000000",
@@ -68,6 +78,10 @@ export const DEFAULT_CLIP_CAPTION_STYLE: ClipCaptionStyleConfig = {
     speed: "normal",
   },
   safeZoneAware: true,
+  uppercase: false,
+  emojiEnabled: false,
+  keywordHighlightEnabled: true,
+  maxLines: 2,
   hookOverlays: [],
 };
 
@@ -149,16 +163,24 @@ export function normalizeClipCaptionStyle(
         .filter((overlay): overlay is HookOverlay => overlay !== null)
         .slice(0, 6)
     : [...fallback.hookOverlays];
+  const presetId = normalizeStringChoice(
+    raw.presetId,
+    ["modern", "viral", "minimal", "gaming", "business", "karaoke", "creator_pop", "none"],
+    fallback.presetId,
+  );
 
   return {
-    presetId: normalizeStringChoice(raw.presetId, ["modern", "viral", "minimal", "gaming", "business"], fallback.presetId),
+    presetId,
     fontFamily: typeof raw.fontFamily === "string" && raw.fontFamily.trim() ? raw.fontFamily.trim() : fallback.fontFamily,
     fontSize: clampNumber(raw.fontSize, 28, 96, fallback.fontSize),
-    primaryColor: normalizeHex(raw.primaryColor, fallback.primaryColor),
-    emphasisColor: normalizeHex(raw.emphasisColor, fallback.emphasisColor),
+    fontWeight: clampNumber(raw.fontWeight, 300, 900, fallback.fontWeight ?? 800),
+    primaryColor: normalizeHex(raw.primaryColor ?? raw.textColor, fallback.primaryColor),
+    emphasisColor: normalizeHex(raw.emphasisColor ?? raw.highlightColor, fallback.emphasisColor),
+    strokeWidth: clampNumber(raw.strokeWidth, 0, 8, fallback.strokeWidth ?? 2),
+    shadow: typeof raw.shadow === "boolean" ? raw.shadow : fallback.shadow,
     position: normalizeStringChoice(raw.position, ["top", "middle", "bottom"], fallback.position),
     outline: typeof raw.outline === "boolean" ? raw.outline : fallback.outline,
-    outlineColor: normalizeHex(raw.outlineColor, fallback.outlineColor),
+    outlineColor: normalizeHex(raw.outlineColor ?? raw.strokeColor, fallback.outlineColor),
     background: typeof raw.background === "boolean" ? raw.background : fallback.background,
     backgroundColor: normalizeHex(raw.backgroundColor, fallback.backgroundColor),
     backgroundOpacity: clampNumber(raw.backgroundOpacity, 0, 1, fallback.backgroundOpacity),
@@ -167,6 +189,13 @@ export function normalizeClipCaptionStyle(
     align: normalizeStringChoice(raw.align, ["left", "center", "right"], fallback.align),
     animation: normalizeCaptionAnimation(raw.animation, raw.karaoke, fallback.animation),
     safeZoneAware: typeof raw.safeZoneAware === "boolean" ? raw.safeZoneAware : fallback.safeZoneAware,
+    uppercase: typeof raw.uppercase === "boolean" ? raw.uppercase : fallback.uppercase,
+    emojiEnabled: typeof raw.emojiEnabled === "boolean" ? raw.emojiEnabled : fallback.emojiEnabled,
+    keywordHighlightEnabled:
+      typeof raw.keywordHighlightEnabled === "boolean"
+        ? raw.keywordHighlightEnabled
+        : fallback.keywordHighlightEnabled,
+    maxLines: clampNumber(raw.maxLines, 1, 3, fallback.maxLines ?? 2),
     hookOverlays,
   };
 }

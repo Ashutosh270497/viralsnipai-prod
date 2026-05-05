@@ -6,14 +6,14 @@
  * @module PrismaClipRepository
  */
 
-import { injectable } from 'inversify';
-import { prisma } from '@/lib/prisma';
-import type { Clip, CreateClipData, UpdateClipData } from '@/lib/types';
+import { injectable } from "inversify";
+import { prisma } from "@/lib/prisma";
+import type { Clip, CreateClipData, UpdateClipData } from "@/lib/types";
 import type {
   IClipRepository,
   FindClipsOptions,
   PaginatedClips,
-} from '@/lib/domain/repositories/IClipRepository';
+} from "@/lib/domain/repositories/IClipRepository";
 
 @injectable()
 export class PrismaClipRepository implements IClipRepository {
@@ -33,6 +33,7 @@ export class PrismaClipRepository implements IClipRepository {
       ...(data.previewPath !== undefined && { previewPath: data.previewPath }),
       viralityScore: data.viralityScore,
       viralityFactors: data.viralityFactors as any,
+      ...(data.reviewStatus !== undefined && { reviewStatus: data.reviewStatus }),
     };
   }
 
@@ -50,6 +51,7 @@ export class PrismaClipRepository implements IClipRepository {
       ...(data.previewPath !== undefined && { previewPath: data.previewPath }),
       ...(data.viralityScore !== undefined && { viralityScore: data.viralityScore }),
       ...(data.viralityFactors !== undefined && { viralityFactors: data.viralityFactors as any }),
+      ...(data.reviewStatus !== undefined && { reviewStatus: data.reviewStatus }),
       version: { increment: 1 },
     };
   }
@@ -67,7 +69,7 @@ export class PrismaClipRepository implements IClipRepository {
   async findByProjectId(projectId: string): Promise<Clip[]> {
     const clips = await prisma.clip.findMany({
       where: { projectId },
-      orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
+      orderBy: [{ order: "asc" }, { createdAt: "asc" }],
     });
 
     return clips.map(this.mapToClip);
@@ -78,8 +80,8 @@ export class PrismaClipRepository implements IClipRepository {
       projectId,
       assetId,
       minViralityScore,
-      sortBy = 'createdAt',
-      sortOrder = 'desc',
+      sortBy = "createdAt",
+      sortOrder = "desc",
       limit = 20,
       offset = 0,
     } = options;
@@ -120,7 +122,7 @@ export class PrismaClipRepository implements IClipRepository {
         projectId,
         viralityScore: { not: null },
       },
-      orderBy: { viralityScore: 'desc' },
+      orderBy: { viralityScore: "desc" },
       take: limit,
     });
 
@@ -136,14 +138,14 @@ export class PrismaClipRepository implements IClipRepository {
   }
 
   async createMany(
-    clips: Array<CreateClipData & { projectId: string; assetId: string }>
+    clips: Array<CreateClipData & { projectId: string; assetId: string }>,
   ): Promise<Clip[]> {
     const created = await prisma.$transaction(
       clips.map((clip) =>
         prisma.clip.create({
           data: this.buildCreateData(clip),
-        })
-      )
+        }),
+      ),
     );
 
     return created.map(this.mapToClip);
@@ -184,7 +186,7 @@ export class PrismaClipRepository implements IClipRepository {
   async updateWithVersion(
     id: string,
     expectedVersion: number,
-    data: UpdateClipData
+    data: UpdateClipData,
   ): Promise<Clip | null> {
     const result = await (prisma.clip as any).updateMany({
       where: {
@@ -199,6 +201,18 @@ export class PrismaClipRepository implements IClipRepository {
     }
 
     return this.findById(id);
+  }
+
+  async updateReviewStatus(id: string, reviewStatus: Clip["reviewStatus"]): Promise<Clip> {
+    const clip = await prisma.clip.update({
+      where: { id },
+      data: {
+        reviewStatus,
+        version: { increment: 1 },
+      },
+    });
+
+    return this.mapToClip(clip);
   }
 
   async delete(id: string): Promise<void> {
@@ -241,6 +255,7 @@ export class PrismaClipRepository implements IClipRepository {
       viralityScore: prismaClip.viralityScore,
       viralityFactors: prismaClip.viralityFactors as any,
       version: prismaClip.version ?? 1,
+      reviewStatus: prismaClip.reviewStatus ?? "needs_review",
       createdAt: prismaClip.createdAt.toISOString(),
       updatedAt: prismaClip.updatedAt?.toISOString(),
     };

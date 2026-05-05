@@ -1,3 +1,5 @@
+import "openai/shims/node";
+
 /**
  * OpenRouter generation helpers.
  *

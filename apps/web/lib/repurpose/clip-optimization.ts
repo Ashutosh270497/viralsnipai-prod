@@ -15,6 +15,7 @@ type ClipWord = {
 const TARGET_RATIOS: Record<ClipOutputRatio, number> = {
   "9:16": 9 / 16,
   "1:1": 1,
+  "4:5": 4 / 5,
   "16:9": 16 / 9,
 };
 
@@ -317,6 +318,8 @@ export function buildClipReframePlans(params: {
         ? { x: 0.18, y: 0.08, width: 0.64, height: 0.84 }
         : ratio === "1:1"
         ? { x: 0.08, y: 0.08, width: 0.84, height: 0.84 }
+        : ratio === "4:5"
+        ? { x: 0.12, y: 0.08, width: 0.76, height: 0.84 }
         : { x: 0.04, y: 0.12, width: 0.92, height: 0.76 };
 
     let reasoning = "Keeps the source framing nearly native.";

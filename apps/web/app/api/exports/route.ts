@@ -15,11 +15,17 @@ import {
   recordMediaUsage,
   resolveUserPlanForMedia,
 } from '@/lib/media/v1-media-policy';
+import { PLATFORM_EXPORT_PRESET_VALUES, resolvePlatformExportPreset } from '@/lib/repurpose/export-presets';
 
 const schema = z.object({
   projectId: z.string(),
   clipIds: z.array(z.string()).min(1),
-  preset: z.enum(['shorts_9x16_1080', 'square_1x1_1080', 'portrait_4x5_1080', 'landscape_16x9_1080']),
+  preset: z.enum(['shorts_9x16_1080', 'square_1x1_1080', 'portrait_4x5_1080', 'landscape_16x9_1080']).optional(),
+  platformPreset: z.enum(PLATFORM_EXPORT_PRESET_VALUES).optional(),
+  aspectRatio: z.enum(['9:16', '1:1', '4:5', '16:9']).optional(),
+  captionTrackId: z.string().nullable().optional(),
+  layoutPreset: z.string().nullable().optional(),
+  layoutConfig: z.record(z.any()).nullable().optional(),
   includeCaptions: z.boolean().optional().default(false),
   /**
    * Export quality tier.
@@ -61,7 +67,9 @@ export const POST = withErrorHandling(async (request: Request) => {
     });
   }
 
-  const { projectId, clipIds, preset, includeCaptions, exportQuality } = result.data;
+  const { projectId, clipIds, includeCaptions, exportQuality } = result.data;
+  const platformPreset = resolvePlatformExportPreset(result.data.platformPreset);
+  const preset = result.data.preset ?? platformPreset.legacyPreset;
 
   logger.info('Export started', {
     projectId,
@@ -106,7 +114,13 @@ export const POST = withErrorHandling(async (request: Request) => {
       projectId,
       clipIds,
       preset,
+      platformPreset: platformPreset.id,
+      aspectRatio: result.data.aspectRatio ?? platformPreset.aspectRatio,
+      captionTrackId: result.data.captionTrackId ?? null,
+      layoutPreset: result.data.layoutPreset ?? null,
+      layoutConfig: result.data.layoutConfig ?? null,
       includeCaptions,
+      exportQuality,
       userId: user.id,
     });
 

@@ -21,6 +21,7 @@ import {
   type TranscriptEditRange,
 } from '@/lib/repurpose/transcript-sync';
 import { parseSRT } from '@/lib/srt-utils';
+import { normalizeClipLayoutConfig, type ClipLayoutConfig } from '@/lib/repurpose/layout-config';
 
 export interface ClipExportSettings {
   reframeMode?: string;
@@ -28,6 +29,9 @@ export interface ClipExportSettings {
   exportQuality?: 'balanced' | 'high' | 'standard';
   captionsEnabled?: boolean;
   captionSafeZoneEnabled?: boolean;
+  layoutPreset?: ClipLayoutConfig['preset'];
+  layoutConfig?: unknown;
+  aspectRatio?: ClipLayoutConfig['aspectRatio'];
 }
 
 export interface UpdateClipInput {
@@ -125,6 +129,10 @@ export class UpdateClipUseCase {
         storyArc: toNumber(currentViralityFactors.storyArc),
         pacing: toNumber(currentViralityFactors.pacing),
         transcriptQuality: toNumber(currentViralityFactors.transcriptQuality),
+        shareability:
+          typeof currentViralityFactors.shareability === 'number'
+            ? currentViralityFactors.shareability
+            : undefined,
         reasoning:
           typeof currentViralityFactors.reasoning === 'string'
             ? currentViralityFactors.reasoning
@@ -136,6 +144,13 @@ export class UpdateClipUseCase {
           currentViralityFactors.enhancement && typeof currentViralityFactors.enhancement === 'object'
             ? (currentViralityFactors.enhancement as Record<string, unknown>)
             : undefined,
+        qualitySignals:
+          currentViralityFactors.qualitySignals && typeof currentViralityFactors.qualitySignals === 'object'
+            ? (currentViralityFactors.qualitySignals as Record<string, unknown>)
+            : undefined,
+        reframePlans: Array.isArray(currentViralityFactors.reframePlans)
+          ? currentViralityFactors.reframePlans
+          : undefined,
         metadata,
       }) as Clip['viralityFactors'];
 
@@ -195,6 +210,21 @@ export class UpdateClipUseCase {
       if (incoming.exportQuality !== undefined) merged.exportQuality = incoming.exportQuality;
       if (incoming.captionsEnabled !== undefined) merged.captionsEnabled = incoming.captionsEnabled;
       if (incoming.captionSafeZoneEnabled !== undefined) merged.captionSafeZoneEnabled = incoming.captionSafeZoneEnabled;
+      if (incoming.layoutPreset !== undefined) merged.layoutPreset = incoming.layoutPreset;
+      if (incoming.aspectRatio !== undefined) merged.aspectRatio = incoming.aspectRatio;
+      if (incoming.layoutConfig !== undefined) {
+        const normalizedLayout = normalizeClipLayoutConfig({
+          ...incoming.layoutConfig,
+          ...(incoming.layoutPreset !== undefined ? { preset: incoming.layoutPreset } : {}),
+          ...(incoming.aspectRatio !== undefined ? { aspectRatio: incoming.aspectRatio } : {}),
+          updatedAt: new Date().toISOString(),
+        });
+        merged.layoutPreset = normalizedLayout.preset;
+        merged.aspectRatio = normalizedLayout.aspectRatio;
+        metadata.layoutConfig = normalizedLayout;
+        metadata.layoutPreset = normalizedLayout.preset;
+        metadata.layoutUpdatedAt = normalizedLayout.updatedAt;
+      }
 
       metadata.exportSettings = merged;
       metadata.exportSettingsUpdatedAt = new Date().toISOString();

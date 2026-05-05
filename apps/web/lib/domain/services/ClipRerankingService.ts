@@ -18,6 +18,11 @@ export class ClipRerankingService {
     callToAction?: string;
     transcriptPrecision: TranscriptPrecision;
     sourceDurationSec: number;
+    clipPolicy?: {
+      minMs: number;
+      idealMs: number;
+      maxMs: number;
+    };
     model?: string;
   }): Promise<ClipRerankResult> {
     return rerankClipCandidates(params);

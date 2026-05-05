@@ -3,32 +3,41 @@ import { z } from "zod";
 import { logger } from "@/lib/logger";
 import type { ClipCandidate } from "@/lib/domain/services/ClipCandidateGenerationService";
 import type { TranscriptPrecision } from "@/lib/ai/providers/openai-transcription-provider";
+import {
+  bRollSuggestionsResponseSchema,
+  type BrollSuggestion,
+} from "@/lib/repurpose/creative-enhancements";
 
 const OPENROUTER_BASE_URL = process.env.OPENROUTER_BASE_URL ?? "https://openrouter.ai/api/v1";
-const OPENROUTER_SITE_URL = process.env.OPENROUTER_SITE_URL ?? process.env.NEXT_PUBLIC_APP_URL ?? "https://viralsnipai.com";
+const OPENROUTER_SITE_URL =
+  process.env.OPENROUTER_SITE_URL ?? process.env.NEXT_PUBLIC_APP_URL ?? "https://viralsnipai.com";
 const OPENROUTER_APP_NAME = process.env.OPENROUTER_APP_NAME ?? "ViralSnipAI";
 const OPENROUTER_TIMEOUT_MS = Number(process.env.OPENROUTER_TIMEOUT_MS ?? 180_000);
 const OPENROUTER_MAX_RETRIES = Number(process.env.OPENROUTER_MAX_RETRIES ?? 2);
 
-const RerankResponseSchema = z.object({
-  selected: z.array(z.object({
-    candidateId: z.string(),
-    rank: z.number().int().positive(),
-    title: z.string().min(1).max(120),
-    hook: z.string().min(1).max(240),
-    callToAction: z.string().nullable().optional(),
-    llmScore: z.number().min(0).max(100),
-    viralReason: z.string().min(1).max(500),
-    editingNotes: z.array(z.string()).default([]),
-    platformFit: z.object({
-      youtubeShorts: z.number().min(0).max(100),
-      instagramReels: z.number().min(0).max(100),
-      tiktok: z.number().min(0).max(100),
-      x: z.number().min(0).max(100),
-    }),
-  })),
-  overallWarnings: z.array(z.string()).default([]),
-}).passthrough();
+const RerankResponseSchema = z
+  .object({
+    selected: z.array(
+      z.object({
+        candidateId: z.string(),
+        rank: z.number().int().positive(),
+        title: z.string().min(1).max(120),
+        hook: z.string().min(1).max(240),
+        callToAction: z.string().nullable().optional(),
+        llmScore: z.number().min(0).max(100),
+        viralReason: z.string().min(1).max(500),
+        editingNotes: z.array(z.string()).default([]),
+        platformFit: z.object({
+          youtubeShorts: z.number().min(0).max(100),
+          instagramReels: z.number().min(0).max(100),
+          tiktok: z.number().min(0).max(100),
+          x: z.number().min(0).max(100),
+        }),
+      }),
+    ),
+    overallWarnings: z.array(z.string()).default([]),
+  })
+  .passthrough();
 
 const ViralitySchema = z.object({
   score: z.number().min(0).max(100),
@@ -69,7 +78,15 @@ const RerankJsonSchema = {
         items: {
           type: "object",
           additionalProperties: true,
-          required: ["candidateId", "rank", "title", "hook", "llmScore", "viralReason", "platformFit"],
+          required: [
+            "candidateId",
+            "rank",
+            "title",
+            "hook",
+            "llmScore",
+            "viralReason",
+            "platformFit",
+          ],
           properties: {
             candidateId: { type: "string" },
             rank: { type: "integer", minimum: 1 },
@@ -110,7 +127,14 @@ const ViralityJsonSchema = {
       factors: {
         type: "object",
         additionalProperties: false,
-        required: ["hookStrength", "emotionalPeak", "storyArc", "pacing", "transcriptQuality", "shareability"],
+        required: [
+          "hookStrength",
+          "emotionalPeak",
+          "storyArc",
+          "pacing",
+          "transcriptQuality",
+          "shareability",
+        ],
         properties: {
           hookStrength: { type: "number", minimum: 0, maximum: 100 },
           emotionalPeak: { type: "number", minimum: 0, maximum: 100 },
@@ -156,6 +180,36 @@ const CaptionCleanupJsonSchema = {
   },
 } as const;
 
+const BrollSuggestionJsonSchema = {
+  name: "broll_suggestions",
+  strict: true,
+  schema: {
+    type: "object",
+    additionalProperties: false,
+    required: ["suggestions", "warnings"],
+    properties: {
+      suggestions: {
+        type: "array",
+        maxItems: 8,
+        items: {
+          type: "object",
+          additionalProperties: false,
+          required: ["searchQuery", "startMs", "endMs", "reason", "visualStyle", "priority"],
+          properties: {
+            searchQuery: { type: "string" },
+            startMs: { type: "integer", minimum: 0 },
+            endMs: { type: "integer", minimum: 1 },
+            reason: { type: "string" },
+            visualStyle: { type: "string" },
+            priority: { type: "number", minimum: 0, maximum: 100 },
+          },
+        },
+      },
+      warnings: { type: "array", items: { type: "string" } },
+    },
+  },
+} as const;
+
 export type ClipRerankSelection = z.infer<typeof RerankResponseSchema>["selected"][number] & {
   finalScore: number;
 };
@@ -170,18 +224,16 @@ export type ViralityReasoningResult = z.infer<typeof ViralitySchema> & {
   model: string;
 };
 
-export async function openRouterJson<T>(
-  params: {
-    model: string;
-    system: string;
-    user: unknown;
-    schema: z.ZodType<T>;
-    jsonSchema?: Record<string, unknown>;
-    structuredMode?: "json_schema" | "json_object" | "auto";
-    temperature?: number;
-    maxTokens?: number;
-  }
-): Promise<{ data: T; model: string; latencyMs: number }> {
+export async function openRouterJson<T>(params: {
+  model: string;
+  system: string;
+  user: unknown;
+  schema: z.ZodType<T>;
+  jsonSchema?: Record<string, unknown>;
+  structuredMode?: "json_schema" | "json_object" | "auto";
+  temperature?: number;
+  maxTokens?: number;
+}): Promise<{ data: T; model: string; latencyMs: number }> {
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) {
     throw new Error("OPENROUTER_API_KEY is required for reasoning tasks.");
@@ -209,7 +261,11 @@ export async function openRouterJson<T>(
             model: params.model,
             messages: [
               { role: "system", content: params.system },
-              { role: "user", content: typeof params.user === "string" ? params.user : JSON.stringify(params.user) },
+              {
+                role: "user",
+                content:
+                  typeof params.user === "string" ? params.user : JSON.stringify(params.user),
+              },
             ],
             response_format: buildResponseFormat(mode, params.jsonSchema),
             temperature: params.temperature ?? 0.2,
@@ -223,7 +279,11 @@ export async function openRouterJson<T>(
         if (!response.ok) {
           const message = payload?.error?.message ?? response.statusText;
           const error = new OpenRouterReasoningError(message, response.status, mode);
-          if (mode === "json_schema" && isJsonSchemaUnsupported(error) && modes.includes("json_object")) {
+          if (
+            mode === "json_schema" &&
+            isJsonSchemaUnsupported(error) &&
+            modes.includes("json_object")
+          ) {
             logger.warn("OpenRouter JSON schema mode unsupported; falling back to json_object", {
               model: params.model,
               status: response.status,
@@ -274,10 +334,15 @@ export async function rerankClipCandidates(params: {
   callToAction?: string;
   transcriptPrecision: TranscriptPrecision;
   sourceDurationSec: number;
+  clipPolicy?: {
+    minMs: number;
+    idealMs: number;
+    maxMs: number;
+  };
   model?: string;
 }): Promise<ClipRerankResult> {
   const model = normalizeOpenRouterModel(
-    params.model ?? process.env.OPENROUTER_HIGHLIGHT_RERANK_MODEL ?? "google/gemini-2.5-pro"
+    params.model ?? process.env.OPENROUTER_HIGHLIGHT_RERANK_MODEL ?? "google/gemini-2.5-pro",
   );
   const candidateIds = new Set(params.candidates.map((candidate) => candidate.id));
 
@@ -300,6 +365,7 @@ export async function rerankClipCandidates(params: {
       callToAction: params.callToAction,
       transcriptPrecision: params.transcriptPrecision,
       sourceDurationSec: params.sourceDurationSec,
+      clipPolicy: params.clipPolicy,
       candidates: params.candidates.map((candidate) => ({
         id: candidate.id,
         startMs: candidate.startMs,
@@ -365,7 +431,7 @@ export async function scoreClipVirality(params: {
   model?: string;
 }): Promise<ViralityReasoningResult> {
   const model = normalizeOpenRouterModel(
-    params.model ?? process.env.OPENROUTER_VIRALITY_MODEL ?? "google/gemini-3.1-flash-lite-preview"
+    params.model ?? process.env.OPENROUTER_VIRALITY_MODEL ?? "google/gemini-3.1-flash-lite-preview",
   );
   const result = await openRouterJson({
     model,
@@ -395,7 +461,7 @@ export async function generateClipMetadata(params: {
   model?: string;
 }) {
   const model = normalizeOpenRouterModel(
-    params.model ?? process.env.OPENROUTER_METADATA_MODEL ?? "google/gemini-3.1-flash-lite-preview"
+    params.model ?? process.env.OPENROUTER_METADATA_MODEL ?? "google/gemini-3.1-flash-lite-preview",
   );
   const result = await openRouterJson({
     model,
@@ -410,7 +476,7 @@ export async function generateClipMetadata(params: {
 
 export async function cleanupCaptionText(params: { text: string; model?: string }) {
   const model = normalizeOpenRouterModel(
-    params.model ?? process.env.OPENROUTER_CAPTION_MODEL ?? "google/gemini-3.1-flash-lite-preview"
+    params.model ?? process.env.OPENROUTER_CAPTION_MODEL ?? "google/gemini-3.1-flash-lite-preview",
   );
   const result = await openRouterJson({
     model,
@@ -423,6 +489,52 @@ export async function cleanupCaptionText(params: { text: string; model?: string 
   return { ...result.data, model: result.model };
 }
 
+export async function suggestBrollMoments(params: {
+  clipTranscript: string;
+  clipDurationMs: number;
+  candidateType?: string | null;
+  platform?: string | null;
+  tone?: string | null;
+  audience?: string | null;
+  model?: string;
+}): Promise<{ suggestions: BrollSuggestion[]; warnings: string[]; model: string }> {
+  const model = normalizeOpenRouterModel(
+    params.model ?? process.env.OPENROUTER_METADATA_MODEL ?? "google/gemini-3.1-flash-lite-preview",
+  );
+  const result = await openRouterJson({
+    model,
+    schema: bRollSuggestionsResponseSchema,
+    jsonSchema: BrollSuggestionJsonSchema,
+    system: [
+      "You suggest creative b-roll moments for a short-form clip.",
+      "Return search queries and relative moment windows only.",
+      "You do not control final clip boundaries or source timestamps.",
+      "Keep startMs/endMs inside the provided clip duration; local code will validate them.",
+    ].join("\n"),
+    user: {
+      clipTranscript: params.clipTranscript.slice(0, 4000),
+      clipDurationMs: params.clipDurationMs,
+      candidateType: params.candidateType,
+      platform: params.platform,
+      tone: params.tone,
+      audience: params.audience,
+    },
+    maxTokens: 1800,
+  });
+  return {
+    suggestions: result.data.suggestions.map((suggestion) => ({
+      searchQuery: suggestion.searchQuery,
+      startMs: suggestion.startMs,
+      endMs: suggestion.endMs,
+      reason: suggestion.reason ?? "",
+      visualStyle: suggestion.visualStyle ?? "editorial b-roll",
+      priority: suggestion.priority ?? 50,
+    })),
+    warnings: result.data.warnings ?? [],
+    model: result.model,
+  };
+}
+
 export function normalizeOpenRouterModel(model: string): string {
   const trimmed = model.trim();
   if (!trimmed.includes("/")) {
@@ -432,19 +544,30 @@ export function normalizeOpenRouterModel(model: string): string {
 }
 
 class OpenRouterReasoningError extends Error {
-  constructor(message: string, readonly status?: number, readonly structuredMode?: string) {
+  constructor(
+    message: string,
+    readonly status?: number,
+    readonly structuredMode?: string,
+  ) {
     super(message);
     this.name = "OpenRouterReasoningError";
   }
 }
 
-function getStructuredModes(mode: "json_schema" | "json_object" | "auto", jsonSchema?: Record<string, unknown>) {
-  if (mode === "json_schema") return jsonSchema ? ["json_schema" as const] : ["json_object" as const];
+function getStructuredModes(
+  mode: "json_schema" | "json_object" | "auto",
+  jsonSchema?: Record<string, unknown>,
+) {
+  if (mode === "json_schema")
+    return jsonSchema ? ["json_schema" as const] : ["json_object" as const];
   if (mode === "json_object") return ["json_object" as const];
   return jsonSchema ? ["json_schema" as const, "json_object" as const] : ["json_object" as const];
 }
 
-function buildResponseFormat(mode: "json_schema" | "json_object", jsonSchema?: Record<string, unknown>) {
+function buildResponseFormat(
+  mode: "json_schema" | "json_object",
+  jsonSchema?: Record<string, unknown>,
+) {
   if (mode === "json_schema" && jsonSchema) {
     return {
       type: "json_schema",
@@ -458,13 +581,17 @@ function extractMessageContent(body: unknown): string {
   const content = (body as any)?.choices?.[0]?.message?.content;
   if (typeof content === "string") return content;
   if (Array.isArray(content)) {
-    return content.map((part) => typeof part === "string" ? part : part?.text ?? "").join("\n");
+    return content.map((part) => (typeof part === "string" ? part : (part?.text ?? ""))).join("\n");
   }
   return "";
 }
 
 function parseJsonObject(raw: string): unknown {
-  const stripped = raw.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
+  const stripped = raw
+    .trim()
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/\s*```$/i, "")
+    .trim();
   try {
     return JSON.parse(stripped);
   } catch {
@@ -481,18 +608,17 @@ function parseJsonObject(raw: string): unknown {
 }
 
 function repairJson(value: string) {
-  return value
-    .replace(/,\s*([}\]])/g, "$1")
-    .replace(/[\u0000-\u001F]+/g, " ");
+  return value.replace(/,\s*([}\]])/g, "$1").replace(/[\u0000-\u001F]+/g, " ");
 }
 
 function isJsonSchemaUnsupported(error: OpenRouterReasoningError) {
   const message = error.message.toLowerCase();
-  return error.status === 400 && (
-    message.includes("response_format") ||
-    message.includes("json_schema") ||
-    message.includes("schema") ||
-    message.includes("unsupported")
+  return (
+    error.status === 400 &&
+    (message.includes("response_format") ||
+      message.includes("json_schema") ||
+      message.includes("schema") ||
+      message.includes("unsupported"))
   );
 }
 
@@ -503,7 +629,9 @@ function isRetryableOpenRouterError(error: unknown): boolean {
   if (error instanceof z.ZodError) return true;
   if (error instanceof Error) {
     const message = error.message.toLowerCase();
-    return message.includes("timeout") || message.includes("abort") || message.includes("rate limit");
+    return (
+      message.includes("timeout") || message.includes("abort") || message.includes("rate limit")
+    );
   }
   return false;
 }

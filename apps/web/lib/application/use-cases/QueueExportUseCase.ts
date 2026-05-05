@@ -23,11 +23,24 @@ import { ExportQueueService } from '@/lib/domain/services/ExportQueueService';
 import { getLocalUploadDir } from '@/lib/storage';
 import { logger } from '@/lib/logger';
 import { AppError } from '@/lib/utils/error-handler';
+import {
+  resolvePlatformExportPreset,
+  type ExportOutputType,
+  type PlatformExportPresetId,
+} from '@/lib/repurpose/export-presets';
 
 export interface QueueExportInput {
   projectId: string;
   clipIds: string[];
   preset: 'shorts_9x16_1080' | 'square_1x1_1080' | 'portrait_4x5_1080' | 'landscape_16x9_1080';
+  platformPreset?: PlatformExportPresetId | string | null;
+  aspectRatio?: string | null;
+  outputFormat?: ExportOutputType;
+  captionTrackId?: string | null;
+  layoutPreset?: string | null;
+  layoutConfig?: Record<string, unknown> | null;
+  exportQuality?: 'standard' | 'high';
+  allowRejected?: boolean;
   includeCaptions?: boolean;
   userId: string;
 }
@@ -47,12 +60,30 @@ export class QueueExportUseCase {
   ) {}
 
   async execute(input: QueueExportInput): Promise<QueueExportOutput> {
-    const { projectId, clipIds, preset, includeCaptions = false, userId } = input;
+    const {
+      projectId,
+      clipIds,
+      preset,
+      platformPreset,
+      aspectRatio,
+      outputFormat = 'mp4',
+      captionTrackId,
+      layoutPreset,
+      layoutConfig,
+      exportQuality = 'high',
+      allowRejected = false,
+      includeCaptions = false,
+      userId,
+    } = input;
+    const platform = resolvePlatformExportPreset(platformPreset);
 
     logger.info('Starting export queue', {
       projectId,
       clipIds,
       preset,
+      platformPreset: platform.id,
+      aspectRatio: aspectRatio ?? platform.aspectRatio,
+      outputFormat,
       includeCaptions,
       userId,
     });
@@ -78,7 +109,11 @@ export class QueueExportUseCase {
     }
 
     const projectClips = await this.clipRepo.findByProjectId(projectId);
-    const validClipIds = new Set(projectClips.map((clip) => clip.id));
+    const validClipIds = new Set(
+      projectClips
+        .filter((clip) => allowRejected || clip.reviewStatus !== 'rejected')
+        .map((clip) => clip.id)
+    );
     const selectedClipIds = clipIds.filter((clipId) => validClipIds.has(clipId));
 
     if (selectedClipIds.length === 0) {
@@ -101,9 +136,24 @@ export class QueueExportUseCase {
     // Step 3: Create export record
     const exportRecord = await this.exportRepo.create({
       projectId: project.id,
+      userId,
       clipIds: selectedClipIds,
       preset,
       includeCaptions,
+      outputFormat,
+      platformPreset: platform.id,
+      aspectRatio: aspectRatio ?? platform.aspectRatio,
+      captionTrackId: captionTrackId ?? null,
+      layoutPreset: layoutPreset ?? null,
+      metadata: {
+        exportQuality,
+        platformPreset: platform,
+        layoutConfig: layoutConfig ?? null,
+        allowRejected,
+        requestedClipCount: clipIds.length,
+      },
+      progress: 0,
+      phase: 'queued',
       outputPath: '', // Will be set after determining storage path
       storagePath: '', // Will be set next
       status: 'queued',
@@ -113,8 +163,9 @@ export class QueueExportUseCase {
 
     // Step 4: Set storage and output paths
     const uploadsDir = getLocalUploadDir();
-    const storagePath = path.join(uploadsDir, 'exports', `${exportRecord.id}.mp4`);
-    const outputPath = `/api/uploads/exports/${exportRecord.id}.mp4`;
+    const extension = outputFormat === 'zip' ? 'zip' : outputFormat === 'thumbnail' ? 'jpg' : outputFormat;
+    const storagePath = path.join(uploadsDir, 'exports', `${platform.fileNamePrefix}-${exportRecord.id}.${extension}`);
+    const outputPath = `/api/uploads/exports/${platform.fileNamePrefix}-${exportRecord.id}.${extension}`;
 
     const updatedExport = await this.exportRepo.update(exportRecord.id, {
       storagePath,

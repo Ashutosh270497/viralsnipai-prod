@@ -78,14 +78,25 @@ export class PrismaExportRepository implements IExportRepository {
     const exportRecord = await prisma.export.create({
       data: {
         projectId: data.projectId,
+        ...(data.userId !== undefined && { userId: data.userId }),
         clipIds: data.clipIds,
         preset: data.preset,
         ...(includeCaptionsSupported && { includeCaptions: data.includeCaptions ?? false }),
+        ...(data.progress !== undefined && { progress: data.progress }),
+        ...(data.phase !== undefined && { phase: data.phase }),
+        ...(data.outputFormat !== undefined && { outputFormat: data.outputFormat }),
+        ...(data.platformPreset !== undefined && { platformPreset: data.platformPreset }),
+        ...(data.aspectRatio !== undefined && { aspectRatio: data.aspectRatio }),
+        ...(data.captionTrackId !== undefined && { captionTrackId: data.captionTrackId }),
+        ...(data.layoutPreset !== undefined && { layoutPreset: data.layoutPreset }),
+        ...(data.metadata !== undefined && { metadata: data.metadata as any }),
+        ...(data.startedAt !== undefined && { startedAt: data.startedAt }),
+        ...(data.completedAt !== undefined && { completedAt: data.completedAt }),
         status: data.status || 'queued',
         outputPath: data.outputPath ?? '',
         storagePath: data.storagePath ?? '',
         ...(data.error !== undefined && { error: data.error }),
-      },
+      } as any,
     });
 
     return this.mapToExportRecord(exportRecord);
@@ -97,13 +108,23 @@ export class PrismaExportRepository implements IExportRepository {
       where: { id },
       data: {
         ...(data.status !== undefined && { status: data.status }),
+        ...(data.progress !== undefined && { progress: data.progress }),
+        ...(data.phase !== undefined && { phase: data.phase }),
         ...(data.clipIds !== undefined && { clipIds: data.clipIds }),
         ...(includeCaptionsSupported &&
           data.includeCaptions !== undefined && { includeCaptions: data.includeCaptions }),
+        ...(data.outputFormat !== undefined && { outputFormat: data.outputFormat }),
+        ...(data.platformPreset !== undefined && { platformPreset: data.platformPreset }),
+        ...(data.aspectRatio !== undefined && { aspectRatio: data.aspectRatio }),
+        ...(data.captionTrackId !== undefined && { captionTrackId: data.captionTrackId }),
+        ...(data.layoutPreset !== undefined && { layoutPreset: data.layoutPreset }),
         ...(data.outputPath !== undefined && { outputPath: data.outputPath }),
         ...(data.storagePath !== undefined && { storagePath: data.storagePath }),
         ...(data.error !== undefined && { error: data.error }),
-      },
+        ...(data.metadata !== undefined && { metadata: data.metadata as any }),
+        ...(data.startedAt !== undefined && { startedAt: data.startedAt }),
+        ...(data.completedAt !== undefined && { completedAt: data.completedAt }),
+      } as any,
     });
 
     return this.mapToExportRecord(exportRecord);
@@ -135,13 +156,24 @@ export class PrismaExportRepository implements IExportRepository {
     return {
       id: prismaExport.id,
       projectId: prismaExport.projectId,
+      userId: prismaExport.userId ?? null,
       clipIds: Array.isArray(prismaExport.clipIds) ? prismaExport.clipIds : [],
       preset: prismaExport.preset,
       includeCaptions: Boolean(prismaExport.includeCaptions),
       status: prismaExport.status,
+      progress: prismaExport.progress ?? null,
+      phase: prismaExport.phase ?? null,
+      outputFormat: prismaExport.outputFormat ?? null,
+      platformPreset: prismaExport.platformPreset ?? null,
+      aspectRatio: prismaExport.aspectRatio ?? null,
+      captionTrackId: prismaExport.captionTrackId ?? null,
+      layoutPreset: prismaExport.layoutPreset ?? null,
       outputPath: prismaExport.outputPath,
       storagePath: prismaExport.storagePath,
       error: prismaExport.error,
+      metadata: prismaExport.metadata ?? null,
+      startedAt: prismaExport.startedAt?.toISOString?.() ?? null,
+      completedAt: prismaExport.completedAt?.toISOString?.() ?? null,
       createdAt: prismaExport.createdAt.toISOString(),
       updatedAt: prismaExport.updatedAt?.toISOString(),
     };

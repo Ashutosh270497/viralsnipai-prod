@@ -24,6 +24,7 @@ import { extractAudio, replaceAudio } from '@/lib/ffmpeg';
 import { logger } from '@/lib/logger';
 import path from 'path';
 import fs from 'fs';
+import "openai/shims/node";
 import OpenAI from 'openai';
 
 export interface VoiceTranslationJobParams {

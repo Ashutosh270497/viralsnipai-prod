@@ -42,13 +42,25 @@ if (/extractClips\s*\(/.test(useCase)) {
   fail("Active V1 auto-highlights use case must not call legacy percentage extractClips().");
 }
 
+if (/openRouterJson\s*\(|audio\.transcriptions|chat\.completions/i.test(useCase)) {
+  fail("GenerateAutoHighlightsUseCase must orchestrate providers through domain services only.");
+}
+
 const boundaryRefinement = read("lib/domain/services/ClipBoundaryRefinementService.ts");
-if (/openRouterJson|OPENROUTER_API_KEY|openAITranscriptionClient|new OpenAI|chat\.completions/i.test(boundaryRefinement)) {
+if (
+  /openRouterJson|OPENROUTER|openAITranscriptionClient|openAIClient|new OpenAI|from ["']openai["']|chat\.completions|audio\.transcriptions/i.test(
+    boundaryRefinement,
+  )
+) {
   fail("Boundary refinement must remain local and must not call OpenAI/OpenRouter.");
 }
 
 const candidateGeneration = read("lib/domain/services/ClipCandidateGenerationService.ts");
-if (/openRouterJson|OPENROUTER_API_KEY|openAITranscriptionClient|new OpenAI|chat\.completions/i.test(candidateGeneration)) {
+if (
+  /openRouterJson|OPENROUTER|openAITranscriptionClient|openAIClient|new OpenAI|from ["']openai["']|chat\.completions|audio\.transcriptions/i.test(
+    candidateGeneration,
+  )
+) {
   fail("Candidate timestamp generation must remain local and must not call OpenAI/OpenRouter.");
 }
 
@@ -61,18 +73,38 @@ const virality = read("lib/services/virality.service.ts");
 if (!virality.includes("scoreClipVirality")) {
   fail("Virality scoring must route through the OpenRouter reasoning provider.");
 }
-if (/openAI|OpenAI|chat\.completions/i.test(virality)) {
+if (/openAI|OpenAI|chat\.completions|audio\.transcriptions/i.test(virality)) {
   fail("Virality scoring must not use direct OpenAI reasoning.");
+}
+
+const openRouterProvider = read("lib/ai/providers/openrouter-reasoning-provider.ts");
+if (!openRouterProvider.includes("Never create, infer, modify, or output final timestamps")) {
+  fail("OpenRouter reranking prompt must explicitly forbid final timestamp output.");
+}
+if (
+  /audio\.transcriptions|openAITranscriptionClient|from ["']openai["']/i.test(openRouterProvider)
+) {
+  fail("OpenRouter reasoning provider must not import or call OpenAI transcription APIs.");
 }
 
 for (const relativePath of activePipelineFiles) {
   const source = read(relativePath);
   if (
+    /startPercent|endPercent|start_percent|end_percent/.test(source) &&
+    relativePath !== "lib/ai/providers/openrouter-reasoning-provider.ts"
+  ) {
+    fail(`Active V1 pipeline file contains legacy percentage timestamp token: ${relativePath}`);
+  }
+  if (
     !relativePath.includes("openai-transcription-provider") &&
     !relativePath.includes("openai-transcription-client") &&
-    /new OpenAI|from ["']openai["']/.test(source)
+    /new OpenAI|from ["']openai["']|openAITranscriptionClient|openAIClient|audio\.transcriptions/.test(
+      source,
+    )
   ) {
-    fail(`Direct OpenAI client import found outside transcription provider: ${relativePath}`);
+    fail(
+      `Direct OpenAI client/transcription usage found outside transcription provider: ${relativePath}`,
+    );
   }
 }
 

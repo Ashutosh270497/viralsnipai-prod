@@ -1,4 +1,5 @@
 import crypto from "crypto";
+import "openai/shims/node";
 import OpenAI from "openai";
 import { openRouterClient, OPENROUTER_MODELS } from "@/lib/openrouter-client";
 

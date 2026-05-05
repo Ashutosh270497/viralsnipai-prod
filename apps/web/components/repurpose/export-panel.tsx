@@ -18,6 +18,11 @@ import { useToast } from "@/components/ui/use-toast";
 import { ProgressCircle } from "@/components/ui/progress-circle";
 import { cn } from "@/lib/utils";
 import { EXPORT_PRESETS } from "@clippers/types";
+import {
+  PLATFORM_EXPORT_PRESETS,
+  PLATFORM_EXPORT_PRESET_VALUES,
+  type PlatformExportPresetId,
+} from "@/lib/repurpose/export-presets";
 
 interface ExportPanelProps {
   projectId: string;
@@ -28,6 +33,11 @@ interface ExportPanelProps {
     preset: string;
     includeCaptions?: boolean;
     status: string;
+    platformPreset?: string | null;
+    progress?: number | null;
+    phase?: string | null;
+    outputFormat?: string | null;
+    aspectRatio?: string | null;
     outputPath?: string;
     error?: string | null;
     createdAt?: string;
@@ -35,6 +45,8 @@ interface ExportPanelProps {
   onQueued?: () => Promise<void> | void;
   selectedPreset: string;
   onPresetChange: (preset: string) => void;
+  selectedPlatformPreset?: PlatformExportPresetId;
+  onPlatformPresetChange?: (preset: PlatformExportPresetId) => void;
   /** SRT caption text of the selected clip — enables .srt / .vtt downloads. */
   captionSrt?: string | null;
   /** Used as the filename stem for downloaded caption files. */
@@ -69,6 +81,8 @@ export function ExportPanel({
   onQueued,
   selectedPreset,
   onPresetChange,
+  selectedPlatformPreset = "youtube_shorts",
+  onPlatformPresetChange,
   captionSrt,
   clipTitle,
   captionAnimationType,
@@ -89,9 +103,10 @@ export function ExportPanel({
   const pollTimerRef = useRef<NodeJS.Timeout | null>(null);
   const notifiedFailureRef = useRef<string | null>(null);
 
+  const selectedPlatformConfig = PLATFORM_EXPORT_PRESETS[selectedPlatformPreset];
   const selectedPresetConfig = useMemo(
-    () => EXPORT_PRESETS.find((preset) => preset.id === selectedPreset) ?? EXPORT_PRESETS[0],
-    [selectedPreset]
+    () => EXPORT_PRESETS.find((preset) => preset.id === selectedPlatformConfig.legacyPreset) ?? EXPORT_PRESETS[0],
+    [selectedPlatformConfig.legacyPreset]
   );
 
   const hasCaptionAwareHistory = useMemo(
@@ -102,7 +117,7 @@ export function ExportPanel({
   const selectedModeExports = useMemo(() => {
     return exports
       .filter((exp) => {
-        if (exp.preset !== selectedPreset) {
+        if (exp.preset !== selectedPreset && exp.platformPreset !== selectedPlatformPreset) {
           return false;
         }
         if (!hasCaptionAwareHistory) {
@@ -114,7 +129,7 @@ export function ExportPanel({
         if (!a.createdAt || !b.createdAt) return 0;
         return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
       });
-  }, [exports, hasCaptionAwareHistory, includeCaptions, selectedPreset]);
+  }, [exports, hasCaptionAwareHistory, includeCaptions, selectedPlatformPreset, selectedPreset]);
 
   const latestExport = selectedModeExports[0];
 
@@ -267,13 +282,14 @@ export function ExportPanel({
     setIsQueueing(true);
 
     try {
-      const response = await fetch("/api/exports", {
+      const response = await fetch("/api/repurpose/exports/jobs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           projectId,
           clipIds: selectedClipIds,
-          preset: selectedPreset,
+          platformPreset: selectedPlatformPreset,
+          outputType: "mp4",
           includeCaptions,
           exportQuality,
         }),
@@ -332,6 +348,44 @@ export function ExportPanel({
     }
   }
 
+  async function cancelExport(exportId: string) {
+    try {
+      const response = await fetch(`/api/repurpose/exports/jobs/${exportId}/cancel`, {
+        method: "POST",
+        cache: "no-store",
+      });
+      if (!response.ok) throw new Error(await extractErrorMessage(response) ?? "Could not cancel export");
+      toast({ title: "Export cancelled" });
+      stopPolling();
+      if (onQueued) await onQueued();
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        title: "Cancel failed",
+        description: error instanceof Error ? summarizeError(error.message) : "Try again.",
+      });
+    }
+  }
+
+  async function retryExport(exportId: string) {
+    try {
+      const response = await fetch(`/api/repurpose/exports/jobs/${exportId}/retry`, {
+        method: "POST",
+        cache: "no-store",
+      });
+      if (!response.ok) throw new Error(await extractErrorMessage(response) ?? "Could not retry export");
+      toast({ title: "Export requeued" });
+      startPolling(exportId);
+      if (onQueued) await onQueued();
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        title: "Retry failed",
+        description: error instanceof Error ? summarizeError(error.message) : "Try again.",
+      });
+    }
+  }
+
   const currentStatus = latestExport?.status;
   const isBusy = isQueueing || currentStatus === "queued" || currentStatus === "processing" || currentStatus === "retryable";
   const effectiveProgress =
@@ -357,22 +411,29 @@ export function ExportPanel({
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div className="grid gap-1.5">
             <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground/45">
-              Output Ratio
+              Platform preset
             </p>
             <label className="flex items-center gap-3 rounded-xl border border-border bg-background/60 px-4 py-3">
               <select
-                value={selectedPreset}
-                onChange={(event) => onPresetChange(event.target.value)}
+                value={selectedPlatformPreset}
+                onChange={(event) => {
+                  const next = event.target.value as PlatformExportPresetId;
+                  onPlatformPresetChange?.(next);
+                  onPresetChange(PLATFORM_EXPORT_PRESETS[next].legacyPreset);
+                }}
                 className="w-full bg-transparent text-sm font-medium outline-none"
               >
-                {EXPORT_PRESETS.map((preset) => (
+                {PLATFORM_EXPORT_PRESET_VALUES.map((presetId) => {
+                  const preset = PLATFORM_EXPORT_PRESETS[presetId];
+                  return (
                   <option key={preset.id} value={preset.id} className="bg-zinc-950">
-                    {preset.width}:{preset.height} · {preset.label}
+                    {preset.label} · {preset.aspectRatio}
                   </option>
-                ))}
+                  );
+                })}
               </select>
             </label>
-            <p className="text-xs text-muted-foreground/55">{selectedPresetConfig.description}</p>
+            <p className="text-xs text-muted-foreground/55">{selectedPlatformConfig.description}</p>
           </div>
 
           <div className="flex min-w-[260px] items-center justify-between gap-4 rounded-xl border border-border bg-background/60 px-4 py-3.5">
@@ -544,6 +605,26 @@ export function ExportPanel({
                   </a>
                 </div>
               ) : null}
+
+              {(latestExport.status === "queued" || latestExport.status === "processing" || latestExport.status === "retryable") ? (
+                <button
+                  type="button"
+                  onClick={() => cancelExport(latestExport.id)}
+                  className="rounded-lg border border-red-500/25 bg-red-500/10 px-3 py-1.5 text-[11px] font-semibold text-red-300 transition-colors hover:bg-red-500/15"
+                >
+                  Cancel job
+                </button>
+              ) : null}
+
+              {(latestExport.status === "failed" || latestExport.status === "cancelled") ? (
+                <button
+                  type="button"
+                  onClick={() => retryExport(latestExport.id)}
+                  className="rounded-lg border border-amber-500/25 bg-amber-500/10 px-3 py-1.5 text-[11px] font-semibold text-amber-300 transition-colors hover:bg-amber-500/15"
+                >
+                  Retry export
+                </button>
+              ) : null}
             </div>
           </div>
         </div>
@@ -561,6 +642,9 @@ export function ExportPanel({
           </p>
           <div className="divide-y divide-border/40">
             {exports.slice(0, 5).map((exp) => {
+              const platform = exp.platformPreset && exp.platformPreset in PLATFORM_EXPORT_PRESETS
+                ? PLATFORM_EXPORT_PRESETS[exp.platformPreset as PlatformExportPresetId]
+                : null;
               const preset = EXPORT_PRESETS.find((p) => p.id === exp.preset);
               return (
                 <div key={exp.id} className="group flex items-center gap-3 py-2.5 px-0.5">
@@ -571,7 +655,7 @@ export function ExportPanel({
                     : "bg-primary/60 animate-pulse"
                   )} />
                   <div className="flex-1 min-w-0">
-                    <p className="text-[12px] font-medium text-foreground truncate">{preset?.label ?? exp.preset}</p>
+                    <p className="text-[12px] font-medium text-foreground truncate">{platform?.label ?? preset?.label ?? exp.preset}</p>
                     <p className="text-[10px] text-muted-foreground/40 mt-0.5">
                       {exp.includeCaptions
                         ? "with captions"

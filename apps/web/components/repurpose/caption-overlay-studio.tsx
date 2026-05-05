@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Plus, Trash2, Type } from "lucide-react";
 
 import { CAPTION_STYLES } from "@/lib/constants/caption-styles";
+import { applyCaptionPreset, PROFESSIONAL_CAPTION_PRESETS } from "@/lib/repurpose/caption-studio";
 import {
   createDefaultHookOverlay,
   normalizeClipCaptionStyle,
@@ -19,6 +20,8 @@ interface CaptionOverlayStudioProps {
   sampleCaption?: string;
   previewPath?: string | null;
   captionEntries?: CaptionEntry[];
+  selectedClipCount?: number;
+  onApplyToSelected?: (style: ClipCaptionStyleConfig) => void;
 }
 
 const POSITION_OPTIONS = [
@@ -60,6 +63,8 @@ export function CaptionOverlayStudio({
   sampleCaption,
   previewPath,
   captionEntries = [],
+  selectedClipCount = 0,
+  onApplyToSelected,
 }: CaptionOverlayStudioProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [currentMs, setCurrentMs] = useState(0);
@@ -148,6 +153,43 @@ export function CaptionOverlayStudio({
                 <p className="mt-1 text-xs text-muted-foreground/55">{style.description}</p>
               </button>
             ))}
+          </div>
+
+          <div className="mt-4 rounded-lg border border-border/40 bg-background/40 p-3">
+            <div className="mb-2 flex items-center justify-between gap-3">
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground/55">
+                Fast templates
+              </p>
+              <button
+                type="button"
+                onClick={() => onChange(applyCaptionPreset("minimal_clean", safeValue))}
+                className="rounded-lg border border-border/50 bg-muted/30 px-2.5 py-1 text-[11px] font-medium text-muted-foreground hover:text-foreground"
+              >
+                Reset style
+              </button>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {Object.keys(PROFESSIONAL_CAPTION_PRESETS).map((presetKey) => (
+                <button
+                  key={presetKey}
+                  type="button"
+                  onClick={() => onChange(applyCaptionPreset(presetKey, safeValue))}
+                  className="rounded-full border border-border/45 bg-muted/20 px-3 py-1.5 text-xs font-medium text-foreground/75 transition-colors hover:bg-muted/45"
+                >
+                  {presetKey.replace(/_/g, " ")}
+                </button>
+              ))}
+            </div>
+            {onApplyToSelected ? (
+              <button
+                type="button"
+                onClick={() => onApplyToSelected(safeValue)}
+                disabled={selectedClipCount === 0}
+                className="mt-3 rounded-lg border border-violet-500/30 bg-violet-500/10 px-3 py-2 text-xs font-semibold text-violet-300 transition-colors hover:bg-violet-500/15 disabled:opacity-40"
+              >
+                Apply to selected clips{selectedClipCount > 0 ? ` (${selectedClipCount})` : ""}
+              </button>
+            ) : null}
           </div>
 
           <div className="mt-4 grid gap-3 md:grid-cols-2">

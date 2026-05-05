@@ -65,8 +65,9 @@ describe("clip-optimization", () => {
       qualitySignals,
     });
 
-    expect(plans).toHaveLength(3);
+    expect(plans).toHaveLength(4);
     expect(plans.find((plan) => plan.ratio === "9:16")?.mode).toBe("speaker_focus");
+    expect(plans.find((plan) => plan.ratio === "4:5")?.mode).toBe("speaker_focus");
     expect(plans.find((plan) => plan.ratio === "16:9")?.mode).toBe("native");
     expect(plans.find((plan) => plan.ratio === "9:16")?.tracking?.axis).toBe("horizontal");
     expect((plans.find((plan) => plan.ratio === "9:16")?.tracking?.travel ?? 0)).toBeGreaterThan(0);
@@ -100,6 +101,6 @@ describe("clip-optimization", () => {
 
     expect(selectBestReframePlan(plans, 9 / 16)?.ratio).toBe("9:16");
     expect(selectBestReframePlan(plans, 1)?.ratio).toBe("1:1");
-    expect(selectBestReframePlan(plans, 4 / 5)?.ratio).toBe("1:1");
+    expect(selectBestReframePlan(plans, 4 / 5)?.ratio).toBe("4:5");
   });
 });

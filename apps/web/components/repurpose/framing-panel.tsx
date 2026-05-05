@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import Image from "next/image";
 import {
   Crop,
@@ -11,12 +11,23 @@ import {
   RotateCcw,
   Info,
   Sparkles,
+  Save,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/components/ui/use-toast";
 import { cn } from "@/lib/utils";
 import type { SmartReframeMode, SmartReframePlan, CropKeyframe } from "@/lib/media/smart-reframe";
+import {
+  ASPECT_RATIO_PRESETS,
+  LAYOUT_PRESETS,
+  buildCenteredCropBox,
+  normalizeClipLayoutConfig,
+  normalizeCropBox,
+  type ClipLayoutConfig,
+  type LayoutAspectRatio,
+  type LayoutPreset,
+} from "@/lib/repurpose/layout-config";
 
 // ── Reframe mode definitions ──────────────────────────────────────────────────
 
@@ -36,7 +47,7 @@ const REFRAME_MODES: ModeDefinition[] = [
   { value: "smart_face",     label: "Stable Face Crop",        description: "Center on detected face; single stable crop window",  icon: ScanFace, premium: false },
   { value: "smart_person",   label: "Stable Person Crop",      description: "Center on detected person; single stable crop window",icon: User,     premium: false },
   { value: "center_crop",    label: "Center Crop",             description: "Geometric center — no detection needed",              icon: Crop,     premium: false },
-  { value: "blurred_background", label: "Blurred Background",  description: "Blur-pad pillarbox (Phase 2)",                        icon: Crop,     premium: true  },
+  { value: "blurred_background", label: "Blurred Background",  description: "Blur-pad pillarbox (coming in renderer polish)",       icon: Crop,     premium: true  },
 ];
 
 const STRATEGY_LABELS: Record<string, string> = {
@@ -60,6 +71,111 @@ const SUBJECT_POSITION_OPTIONS = [
 
 const CONFIDENCE_COLOR = (c: number) =>
   c >= 0.7 ? "text-emerald-400" : c >= 0.4 ? "text-amber-400" : "text-muted-foreground/50";
+
+const ASPECT_OPTIONS: LayoutAspectRatio[] = ["9:16", "1:1", "4:5", "16:9", "original"];
+const LAYOUT_OPTIONS: LayoutPreset[] = [
+  "full_screen_crop",
+  "center_crop",
+  "speaker_focus",
+  "split_screen",
+  "podcast_two_speaker",
+  "screen_share_speaker",
+  "picture_in_picture",
+  "square_letterbox",
+  "manual_crop",
+];
+
+function getSourceAspectRatio(sourceWidth?: number | null, sourceHeight?: number | null) {
+  if (sourceWidth && sourceHeight && sourceWidth > 0 && sourceHeight > 0) {
+    return sourceWidth / sourceHeight;
+  }
+  return 16 / 9;
+}
+
+function buildDefaultLayoutConfig(params: {
+  layoutConfig?: ClipLayoutConfig | null;
+  sourceWidth?: number | null;
+  sourceHeight?: number | null;
+}) {
+  const sourceAspectRatio = getSourceAspectRatio(params.sourceWidth, params.sourceHeight);
+  return normalizeClipLayoutConfig(
+    params.layoutConfig ?? {
+      preset: "center_crop",
+      aspectRatio: "9:16",
+      cropBox: buildCenteredCropBox("9:16", sourceAspectRatio),
+      backgroundMode: "crop",
+      blurBackground: false,
+      borderRadius: 0,
+      padding: 0,
+      safeZones: { top: 0.1, bottom: 0.2, left: 0.08, right: 0.08 },
+      reframeConfidence: "medium",
+      reason: "Center crop default for vertical short-form delivery.",
+    }
+  );
+}
+
+function LayoutCropPreview({
+  thumbnail,
+  layout,
+  sourceWidth,
+  sourceHeight,
+}: {
+  thumbnail?: string | null;
+  layout: ClipLayoutConfig;
+  sourceWidth?: number | null;
+  sourceHeight?: number | null;
+}) {
+  const sourceAspectRatio = getSourceAspectRatio(sourceWidth, sourceHeight);
+  const crop = normalizeCropBox(layout.cropBox, buildCenteredCropBox(layout.aspectRatio, sourceAspectRatio));
+  const previewRatio = ASPECT_RATIO_PRESETS[layout.aspectRatio].ratio ?? sourceAspectRatio;
+
+  return (
+    <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_96px]">
+      <div className="relative overflow-hidden rounded-lg bg-zinc-950" style={{ aspectRatio: `${sourceAspectRatio}` }}>
+        {thumbnail ? (
+          <Image src={thumbnail} alt="Manual crop preview" fill className="object-cover opacity-70" unoptimized />
+        ) : (
+          <div className="absolute inset-0 bg-zinc-800" />
+        )}
+        <div className="absolute inset-0 bg-black/45" />
+        <div
+          className="absolute border-2 border-cyan-400 bg-cyan-400/10 shadow-[0_0_0_9999px_rgba(0,0,0,0.52)]"
+          style={{
+            left: `${crop.x * 100}%`,
+            top: `${crop.y * 100}%`,
+            width: `${crop.width * 100}%`,
+            height: `${crop.height * 100}%`,
+          }}
+        >
+          <div className="absolute inset-x-0 bottom-[20%] border-t border-red-400/70 border-dashed" />
+          <div className="absolute inset-x-0 top-[10%] border-t border-amber-300/60 border-dashed" />
+        </div>
+      </div>
+      <div className="relative mx-auto h-40 overflow-hidden rounded-xl border border-border/50 bg-zinc-950" style={{ aspectRatio: `${previewRatio}` }}>
+        {thumbnail ? (
+          <Image
+            src={thumbnail}
+            alt="Output frame"
+            fill
+            className="object-cover"
+            style={{
+              width: `${100 / crop.width}%`,
+              height: `${100 / crop.height}%`,
+              left: `${(-crop.x / crop.width) * 100}%`,
+              top: `${(-crop.y / crop.height) * 100}%`,
+              maxWidth: "none",
+            }}
+            unoptimized
+          />
+        ) : null}
+        <div className="absolute inset-x-2 bottom-[18%] rounded border border-red-400/50" />
+        <div className="absolute bottom-1 left-1 rounded bg-black/70 px-1.5 py-0.5 text-[8px] font-semibold text-white/80">
+          {layout.aspectRatio}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // ── Crop window preview ───────────────────────────────────────────────────────
 
@@ -239,24 +355,39 @@ function LegendDot({ color, label }: { color: string; label: string }) {
 
 interface FramingPanelProps {
   clipId: string;
+  expectedVersion: number;
   /** Thumbnail image URL for the crop window preview. */
   thumbnail?: string | null;
+  sourceWidth?: number | null;
+  sourceHeight?: number | null;
   /** Current SmartReframePlan from clip.viralityFactors.metadata.smartReframe */
   smartReframePlan?: SmartReframePlan | null;
+  layoutConfig?: ClipLayoutConfig | null;
+  selectedClipCount?: number;
   /** Whether this user is on a paid plan (enables dynamic tracking modes). */
   isPremium?: boolean;
   /** Called after successful re-analysis so the parent can refresh clip data */
   onAnalysisComplete: () => void;
+  onApplyLayoutToSelected?: (layout: ClipLayoutConfig) => Promise<void>;
 }
 
 export function FramingPanel({
   clipId,
+  expectedVersion,
   thumbnail,
+  sourceWidth,
+  sourceHeight,
   smartReframePlan,
+  layoutConfig,
+  selectedClipCount = 0,
   isPremium = false,
   onAnalysisComplete,
+  onApplyLayoutToSelected,
 }: FramingPanelProps) {
   const { toast } = useToast();
+  const [layout, setLayout] = useState<ClipLayoutConfig>(() =>
+    buildDefaultLayoutConfig({ layoutConfig, sourceWidth, sourceHeight })
+  );
 
   const [selectedMode, setSelectedMode] = useState<SmartReframeMode>(() => {
     if (!smartReframePlan) return "smart_auto";
@@ -280,6 +411,11 @@ export function FramingPanel({
   const [showTrackingOverlay, setShowTrackingOverlay] = useState(Boolean(smartReframePlan));
   const [showSafeZoneOverlay, setShowSafeZoneOverlay] = useState(true);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [isSavingLayout, setIsSavingLayout] = useState(false);
+
+  useEffect(() => {
+    setLayout(buildDefaultLayoutConfig({ layoutConfig, sourceWidth, sourceHeight }));
+  }, [clipId, layoutConfig, sourceWidth, sourceHeight]);
 
   const isDynamic = selectedMode.startsWith("dynamic_");
   const isBlurred = selectedMode === "blurred_background";
@@ -296,7 +432,7 @@ export function FramingPanel({
         return;
       }
       if (mode === "blurred_background") {
-        toast({ title: "Coming soon", description: "Blurred background export is planned for Phase 2." });
+        toast({ title: "Coming soon", description: "Blurred background export is planned for renderer polish." });
         return;
       }
 
@@ -334,6 +470,95 @@ export function FramingPanel({
     setSelectedMode("center_crop");
     await handleAnalyze("center_crop");
   }, [handleAnalyze]);
+
+  const patchLayout = useCallback(
+    async (nextLayout: ClipLayoutConfig) => {
+      setIsSavingLayout(true);
+      try {
+        const normalized = normalizeClipLayoutConfig(nextLayout);
+        const res = await fetch(`/api/clips/${clipId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            expectedVersion,
+            layoutPreset: normalized.preset,
+            aspectRatio: normalized.aspectRatio,
+            layoutConfig: normalized,
+          }),
+          cache: "no-store",
+        });
+
+        if (!res.ok) {
+          const body = await res.json().catch(() => null);
+          throw new Error(body?.error?.message ?? body?.message ?? "Could not save layout");
+        }
+
+        toast({ title: "Layout saved", description: "This clip will export with the selected crop and ratio." });
+        onAnalysisComplete();
+      } catch (err) {
+        toast({
+          variant: "destructive",
+          title: "Layout not saved",
+          description: err instanceof Error ? err.message : "Refresh and try again.",
+        });
+      } finally {
+        setIsSavingLayout(false);
+      }
+    },
+    [clipId, expectedVersion, onAnalysisComplete, toast]
+  );
+
+  const updateLayout = useCallback(
+    (patch: Partial<ClipLayoutConfig>) => {
+      setLayout((current) => {
+        const next = normalizeClipLayoutConfig({ ...current, ...patch });
+        if (patch.aspectRatio && patch.aspectRatio !== current.aspectRatio) {
+          next.cropBox = buildCenteredCropBox(
+            patch.aspectRatio,
+            getSourceAspectRatio(sourceWidth, sourceHeight)
+          );
+        }
+        if (patch.preset && patch.preset !== current.preset) {
+          next.reframeConfidence = LAYOUT_PRESETS[patch.preset].confidence;
+          next.reason = LAYOUT_PRESETS[patch.preset].description;
+          if (patch.preset === "square_letterbox") {
+            next.aspectRatio = "1:1";
+            next.backgroundMode = "letterbox";
+            next.cropBox = buildCenteredCropBox("1:1", getSourceAspectRatio(sourceWidth, sourceHeight));
+          } else if (patch.preset === "manual_crop") {
+            next.backgroundMode = "crop";
+          }
+        }
+        return next;
+      });
+    },
+    [sourceHeight, sourceWidth]
+  );
+
+  const handleSaveLayout = useCallback(() => patchLayout(layout), [layout, patchLayout]);
+
+  const handleApplyToSelected = useCallback(async () => {
+    if (!onApplyLayoutToSelected || selectedClipCount === 0) {
+      toast({ variant: "destructive", title: "Select clips first" });
+      return;
+    }
+    setIsSavingLayout(true);
+    try {
+      await onApplyLayoutToSelected(normalizeClipLayoutConfig(layout));
+    } catch (err) {
+      toast({
+        variant: "destructive",
+        title: "Layout not applied",
+        description: err instanceof Error ? err.message : "Refresh and try again.",
+      });
+    } finally {
+      setIsSavingLayout(false);
+    }
+  }, [layout, onApplyLayoutToSelected, selectedClipCount, toast]);
+
+  const handleResetLayout = useCallback(() => {
+    setLayout(buildDefaultLayoutConfig({ sourceWidth, sourceHeight }));
+  }, [sourceHeight, sourceWidth]);
 
   return (
     <div className="space-y-4">
@@ -384,6 +609,135 @@ export function FramingPanel({
           </p>
         </div>
       )}
+
+      {/* ── Layout preset and aspect ratio ──────────────────────────────── */}
+      <div className="rounded-xl border border-border/40 bg-muted/15 p-4 space-y-4">
+        <div className="flex items-center justify-between gap-2">
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/50">
+              Layout engine
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground/55">
+              Choose the platform frame and crop that preview/export should use.
+            </p>
+          </div>
+          <Badge variant="secondary" className="text-[10px]">
+            {LAYOUT_PRESETS[layout.preset].label}
+          </Badge>
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-2">
+          <label className="space-y-1.5">
+            <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/50">
+              Aspect ratio
+            </span>
+            <select
+              value={layout.aspectRatio}
+              onChange={(event) => updateLayout({ aspectRatio: event.target.value as LayoutAspectRatio })}
+              className="h-9 w-full rounded-lg border border-border/60 bg-background px-3 text-xs font-semibold text-foreground"
+            >
+              {ASPECT_OPTIONS.map((option) => (
+                <option key={option} value={option}>
+                  {ASPECT_RATIO_PRESETS[option].label}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="space-y-1.5">
+            <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/50">
+              Layout preset
+            </span>
+            <select
+              value={layout.preset}
+              onChange={(event) => updateLayout({ preset: event.target.value as LayoutPreset })}
+              className="h-9 w-full rounded-lg border border-border/60 bg-background px-3 text-xs font-semibold text-foreground"
+            >
+              {LAYOUT_OPTIONS.map((option) => (
+                <option key={option} value={option}>
+                  {LAYOUT_PRESETS[option].label}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+
+        <LayoutCropPreview
+          thumbnail={thumbnail}
+          layout={layout}
+          sourceWidth={sourceWidth}
+          sourceHeight={sourceHeight}
+        />
+
+        <div className="grid gap-3 sm:grid-cols-2">
+          {([
+            ["x", "Crop X"],
+            ["y", "Crop Y"],
+            ["width", "Crop width"],
+            ["height", "Crop height"],
+          ] as const).map(([key, label]) => (
+            <label key={key} className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/50">
+                  {label}
+                </span>
+                <span className="text-[10px] font-mono text-muted-foreground/50">
+                  {(layout.cropBox[key] * 100).toFixed(0)}%
+                </span>
+              </div>
+              <input
+                type="range"
+                min={key === "width" || key === "height" ? 8 : 0}
+                max={100}
+                step={1}
+                value={Math.round(layout.cropBox[key] * 100)}
+                onChange={(event) => {
+                  const value = Number(event.target.value) / 100;
+                  updateLayout({
+                    preset: "manual_crop",
+                    cropBox: normalizeCropBox({ ...layout.cropBox, [key]: value }),
+                  });
+                }}
+                className="w-full accent-primary"
+              />
+            </label>
+          ))}
+        </div>
+
+        <div className="flex gap-2 flex-wrap">
+          <Button
+            type="button"
+            onClick={handleSaveLayout}
+            disabled={isSavingLayout}
+            className="gap-1.5 text-xs"
+            size="sm"
+          >
+            {isSavingLayout ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+            Save layout
+          </Button>
+          <Button
+            type="button"
+            onClick={handleApplyToSelected}
+            disabled={isSavingLayout || selectedClipCount === 0}
+            variant="outline"
+            size="sm"
+            className="gap-1.5 text-xs"
+          >
+            Apply to selected{selectedClipCount > 0 ? ` (${selectedClipCount})` : ""}
+          </Button>
+          <Button
+            type="button"
+            onClick={handleResetLayout}
+            disabled={isSavingLayout}
+            variant="ghost"
+            size="sm"
+            className="gap-1.5 text-xs"
+          >
+            <RotateCcw className="h-3.5 w-3.5" />
+            Reset layout
+          </Button>
+        </div>
+      </div>
 
       {/* ── Overlay toggles ──────────────────────────────────────────────── */}
       <div className="flex flex-wrap gap-2">
@@ -442,7 +796,7 @@ export function FramingPanel({
                     <p className={cn("font-medium", isSelected ? "text-foreground" : "text-foreground/70")}>
                       {m.label}
                     </p>
-                    {blocked && <span className="text-[9px] text-muted-foreground/40">(Phase 2)</span>}
+                    {blocked && <span className="text-[9px] text-muted-foreground/40">(Coming soon)</span>}
                     {m.premium && !blocked && (
                       <span className={cn(
                         "inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[9px] font-semibold",
@@ -532,7 +886,7 @@ export function FramingPanel({
       </div>
 
       <p className="text-[10px] text-muted-foreground/35 leading-relaxed">
-        Analysis samples frames, detects faces/persons, and shifts the 9:16 crop to keep the speaker centered. Applies to the next export.
+        Analysis samples frames, detects faces/persons, and shifts the crop to keep the subject inside the selected platform frame.
       </p>
     </div>
   );

@@ -19,7 +19,13 @@ import { cn } from "@/lib/utils";
 import type { ProjectClip } from "@/components/repurpose/types";
 
 export type BoundaryConfidence = "high" | "medium" | "low";
-export type TranscriptPrecision = "word" | "segment" | "diarized_segment" | "approximate" | "none" | string;
+export type TranscriptPrecision =
+  | "word"
+  | "segment"
+  | "diarized_segment"
+  | "approximate"
+  | "none"
+  | string;
 
 export type AutoHighlightsAnalytics = {
   providerTranscription?: "openai" | string;
@@ -34,6 +40,12 @@ export type AutoHighlightsAnalytics = {
   averageViralityScore?: number | null;
   previewFailures?: number;
   lowPrecisionWarning?: string | null;
+  clipLengthPreset?: "short" | "balanced" | "detailed" | string;
+  clipPolicy?: {
+    minMs: number;
+    idealMs: number;
+    maxMs: number;
+  };
   boundaryConfidenceCounts?: {
     high: number;
     medium: number;
@@ -55,17 +67,27 @@ export function ProviderBadge({
       : provider === "openrouter"
         ? "border-violet-400/25 bg-violet-400/10 text-violet-200"
         : "border-emerald-400/25 bg-emerald-400/10 text-emerald-200";
-  const Icon = provider === "openai" ? RadioTower : provider === "openrouter" ? BrainCircuit : WandSparkles;
+  const Icon =
+    provider === "openai" ? RadioTower : provider === "openrouter" ? BrainCircuit : WandSparkles;
 
   return (
-    <span className={cn("inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold", tone)}>
+    <span
+      className={cn(
+        "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold",
+        tone,
+      )}
+    >
       <Icon className="h-3 w-3" />
       {label ?? provider}
     </span>
   );
 }
 
-export function TranscriptPrecisionBadge({ precision }: { precision?: TranscriptPrecision | null }) {
+export function TranscriptPrecisionBadge({
+  precision,
+}: {
+  precision?: TranscriptPrecision | null;
+}) {
   const value = precision ?? "none";
   const label =
     value === "word"
@@ -81,14 +103,23 @@ export function TranscriptPrecisionBadge({ precision }: { precision?: Transcript
         : "border-red-400/25 bg-red-400/10 text-red-200";
 
   return (
-    <span className={cn("inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold", tone)}>
+    <span
+      className={cn(
+        "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold",
+        tone,
+      )}
+    >
       <FileText className="h-3 w-3" />
       {label}
     </span>
   );
 }
 
-export function BoundaryConfidenceBadge({ confidence }: { confidence?: BoundaryConfidence | null }) {
+export function BoundaryConfidenceBadge({
+  confidence,
+}: {
+  confidence?: BoundaryConfidence | null;
+}) {
   const value = confidence ?? "low";
   const tone =
     value === "high"
@@ -98,8 +129,17 @@ export function BoundaryConfidenceBadge({ confidence }: { confidence?: BoundaryC
         : "border-red-400/25 bg-red-400/10 text-red-200";
 
   return (
-    <span className={cn("inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold capitalize", tone)}>
-      {value === "high" ? <BadgeCheck className="h-3 w-3" /> : <AlertTriangle className="h-3 w-3" />}
+    <span
+      className={cn(
+        "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold capitalize",
+        tone,
+      )}
+    >
+      {value === "high" ? (
+        <BadgeCheck className="h-3 w-3" />
+      ) : (
+        <AlertTriangle className="h-3 w-3" />
+      )}
       {value} boundary
     </span>
   );
@@ -123,7 +163,12 @@ export function ViralityScoreBadge({ score }: { score?: number | null }) {
         : "from-orange-500 to-red-500";
 
   return (
-    <span className={cn("inline-flex items-center gap-1.5 rounded-full bg-gradient-to-r px-2.5 py-1 text-[11px] font-bold text-white shadow-sm", tone)}>
+    <span
+      className={cn(
+        "inline-flex items-center gap-1.5 rounded-full bg-gradient-to-r px-2.5 py-1 text-[11px] font-bold text-white shadow-sm",
+        tone,
+      )}
+    >
       <Flame className="h-3 w-3" />
       {Math.round(score)}/100
     </span>
@@ -140,7 +185,11 @@ export function ClipTypeBadge({ type }: { type?: string | null }) {
   );
 }
 
-export function PlatformFitChips({ platformFit }: { platformFit?: Record<string, unknown> | null }) {
+export function PlatformFitChips({
+  platformFit,
+}: {
+  platformFit?: Record<string, unknown> | null;
+}) {
   const platforms = [
     ["youtubeShorts", "Shorts"],
     ["instagramReels", "Reels"],
@@ -151,7 +200,8 @@ export function PlatformFitChips({ platformFit }: { platformFit?: Record<string,
   return (
     <div className="flex flex-wrap gap-1.5">
       {platforms.map(([key, label]) => {
-        const score = typeof platformFit?.[key] === "number" ? Math.round(platformFit[key] as number) : null;
+        const score =
+          typeof platformFit?.[key] === "number" ? Math.round(platformFit[key] as number) : null;
         const strong = score !== null && score >= 75;
         return (
           <span
@@ -160,10 +210,11 @@ export function PlatformFitChips({ platformFit }: { platformFit?: Record<string,
               "rounded-full border px-2 py-0.5 text-[10px] font-semibold",
               strong
                 ? "border-emerald-400/25 bg-emerald-400/10 text-emerald-200"
-                : "border-border/60 bg-muted/30 text-muted-foreground"
+                : "border-border/60 bg-muted/30 text-muted-foreground",
             )}
           >
-            {label}{score !== null ? ` ${score}` : ""}
+            {label}
+            {score !== null ? ` ${score}` : ""}
           </span>
         );
       })}
@@ -171,7 +222,11 @@ export function PlatformFitChips({ platformFit }: { platformFit?: Record<string,
   );
 }
 
-export function ReviewStatusBadge({ status }: { status: "needs_review" | "approved" | "rejected" | "export_ready" }) {
+export function ReviewStatusBadge({
+  status,
+}: {
+  status: "needs_review" | "approved" | "rejected" | "export_ready";
+}) {
   const copy = {
     needs_review: "Needs review",
     approved: "Approved",
@@ -186,8 +241,17 @@ export function ReviewStatusBadge({ status }: { status: "needs_review" | "approv
   }[status];
 
   return (
-    <span className={cn("inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold", tone)}>
-      {status === "needs_review" ? <Clock3 className="h-3 w-3" /> : <CheckCircle2 className="h-3 w-3" />}
+    <span
+      className={cn(
+        "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold",
+        tone,
+      )}
+    >
+      {status === "needs_review" ? (
+        <Clock3 className="h-3 w-3" />
+      ) : (
+        <CheckCircle2 className="h-3 w-3" />
+      )}
       {copy}
     </span>
   );
@@ -215,17 +279,40 @@ export function ProcessingStepTimeline({
       <div className="mb-4 flex items-center justify-between gap-3">
         <div>
           <p className="text-sm font-semibold text-foreground">AI clipping pipeline</p>
-          <p className="mt-1 text-xs text-muted-foreground">Visible progress from source media to editable clips.</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Visible progress from source media to editable clips.
+          </p>
         </div>
-        {active ? <Loader2 className="h-4 w-4 animate-spin text-emerald-300" /> : complete ? <CheckCircle2 className="h-4 w-4 text-emerald-300" /> : <Sparkles className="h-4 w-4 text-muted-foreground" />}
+        {active ? (
+          <Loader2 className="h-4 w-4 animate-spin text-emerald-300" />
+        ) : complete ? (
+          <CheckCircle2 className="h-4 w-4 text-emerald-300" />
+        ) : (
+          <Sparkles className="h-4 w-4 text-muted-foreground" />
+        )}
       </div>
       <div className="grid gap-2 md:grid-cols-7">
         {steps.map((step, index) => {
           const isLit = complete || (active && index <= 4);
           return (
-            <div key={step} className="flex min-h-20 flex-col justify-between rounded-xl border border-border/60 bg-black/20 p-3">
-              <div className={cn("h-1.5 w-8 rounded-full", isLit ? "bg-gradient-to-r from-emerald-400 to-cyan-400" : "bg-muted")} />
-              <p className={cn("mt-3 text-[11px] font-semibold leading-4", isLit ? "text-foreground" : "text-muted-foreground/50")}>{step}</p>
+            <div
+              key={step}
+              className="flex min-h-20 flex-col justify-between rounded-xl border border-border/60 bg-black/20 p-3"
+            >
+              <div
+                className={cn(
+                  "h-1.5 w-8 rounded-full",
+                  isLit ? "bg-gradient-to-r from-emerald-400 to-cyan-400" : "bg-muted",
+                )}
+              />
+              <p
+                className={cn(
+                  "mt-3 text-[11px] font-semibold leading-4",
+                  isLit ? "text-foreground" : "text-muted-foreground/50",
+                )}
+              >
+                {step}
+              </p>
             </div>
           );
         })}
@@ -234,15 +321,25 @@ export function ProcessingStepTimeline({
   );
 }
 
-export function QualityDiagnosticsPanel({ analytics }: { analytics?: AutoHighlightsAnalytics | null }) {
+export function QualityDiagnosticsPanel({
+  analytics,
+}: {
+  analytics?: AutoHighlightsAnalytics | null;
+}) {
   if (!analytics) return null;
   const boundary = analytics.boundaryConfidenceCounts;
   const stats = [
     ["Candidates", analytics.candidatesGenerated],
     ["Reranked", analytics.candidatesReranked],
     ["Clips", analytics.clipsCreated],
-    ["Avg score", analytics.averageViralityScore == null ? null : Math.round(analytics.averageViralityScore)],
-    ["Avg length", analytics.averageClipDurationSec == null ? null : `${analytics.averageClipDurationSec}s`],
+    [
+      "Avg score",
+      analytics.averageViralityScore == null ? null : Math.round(analytics.averageViralityScore),
+    ],
+    [
+      "Avg length",
+      analytics.averageClipDurationSec == null ? null : `${analytics.averageClipDurationSec}s`,
+    ],
     ["Preview fails", analytics.previewFailures ?? 0],
   ];
 
@@ -251,7 +348,9 @@ export function QualityDiagnosticsPanel({ analytics }: { analytics?: AutoHighlig
       <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <p className="text-sm font-semibold text-foreground">Quality diagnostics</p>
-          <p className="mt-1 text-xs text-muted-foreground">Generated from the latest auto-highlight run.</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Generated from the latest auto-highlight run.
+          </p>
         </div>
         <div className="flex flex-wrap gap-2">
           <TranscriptPrecisionBadge precision={analytics.transcriptPrecision} />
@@ -262,7 +361,9 @@ export function QualityDiagnosticsPanel({ analytics }: { analytics?: AutoHighlig
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
         {stats.map(([label, value]) => (
           <div key={label} className="rounded-xl border border-border/60 bg-black/20 p-3">
-            <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/50">{label}</p>
+            <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/50">
+              {label}
+            </p>
             <p className="mt-2 text-lg font-semibold text-foreground">{value ?? "N/A"}</p>
           </div>
         ))}
@@ -310,15 +411,31 @@ export function EmptyStateCard({
 
 export function getClipMetadata(clip?: ProjectClip | null) {
   const metadata = clip?.viralityFactors?.metadata ?? {};
-  const stringValue = (key: string) => typeof metadata[key] === "string" ? metadata[key] as string : null;
+  const stringValue = (key: string) =>
+    typeof metadata[key] === "string" ? (metadata[key] as string) : null;
   return {
     boundaryConfidence: stringValue("boundaryConfidence") as BoundaryConfidence | null,
     boundaryPrecision: stringValue("boundaryPrecision") as TranscriptPrecision | null,
     candidateType: stringValue("candidateType"),
     viralReason: stringValue("viralReason"),
-    platformFit: typeof metadata.platformFit === "object" && metadata.platformFit !== null
-      ? metadata.platformFit as Record<string, unknown>
-      : null,
+    boundaryReasons: Array.isArray(metadata.boundaryReasons)
+      ? (metadata.boundaryReasons.filter((item) => typeof item === "string") as string[])
+      : [],
+    candidateReasons: Array.isArray(metadata.candidateReasons)
+      ? (metadata.candidateReasons.filter((item) => typeof item === "string") as string[])
+      : [],
+    editingNotes: Array.isArray(metadata.editingNotes)
+      ? (metadata.editingNotes.filter((item) => typeof item === "string") as string[])
+      : [],
+    deterministicScore:
+      typeof metadata.deterministicScore === "number" ? metadata.deterministicScore : null,
+    selectionScore: typeof metadata.selectionScore === "number" ? metadata.selectionScore : null,
+    llmScore: typeof metadata.llmScore === "number" ? metadata.llmScore : null,
+    candidateId: stringValue("candidateId"),
+    platformFit:
+      typeof metadata.platformFit === "object" && metadata.platformFit !== null
+        ? (metadata.platformFit as Record<string, unknown>)
+        : null,
     providerTranscription: stringValue("providerTranscription"),
     providerReasoning: stringValue("providerReasoning"),
   };

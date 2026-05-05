@@ -10,22 +10,43 @@ import type { ExportRecord, ExportStatus } from '@/lib/types';
 
 export interface CreateExportData {
   projectId: string;
+  userId?: string | null;
   clipIds: string[];
   preset: string;
   includeCaptions?: boolean;
+  progress?: number;
+  phase?: string | null;
+  outputFormat?: string;
+  platformPreset?: string | null;
+  aspectRatio?: string | null;
+  captionTrackId?: string | null;
+  layoutPreset?: string | null;
   status?: ExportStatus;
   outputPath?: string;
   storagePath?: string;
   error?: string | null;
+  metadata?: Record<string, unknown> | null;
+  startedAt?: Date | null;
+  completedAt?: Date | null;
 }
 
 export interface UpdateExportData {
   status?: ExportStatus;
+  progress?: number;
+  phase?: string | null;
   clipIds?: string[];
   includeCaptions?: boolean;
+  outputFormat?: string;
+  platformPreset?: string | null;
+  aspectRatio?: string | null;
+  captionTrackId?: string | null;
+  layoutPreset?: string | null;
   outputPath?: string;
   storagePath?: string;
   error?: string | null;
+  metadata?: Record<string, unknown> | null;
+  startedAt?: Date | null;
+  completedAt?: Date | null;
 }
 
 export interface IExportRepository {

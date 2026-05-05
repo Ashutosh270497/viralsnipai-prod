@@ -6,21 +6,32 @@ import { ArrowLeft, Download, Film, Languages, Loader2, Mic } from "lucide-react
 
 import { useRepurpose } from "@/components/repurpose/repurpose-context";
 import { ExportPanel } from "@/components/repurpose/export-panel";
-import { AppCard, EmptyState as ProductEmptyState, PageHeader } from "@/components/product-ui/primitives";
+import { SocialPublishComposer } from "@/components/repurpose/social-publish-composer";
+import {
+  AppCard,
+  EmptyState as ProductEmptyState,
+  PageHeader,
+} from "@/components/product-ui/primitives";
 import { TranslateTranscriptDialog } from "@/components/repurpose/translate-transcript-dialog";
 import { VoiceTranslateDialog } from "@/components/repurpose/voice-translate-dialog";
 import { TranslationsList } from "@/components/repurpose/translations-list";
 import { VoiceTranslationsList } from "@/components/repurpose/voice-translations-list";
 import { cn } from "@/lib/utils";
-import { EXPORT_PRESETS } from "@clippers/types";
 import {
   BoundaryConfidenceBadge,
   ClipTypeBadge,
   EmptyStateCard,
   PlatformFitChips,
+  ReviewStatusBadge,
   ViralityScoreBadge,
   getClipMetadata,
 } from "@/components/repurpose/quality-indicators";
+import { getDefaultExportClipIds, getExportEligibleClips } from "@/lib/repurpose/review-workflow";
+import {
+  PLATFORM_EXPORT_PRESETS,
+  PLATFORM_EXPORT_PRESET_VALUES,
+  type PlatformExportPresetId,
+} from "@/lib/repurpose/export-presets";
 
 /** Compute a human-readable ratio string from pixel dimensions (e.g. 1080×1920 → "9:16") */
 function ratioLabel(w: number, h: number): string {
@@ -42,25 +53,37 @@ export default function RepurposeExportPage() {
     isLoading,
   } = useRepurpose();
 
-  const [translateOpen, setTranslateOpen]           = useState(false);
+  const [translateOpen, setTranslateOpen] = useState(false);
   const [voiceTranslateOpen, setVoiceTranslateOpen] = useState(false);
-  const [translationsKey, setTranslationsKey]       = useState(0);
-  const [voiceKey, setVoiceKey]                     = useState(0);
-  const [selectedPreset, setSelectedPreset]         = useState<string>("shorts_9x16_1080");
+  const [translationsKey, setTranslationsKey] = useState(0);
+  const [voiceKey, setVoiceKey] = useState(0);
+  const [selectedPlatformPreset, setSelectedPlatformPreset] =
+    useState<PlatformExportPresetId>("youtube_shorts");
+  const selectedPreset = PLATFORM_EXPORT_PRESETS[selectedPlatformPreset].legacyPreset;
+  const setSelectedPreset = (preset: string) => {
+    const match = PLATFORM_EXPORT_PRESET_VALUES.find(
+      (id) => PLATFORM_EXPORT_PRESETS[id].legacyPreset === preset,
+    );
+    if (match) setSelectedPlatformPreset(match);
+  };
+  const [showRejectedClips, setShowRejectedClips] = useState(false);
 
   // ── All hooks must come before any early returns (Rules of Hooks) ────────
   const selectedPresetConfig = useMemo(
-    () => EXPORT_PRESETS.find((p) => p.id === selectedPreset) ?? EXPORT_PRESETS[0],
-    [selectedPreset]
+    () => PLATFORM_EXPORT_PRESETS[selectedPlatformPreset],
+    [selectedPlatformPreset],
   );
 
   const previewClip = useMemo(
     () =>
       project?.clips.find((c) => selectedClipIds.includes(c.id)) ??
-      project?.clips[0] ??
+      project?.clips.find(
+        (c) => c.reviewStatus === "export_ready" || c.reviewStatus === "approved",
+      ) ??
+      project?.clips.find((c) => c.reviewStatus !== "rejected") ??
       null,
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [project?.clips, selectedClipIds]
+    [project?.clips, selectedClipIds],
   );
 
   // The first selected clip's SRT — used for .srt / .vtt downloads in the panel.
@@ -76,18 +99,29 @@ export default function RepurposeExportPage() {
   }, [project?.clips, selectedClipIds]);
 
   const pendingExportCount = useMemo(
-    () =>
-      project?.exports.filter((e) => e.status !== "done" && e.status !== "failed").length ?? 0,
+    () => project?.exports.filter((e) => e.status !== "done" && e.status !== "failed").length ?? 0,
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [project?.exports]
+    [project?.exports],
   );
 
   useEffect(() => {
     if (pendingExportCount === 0) return;
-    const timer = setInterval(() => { invalidate(); }, 5000);
+    const timer = setInterval(() => {
+      invalidate();
+    }, 5000);
     return () => clearInterval(timer);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendingExportCount]);
+
+  const defaultExportReadyIds = useMemo(
+    () => getDefaultExportClipIds(project?.clips ?? []),
+    [project?.clips],
+  );
+
+  useEffect(() => {
+    if (!project || selectedClipIds.length > 0 || defaultExportReadyIds.length === 0) return;
+    setSelectedClipIds(defaultExportReadyIds);
+  }, [defaultExportReadyIds, project, selectedClipIds.length, setSelectedClipIds]);
 
   // ── Guard states (after all hooks) ───────────────────────────────────────
   if (projects.length === 0)
@@ -112,11 +146,20 @@ export default function RepurposeExportPage() {
     );
 
   if (isLoading)
-    return <GlassCard title="Loading export data" description="Fetching clips, exports, and translation state…" loading />;
+    return (
+      <GlassCard
+        title="Loading export data"
+        description="Fetching clips, exports, and translation state…"
+        loading
+      />
+    );
 
   if (!project)
     return (
-      <GlassCard title="Project unavailable" description="The selected project could not be loaded. Pick another project to continue.">
+      <GlassCard
+        title="Project unavailable"
+        description="The selected project could not be loaded. Pick another project to continue."
+      >
         <button
           onClick={() => setProjectId("")}
           className="mt-4 flex items-center gap-2 px-4 py-2 rounded-lg border border-border/50 bg-muted/40 hover:bg-muted/60 text-sm font-medium transition-colors text-foreground"
@@ -128,7 +171,10 @@ export default function RepurposeExportPage() {
 
   if (project.assets.length === 0)
     return (
-      <GlassCard title="No media found" description="Ingest a YouTube video or upload a file before exporting.">
+      <GlassCard
+        title="No media found"
+        description="Ingest a YouTube video or upload a file before exporting."
+      >
         <Link
           href={`/repurpose?projectId=${project.id}`}
           className="mt-4 inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground font-medium text-sm transition-colors"
@@ -142,15 +188,25 @@ export default function RepurposeExportPage() {
   const sourceLang =
     normalizedLang && /^[a-z]{2}(-[a-z]{2})?$/.test(normalizedLang) ? normalizedLang : "en";
   const doneExports = project.exports.filter((e) => e.status === "done");
-  const selectedClips = project.clips.filter((clip) => selectedClipIds.includes(clip.id));
-  const exportReadyClips = selectedClips.length > 0 ? selectedClips : project.clips;
-  const estimatedDurationSec = Math.round(
-    exportReadyClips.reduce((sum, clip) => sum + Math.max(0, clip.endMs - clip.startMs), 0) / 1000
+  const eligibleExportClips = getExportEligibleClips(project.clips, showRejectedClips);
+  const eligibleClipIds = new Set(eligibleExportClips.map((clip) => clip.id));
+  const selectedForExportIds = selectedClipIds.filter((id) => eligibleClipIds.has(id));
+  const selectedClips = eligibleExportClips.filter((clip) =>
+    selectedForExportIds.includes(clip.id),
   );
-  const selectedClipsHaveHookOverlays = selectedClipIds.some((clipId) => {
+  const exportReadyClips = selectedClips.length > 0 ? selectedClips : eligibleExportClips;
+  const estimatedDurationSec = Math.round(
+    exportReadyClips.reduce((sum, clip) => sum + Math.max(0, clip.endMs - clip.startMs), 0) / 1000,
+  );
+  const selectedClipsHaveHookOverlays = selectedForExportIds.some((clipId) => {
     const clip = project.clips.find((entry) => entry.id === clipId);
     return Boolean(clip?.captionStyle?.hookOverlays?.length);
   });
+  const approvedCount = project.clips.filter((clip) => clip.reviewStatus === "approved").length;
+  const exportReadyCount = project.clips.filter(
+    (clip) => clip.reviewStatus === "export_ready",
+  ).length;
+  const rejectedCount = project.clips.filter((clip) => clip.reviewStatus === "rejected").length;
 
   // ── Render ──────────────────────────────────────────────────────────────────
   return (
@@ -162,23 +218,40 @@ export default function RepurposeExportPage() {
         icon={Download}
         actions={
           <div className="flex items-center gap-2">
-          {[
-            { label: "Total",    value: project.clips.length,  dim: false },
-            { label: "Selected", value: selectedClipIds.length, dim: selectedClipIds.length === 0 },
-            { label: "Exported", value: doneExports.length,    dim: false, accent: doneExports.length > 0 },
-          ].map((s) => (
-            <div key={s.label} className={cn(
-              "flex items-baseline gap-1.5 px-3 py-1.5 rounded-lg border text-sm",
-              s.accent
-                ? "border-emerald-500/25 bg-emerald-500/8 text-emerald-400"
-                : "border-border bg-muted/40 text-muted-foreground"
-            )}>
-              <span className={cn("font-bold tabular-nums", s.dim ? "text-muted-foreground/40" : "text-foreground")}>
-                {s.value}
-              </span>
-              <span className="text-[11px] uppercase tracking-wide">{s.label}</span>
-            </div>
-          ))}
+            {[
+              { label: "Total", value: project.clips.length, dim: false },
+              {
+                label: "Selected",
+                value: selectedForExportIds.length,
+                dim: selectedForExportIds.length === 0,
+              },
+              {
+                label: "Exported",
+                value: doneExports.length,
+                dim: false,
+                accent: doneExports.length > 0,
+              },
+            ].map((s) => (
+              <div
+                key={s.label}
+                className={cn(
+                  "flex items-baseline gap-1.5 px-3 py-1.5 rounded-lg border text-sm",
+                  s.accent
+                    ? "border-emerald-500/25 bg-emerald-500/8 text-emerald-400"
+                    : "border-border bg-muted/40 text-muted-foreground",
+                )}
+              >
+                <span
+                  className={cn(
+                    "font-bold tabular-nums",
+                    s.dim ? "text-muted-foreground/40" : "text-foreground",
+                  )}
+                >
+                  {s.value}
+                </span>
+                <span className="text-[11px] uppercase tracking-wide">{s.label}</span>
+              </div>
+            ))}
           </div>
         }
       />
@@ -186,12 +259,14 @@ export default function RepurposeExportPage() {
       <div className="grid gap-4 lg:grid-cols-4">
         {[
           ["Export-ready clips", exportReadyClips.length],
-          ["Selected clips", selectedClipIds.length],
+          ["Selected clips", selectedForExportIds.length],
           ["Total duration", `${estimatedDurationSec}s`],
           ["Ready downloads", doneExports.length],
         ].map(([label, value]) => (
           <div key={label} className="rounded-2xl border border-border/60 bg-card/60 p-4">
-            <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/50">{label}</p>
+            <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/50">
+              {label}
+            </p>
             <p className="mt-2 text-2xl font-semibold">{value}</p>
           </div>
         ))}
@@ -202,8 +277,30 @@ export default function RepurposeExportPage() {
           title="No export-ready clips yet"
           description="Run AI clipping first, then approve clips in the editor before rendering MP4s."
           action={
-            <Link href={`/repurpose?projectId=${project.id}`} className="inline-flex rounded-full bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground">
+            <Link
+              href={`/repurpose?projectId=${project.id}`}
+              className="inline-flex rounded-full bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground"
+            >
               Start AI clipping
+            </Link>
+          }
+        />
+      ) : null}
+
+      {project.clips.length > 0 && eligibleExportClips.length === 0 ? (
+        <EmptyStateCard
+          title={showRejectedClips ? "No clips available for export" : "No approved clips yet"}
+          description={
+            showRejectedClips
+              ? "This project has clips, but none are approved, export-ready, or rejected for manual inclusion."
+              : "Approve clips or mark them export ready in the editor before batch rendering. Rejected clips stay hidden from export by default."
+          }
+          action={
+            <Link
+              href={`/repurpose/editor?projectId=${project.id}`}
+              className="inline-flex rounded-full bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground"
+            >
+              Review clips
             </Link>
           }
         />
@@ -211,10 +308,8 @@ export default function RepurposeExportPage() {
 
       {/* ── Main grid ────────────────────────────────────────────────────────── */}
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_400px] lg:items-start">
-
         {/* ── LEFT: Export controls + Translation ──────────────────────────── */}
         <div className="space-y-5">
-
           {/* Export card */}
           <AppCard className="p-6">
             <div className="flex items-center justify-between mb-5">
@@ -222,24 +317,81 @@ export default function RepurposeExportPage() {
                 <Film className="h-4 w-4 text-primary" />
                 <h2 className="text-base font-semibold">Export Video</h2>
               </div>
-              {selectedClipIds.length > 0 && (
+              {selectedForExportIds.length > 0 && (
                 <span className="text-[11px] font-semibold px-2.5 py-1 rounded-full bg-primary/15 text-primary">
-                  {selectedClipIds.length} clip{selectedClipIds.length > 1 ? "s" : ""} selected
+                  {selectedForExportIds.length} clip{selectedForExportIds.length > 1 ? "s" : ""}{" "}
+                  selected
                 </span>
               )}
             </div>
 
+            <div className="mb-5 flex flex-wrap items-center gap-2">
+              <ReviewStatusBadge status="approved" />
+              <span className="text-xs text-muted-foreground">{approvedCount}</span>
+              <ReviewStatusBadge status="export_ready" />
+              <span className="text-xs text-muted-foreground">{exportReadyCount}</span>
+              <ReviewStatusBadge status="rejected" />
+              <span className="text-xs text-muted-foreground">{rejectedCount}</span>
+              <button
+                type="button"
+                onClick={() =>
+                  setSelectedClipIds(
+                    project.clips
+                      .filter((clip) => clip.reviewStatus === "approved")
+                      .map((clip) => clip.id),
+                  )
+                }
+                className="rounded-lg border border-border/60 bg-muted/30 px-3 py-1.5 text-xs font-semibold text-muted-foreground transition-colors hover:text-foreground"
+              >
+                Select approved
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  setSelectedClipIds(
+                    project.clips
+                      .filter((clip) => clip.reviewStatus === "export_ready")
+                      .map((clip) => clip.id),
+                  )
+                }
+                className="rounded-lg border border-border/60 bg-muted/30 px-3 py-1.5 text-xs font-semibold text-muted-foreground transition-colors hover:text-foreground"
+              >
+                Select export-ready
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedClipIds(eligibleExportClips.map((clip) => clip.id))}
+                className="rounded-lg border border-border/60 bg-muted/30 px-3 py-1.5 text-xs font-semibold text-muted-foreground transition-colors hover:text-foreground"
+              >
+                Select all eligible
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowRejectedClips((value) => !value)}
+                className={cn(
+                  "ml-auto rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors",
+                  showRejectedClips
+                    ? "border-red-500/25 bg-red-500/10 text-red-300"
+                    : "border-border/60 bg-muted/30 text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {showRejectedClips ? "Including rejected" : "Show rejected clips"}
+              </button>
+            </div>
+
             {/* No clips selected nudge */}
-            {project.clips.length > 0 && selectedClipIds.length === 0 && (
+            {eligibleExportClips.length > 0 && selectedForExportIds.length === 0 && (
               <div className="mb-5 flex items-center gap-3 rounded-xl border border-amber-500/20 bg-amber-500/[0.06] px-4 py-3">
                 <div className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" />
-                <p className="flex-1 text-sm text-amber-400/90">No clips selected</p>
+                <p className="flex-1 text-sm text-amber-400/90">
+                  No export clips selected. Approved and export-ready clips are available.
+                </p>
                 <div className="flex items-center gap-2 shrink-0">
                   <button
-                    onClick={() => setSelectedClipIds(project.clips.map((c) => c.id))}
+                    onClick={() => setSelectedClipIds(eligibleExportClips.map((c) => c.id))}
                     className="px-3 py-1.5 rounded-lg border border-border/50 bg-muted/40 hover:bg-muted/60 text-xs font-medium transition-colors text-foreground"
                   >
-                    Select all
+                    Select eligible
                   </button>
                   <Link
                     href={`/repurpose/editor?projectId=${project.id}`}
@@ -253,17 +405,27 @@ export default function RepurposeExportPage() {
 
             <ExportPanel
               projectId={project.id}
-              selectedClipIds={selectedClipIds}
+              selectedClipIds={selectedForExportIds}
               hasHookOverlays={selectedClipsHaveHookOverlays}
               exports={project.exports}
               onQueued={invalidate}
               selectedPreset={selectedPreset}
               onPresetChange={setSelectedPreset}
+              selectedPlatformPreset={selectedPlatformPreset}
+              onPlatformPresetChange={setSelectedPlatformPreset}
               captionSrt={selectedCaptionSrt}
               clipTitle={previewClip?.title}
               captionAnimationType={selectedCaptionAnimationType}
             />
           </AppCard>
+
+          <SocialPublishComposer
+            projectId={project.id}
+            selectedClipIds={selectedForExportIds}
+            clips={exportReadyClips}
+            exports={project.exports}
+            defaultPlatform={selectedPlatformPreset}
+          />
 
           <AppCard className="p-6">
             <div className="mb-4 flex items-center justify-between">
@@ -284,15 +446,19 @@ export default function RepurposeExportPage() {
                   <div key={clip.id} className="rounded-xl border border-border/60 bg-muted/20 p-3">
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                       <div className="min-w-0">
-                        <p className="truncate text-sm font-semibold">{clip.title || `Clip ${index + 1}`}</p>
+                        <p className="truncate text-sm font-semibold">
+                          {clip.title || `Clip ${index + 1}`}
+                        </p>
                         <p className="mt-1 text-xs text-muted-foreground">
-                          {Math.round((clip.endMs - clip.startMs) / 1000)}s · {clip.summary || "Social-ready clip"}
+                          {Math.round((clip.endMs - clip.startMs) / 1000)}s ·{" "}
+                          {clip.summary || "Social-ready clip"}
                         </p>
                       </div>
                       <div className="flex shrink-0 flex-wrap gap-1.5">
                         <ViralityScoreBadge score={clip.viralityScore} />
                         <BoundaryConfidenceBadge confidence={metadata.boundaryConfidence} />
                         <ClipTypeBadge type={metadata.candidateType} />
+                        <ReviewStatusBadge status={clip.reviewStatus ?? "needs_review"} />
                       </div>
                     </div>
                     <div className="mt-3">
@@ -326,7 +492,9 @@ export default function RepurposeExportPage() {
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-semibold text-foreground">Translate Transcript</p>
-                      <p className="text-xs text-muted-foreground/60 mt-0.5">Generate subtitle translations in any language</p>
+                      <p className="text-xs text-muted-foreground/60 mt-0.5">
+                        Generate subtitle translations in any language
+                      </p>
                     </div>
                     <div className="shrink-0 h-4 w-4 rounded-full border-2 border-primary/40 flex items-center justify-center">
                       <div className="w-2 h-2 rounded-full bg-primary" />
@@ -343,14 +511,18 @@ export default function RepurposeExportPage() {
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-semibold text-foreground">Translate Voice</p>
-                        <p className="text-xs text-muted-foreground/60 mt-0.5">AI-dubbed video in target language</p>
+                        <p className="text-xs text-muted-foreground/60 mt-0.5">
+                          AI-dubbed video in target language
+                        </p>
                       </div>
                       <div className="shrink-0 h-4 w-4 rounded-full border-2 border-border/50" />
                     </button>
                   )}
                 </div>
 
-                {primaryAsset?.id && <TranslationsList key={translationsKey} assetId={primaryAsset.id} />}
+                {primaryAsset?.id && (
+                  <TranslationsList key={translationsKey} assetId={primaryAsset.id} />
+                )}
                 {primaryAsset?.id && primaryAsset.type === "video" && (
                   <VoiceTranslationsList key={voiceKey} assetId={primaryAsset.id} />
                 )}
@@ -368,10 +540,8 @@ export default function RepurposeExportPage() {
 
         {/* ── RIGHT: Format + Preview (sticky sidebar) ─────────────────────── */}
         <div className="lg:sticky lg:top-6 space-y-4">
-
           {/* Format picker + Preview unified card */}
           <AppCard className="overflow-hidden">
-
             {/* Format section */}
             <div className="p-5 border-b border-border/40">
               <div className="flex items-center justify-between mb-3">
@@ -385,32 +555,40 @@ export default function RepurposeExportPage() {
               </div>
 
               <div className="space-y-1.5">
-                {EXPORT_PRESETS.map((preset) => {
-                  const ratio = ratioLabel(preset.width, preset.height);
-                  const active = selectedPreset === preset.id;
+                {PLATFORM_EXPORT_PRESET_VALUES.map((presetId) => {
+                  const preset = PLATFORM_EXPORT_PRESETS[presetId];
+                  const ratio = preset.aspectRatio;
+                  const active = selectedPlatformPreset === preset.id;
                   return (
                     <button
                       key={preset.id}
-                      onClick={() => setSelectedPreset(preset.id)}
+                      onClick={() => setSelectedPlatformPreset(preset.id)}
                       className={cn(
                         "w-full text-left px-3.5 py-2.5 rounded-xl border transition-all flex items-center justify-between gap-3",
                         active
                           ? "border-emerald-500/30 bg-emerald-500/[0.10]"
-                          : "border-border bg-muted/20 hover:bg-muted/40 hover:border-border"
+                          : "border-border bg-muted/20 hover:bg-muted/40 hover:border-border",
                       )}
                     >
                       <div className="min-w-0">
-                        <p className={cn("text-[13px] font-medium leading-tight", active ? "text-foreground" : "text-muted-foreground")}>
+                        <p
+                          className={cn(
+                            "text-[13px] font-medium leading-tight",
+                            active ? "text-foreground" : "text-muted-foreground",
+                          )}
+                        >
                           {preset.label}
                         </p>
                         <p className="text-[10px] text-muted-foreground/40 mt-0.5 tabular-nums">
                           {preset.width}×{preset.height} · {ratio}
                         </p>
                       </div>
-                      <div className={cn(
-                        "w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0",
-                        active ? "border-emerald-500" : "border-border/50"
-                      )}>
+                      <div
+                        className={cn(
+                          "w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0",
+                          active ? "border-emerald-500" : "border-border/50",
+                        )}
+                      >
                         {active && <div className="w-2 h-2 rounded-full bg-emerald-500" />}
                       </div>
                     </button>
@@ -439,8 +617,8 @@ export default function RepurposeExportPage() {
                       selectedPresetConfig.height > selectedPresetConfig.width
                         ? "220px"
                         : selectedPresetConfig.width === selectedPresetConfig.height
-                        ? "280px"
-                        : "100%",
+                          ? "280px"
+                          : "100%",
                     width: "100%",
                   }}
                 >
@@ -449,13 +627,18 @@ export default function RepurposeExportPage() {
                       key={`${previewClip.id}-${selectedPreset}`}
                       src={previewClip.previewPath}
                       className="w-full h-full object-contain"
-                      autoPlay loop muted playsInline
+                      autoPlay
+                      loop
+                      muted
+                      playsInline
                     />
                   ) : (
                     <div className="flex h-full flex-col items-center justify-center gap-2">
                       <Film className="h-6 w-6 text-muted-foreground/20" />
                       <p className="text-[10px] text-muted-foreground/25 text-center px-4">
-                        {selectedClipIds.length === 0 ? "Select clips to preview" : "No preview available"}
+                        {selectedClipIds.length === 0
+                          ? "Select clips to preview"
+                          : "No preview available"}
                       </p>
                     </div>
                   )}

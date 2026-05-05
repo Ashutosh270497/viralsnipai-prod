@@ -6,14 +6,14 @@
  * @module IClipRepository
  */
 
-import type { Clip, CreateClipData, UpdateClipData } from '@/lib/types';
+import type { Clip, ClipReviewStatus, CreateClipData, UpdateClipData } from "@/lib/types";
 
 export interface FindClipsOptions {
   projectId?: string;
   assetId?: string;
   minViralityScore?: number;
-  sortBy?: 'viralityScore' | 'createdAt';
-  sortOrder?: 'asc' | 'desc';
+  sortBy?: "viralityScore" | "createdAt";
+  sortOrder?: "asc" | "desc";
   limit?: number;
   offset?: number;
 }
@@ -68,7 +68,9 @@ export interface IClipRepository {
    * @param clips - Array of clip data
    * @returns Array of created clips
    */
-  createMany(clips: Array<CreateClipData & { projectId: string; assetId: string }>): Promise<Clip[]>;
+  createMany(
+    clips: Array<CreateClipData & { projectId: string; assetId: string }>,
+  ): Promise<Clip[]>;
 
   /**
    * Update an existing clip
@@ -87,7 +89,19 @@ export interface IClipRepository {
    * @param data - Updated fields
    * @returns Updated clip, or null when the version is stale or the clip is missing
    */
-  updateWithVersion(id: string, expectedVersion: number, data: UpdateClipData): Promise<Clip | null>;
+  updateWithVersion(
+    id: string,
+    expectedVersion: number,
+    data: UpdateClipData,
+  ): Promise<Clip | null>;
+
+  /**
+   * Update the review workflow status for a clip.
+   * @param id - Clip ID
+   * @param reviewStatus - New review status
+   * @returns Updated clip
+   */
+  updateReviewStatus(id: string, reviewStatus: ClipReviewStatus): Promise<Clip>;
 
   /**
    * Delete a clip

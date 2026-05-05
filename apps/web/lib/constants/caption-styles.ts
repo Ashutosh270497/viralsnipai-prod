@@ -33,9 +33,9 @@ export interface AggressivenessLevel {
 export const CAPTION_STYLES: readonly CaptionStyle[] = [
   {
     id: "modern",
-    name: "Modern",
+    name: "Minimal Clean",
     description: "Clean, professional look with subtle highlights",
-    preview: "💼 Professional",
+    preview: "Professional",
     colors: {
       power: "#FFD700",
       number: "#00FF88",
@@ -44,9 +44,9 @@ export const CAPTION_STYLES: readonly CaptionStyle[] = [
   },
   {
     id: "viral",
-    name: "Viral",
-    description: "Aggressive highlights with animations for maximum attention",
-    preview: "🔥 Attention-Grabbing",
+    name: "Hormozi Bold",
+    description: "Bold high-contrast captions for fast short-form hooks",
+    preview: "Attention-Grabbing",
     colors: {
       power: "#FFD700",
       number: "#00FF88",
@@ -55,9 +55,9 @@ export const CAPTION_STYLES: readonly CaptionStyle[] = [
   },
   {
     id: "minimal",
-    name: "Minimal",
+    name: "Podcast Subtitle",
     description: "Subtle emphasis without colors, focus on typography",
-    preview: "✨ Clean & Simple",
+    preview: "Clean & Simple",
     colors: {
       power: "#FFFFFF",
       number: "#FFFFFF",
@@ -66,9 +66,9 @@ export const CAPTION_STYLES: readonly CaptionStyle[] = [
   },
   {
     id: "gaming",
-    name: "Gaming",
+    name: "Gaming Reaction",
     description: "Bold, energetic style with strong highlights",
-    preview: "🎮 Energetic",
+    preview: "Energetic",
     colors: {
       power: "#FF0000",
       number: "#00FF00",
@@ -77,13 +77,46 @@ export const CAPTION_STYLES: readonly CaptionStyle[] = [
   },
   {
     id: "business",
-    name: "Business",
+    name: "News Explainer",
     description: "Professional look with conservative highlights",
-    preview: "📊 Corporate",
+    preview: "Corporate",
     colors: {
       power: "#4A90E2",
       number: "#50C878",
       emotion: "#E94B3C"
+    }
+  },
+  {
+    id: "karaoke",
+    name: "Karaoke Highlight",
+    description: "Word-by-word emphasis for high-retention clips",
+    preview: "Word Highlight",
+    colors: {
+      power: "#FFFFFF",
+      number: "#38BDF8",
+      emotion: "#FACC15"
+    }
+  },
+  {
+    id: "creator_pop",
+    name: "Creator Pop",
+    description: "Bright creator-style captions with punchy emphasis",
+    preview: "Creator Pop",
+    colors: {
+      power: "#FFFFFF",
+      number: "#22C55E",
+      emotion: "#F97316"
+    }
+  },
+  {
+    id: "none",
+    name: "No Captions",
+    description: "Disable burned captions while keeping downloadable SRT/VTT",
+    preview: "Clean Video",
+    colors: {
+      power: "#FFFFFF",
+      number: "#FFFFFF",
+      emotion: "#FFFFFF"
     }
   }
 ] as const;

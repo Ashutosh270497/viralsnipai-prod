@@ -13,6 +13,7 @@
  */
 
 import { injectable, optional } from 'inversify';
+import "openai/shims/node";
 import OpenAI from 'openai';
 import fs from 'fs';
 import path from 'path';

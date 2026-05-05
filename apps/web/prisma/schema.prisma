@@ -49,7 +49,15 @@ model User {
   contentGoal       String?    // 'more_reach', 'more_leads', 'faster_editing', 'repurpose_long_form', 'personal_brand'
 
   projects     Project[]
+  ownedWorkspaces Workspace[] @relation("WorkspaceOwner")
+  workspaceMemberships WorkspaceMember[]
+  apiKeys      ApiKey[]
   brandKit     BrandKit?
+  brandTemplates BrandTemplate[]
+  socialPosts  SocialPost[]
+  socialAccounts SocialAccount[]
+  clipComments ClipComment[]
+  clipFeedback ClipFeedback[]
   accounts     Account[]
   sessions     Session[]
   transcriptJobs TranscriptJob[]
@@ -107,6 +115,8 @@ model Project {
   id           String    @id @default(cuid())
   userId       String
   user         User      @relation(fields: [userId], references: [id])
+  workspaceId  String?
+  workspace    Workspace? @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
   title        String
   topic        String?
   sourceUrl    String?
@@ -122,11 +132,14 @@ model Project {
   assets       Asset[]
   clips        Clip[]
   exports      Export[]
+  socialPosts  SocialPost[]
+  shareLinks   ShareLink[]
   youtubeIngestJobs YouTubeIngestJob[]
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 
   @@index([userId])
+  @@index([workspaceId])
   @@index([userId, status])
   @@index([userId, updatedAt])
 }
@@ -183,7 +196,14 @@ model Clip {
   viralityFactors     Json?
   order               Int                  @default(0)
   version             Int                  @default(1)
+  reviewStatus        String               @default("needs_review")
+  editOperations      ClipEditOperation[]
+  enhancements        ClipEnhancement[]
   captionTranslations CaptionTranslation[]
+  socialPosts         SocialPost[]
+  shareLinks          ShareLink[]
+  comments            ClipComment[]
+  feedback            ClipFeedback[]
   createdAt           DateTime             @default(now())
   updatedAt           DateTime             @updatedAt
 
@@ -192,26 +212,74 @@ model Clip {
   @@index([projectId, assetId])
   @@index([projectId, viralityScore(sort: Desc)])
   @@index([projectId, order])
+  @@index([projectId, reviewStatus])
   @@index([id, version])
+}
+
+model ClipEditOperation {
+  id        String   @id @default(cuid())
+  clipId    String
+  clip      Clip     @relation(fields: [clipId], references: [id], onDelete: Cascade)
+  type      String
+  startMs   Int?
+  endMs     Int?
+  payload   Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([clipId])
+  @@index([clipId, createdAt])
+  @@index([type])
+}
+
+model ClipEnhancement {
+  id        String   @id @default(cuid())
+  clipId    String
+  clip      Clip     @relation(fields: [clipId], references: [id], onDelete: Cascade)
+  type      String
+  startMs   Int
+  endMs     Int
+  payload   Json
+  enabled   Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([clipId])
+  @@index([clipId, enabled])
+  @@index([type])
 }
 
 model Export {
   id         String   @id @default(cuid())
   projectId  String
   project    Project  @relation(fields: [projectId], references: [id])
+  userId     String?
   clipIds    Json
   preset     String
   includeCaptions Boolean @default(false)
+  progress   Int      @default(0)
+  phase      String?
+  outputFormat String @default("mp4")
+  platformPreset String?
+  aspectRatio String?
+  captionTrackId String?
+  layoutPreset String?
   outputPath String
   storagePath String
   status     String   @default("queued")
   error      String?
+  metadata   Json?
+  socialPosts SocialPost[]
+  startedAt  DateTime?
+  completedAt DateTime?
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
   @@index([projectId])
+  @@index([userId])
   @@index([status])
   @@index([projectId, status])
+  @@index([userId, status])
 }
 
 model BrandKit {
@@ -226,6 +294,227 @@ model BrandKit {
   watermark    Boolean @default(true)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
+}
+
+model BrandTemplate {
+  id                     String   @id @default(cuid())
+  userId                 String
+  user                   User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspaceId            String?
+  workspace              Workspace? @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+  name                   String
+  description            String?
+  isDefault              Boolean  @default(false)
+  captionStyle           Json?
+  layoutConfig           Json?
+  overlayStyle           Json?
+  logoAssetId            String?
+  logoUrl                String?
+  watermarkConfig        Json?
+  introConfig            Json?
+  outroConfig            Json?
+  defaultCTA             String?
+  defaultPlatformPresets Json?
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  @@index([userId])
+  @@index([workspaceId])
+  @@index([userId, isDefault])
+  @@index([userId, updatedAt])
+}
+
+model Workspace {
+  id              String            @id @default(cuid())
+  name            String
+  ownerId         String
+  owner           User              @relation("WorkspaceOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  plan            String            @default("free")
+  projects        Project[]
+  members         WorkspaceMember[]
+  apiKeys         ApiKey[]
+  brandTemplates  BrandTemplate[]
+  socialPosts     SocialPost[]
+  clipFeedback    ClipFeedback[]
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  @@index([ownerId])
+  @@index([plan])
+}
+
+model WorkspaceMember {
+  id          String    @id @default(cuid())
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role        String
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([workspaceId, userId])
+  @@index([workspaceId])
+  @@index([userId])
+  @@index([role])
+}
+
+model ApiKey {
+  id          String     @id @default(cuid())
+  userId      String
+  user        User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspaceId String?
+  workspace   Workspace? @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+  name        String
+  keyHash     String     @unique
+  prefix      String
+  scopes      String[]
+  status      String     @default("active")
+  lastUsedAt  DateTime?
+  createdAt   DateTime   @default(now())
+  revokedAt   DateTime?
+
+  @@index([userId])
+  @@index([workspaceId])
+  @@index([status])
+  @@index([prefix])
+}
+
+model SocialPost {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspaceId String?
+  workspace   Workspace? @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+  projectId   String
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  clipId      String
+  clip        Clip     @relation(fields: [clipId], references: [id], onDelete: Cascade)
+  exportJobId String?
+  exportJob   Export?  @relation(fields: [exportJobId], references: [id], onDelete: SetNull)
+  platform    String
+  status      String   @default("draft")
+  title       String?
+  description String?  @db.Text
+  hashtags    Json?
+  cta         String?
+  thumbnailUrl String?
+  videoUrl    String?
+  scheduledAt DateTime?
+  publishedAt DateTime?
+  error       String?  @db.Text
+  metadata    Json?
+  scheduleJobs ScheduledPublishJob[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([userId])
+  @@index([workspaceId])
+  @@index([projectId])
+  @@index([clipId])
+  @@index([exportJobId])
+  @@index([platform])
+  @@index([status])
+  @@index([userId, status])
+  @@index([scheduledAt])
+}
+
+model ScheduledPublishJob {
+  id           String     @id @default(cuid())
+  socialPostId String
+  socialPost   SocialPost @relation(fields: [socialPostId], references: [id], onDelete: Cascade)
+  scheduledAt  DateTime
+  status       String     @default("scheduled")
+  attempts     Int        @default(0)
+  lastError    String?    @db.Text
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  @@index([socialPostId])
+  @@index([status])
+  @@index([scheduledAt])
+  @@index([status, scheduledAt])
+}
+
+model ShareLink {
+  id         String   @id @default(cuid())
+  projectId  String
+  project    Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  clipId     String?
+  clip       Clip?    @relation(fields: [clipId], references: [id], onDelete: Cascade)
+  token      String   @unique
+  permission String   @default("view")
+  expiresAt  DateTime?
+  comments   ClipComment[]
+  createdAt  DateTime @default(now())
+
+  @@index([projectId])
+  @@index([clipId])
+  @@index([permission])
+  @@index([expiresAt])
+}
+
+model ClipComment {
+  id          String     @id @default(cuid())
+  clipId      String
+  clip        Clip       @relation(fields: [clipId], references: [id], onDelete: Cascade)
+  userId      String?
+  user        User?      @relation(fields: [userId], references: [id], onDelete: SetNull)
+  shareLinkId String?
+  shareLink   ShareLink? @relation(fields: [shareLinkId], references: [id], onDelete: SetNull)
+  body        String     @db.Text
+  timestampMs Int?
+  createdAt   DateTime   @default(now())
+
+  @@index([clipId])
+  @@index([userId])
+  @@index([shareLinkId])
+  @@index([createdAt])
+}
+
+model ClipFeedback {
+  id              String     @id @default(cuid())
+  clipId          String
+  clip            Clip       @relation(fields: [clipId], references: [id], onDelete: Cascade)
+  userId          String
+  user            User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspaceId     String?
+  workspace       Workspace? @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+  rating          Int?
+  status          String
+  reason          String?
+  manualTrimDeltaMs Int?
+  captionEditsCount Int?
+  previewPlays    Int        @default(0)
+  exportedAt      DateTime?
+  publishedAt     DateTime?
+  metadata        Json?
+  createdAt       DateTime   @default(now())
+
+  @@index([clipId])
+  @@index([userId])
+  @@index([workspaceId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model SocialAccount {
+  id              String   @id @default(cuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  platform        String
+  accountName     String?
+  accountHandle   String?
+  status          String   @default("placeholder")
+  encryptedTokens String?  @db.Text
+  metadata        Json?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([userId])
+  @@index([platform])
+  @@index([status])
+  @@index([userId, platform])
 }
 
 model TranscriptJob {
@@ -401,12 +690,17 @@ model CaptionTranslation {
   clipId     String
   clip       Clip     @relation(fields: [clipId], references: [id], onDelete: Cascade)
   language   String
+  label      String?
   captionSrt String   @db.Text
+  captionVtt String?  @db.Text
+  source     String   @default("translated")
   createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
   @@unique([clipId, language])
   @@index([clipId])
   @@index([language])
+  @@index([clipId, source])
   @@map("caption_translations")
 }
 

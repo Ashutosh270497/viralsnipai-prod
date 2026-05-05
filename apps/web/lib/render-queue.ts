@@ -6,11 +6,23 @@ import { enqueueRender, processJobs } from "@clippers/jobs";
 
 import { prisma } from "@/lib/prisma";
 import { renderExport, PRESETS, probeSourceMetadata, extractAndRenderSegment } from "@/lib/ffmpeg";
-import { generateWatermarkOverlayBuffer, resolveWatermarkStyle } from "@/lib/watermark";
+import {
+  generateWatermarkOverlayBuffer,
+  isPaidPlan,
+  resolveWatermarkStyle,
+  type WatermarkStyle,
+} from "@/lib/watermark";
 import { logger } from "@/lib/logger";
 import { resolveTranscriptEditRanges } from "@/lib/repurpose/transcript-edit-ranges";
 import { selectBestReframePlan } from "@/lib/repurpose/clip-optimization";
+import { extractLayoutConfigFromMetadata, layoutConfigToReframePlan } from "@/lib/repurpose/layout-config";
 import { normalizeClipCaptionStyle } from "@/lib/repurpose/caption-style-config";
+import {
+  buildEnhancementRenderPlan,
+  mergeEnhancementsIntoCaptionStyle,
+  serializeEnhancement,
+  type ClipEnhancement,
+} from "@/lib/repurpose/creative-enhancements";
 import { concatClipsPassthrough } from "@/lib/ffmpeg";
 import { shouldUseRemotionRenderer, renderWithRemotion, REMOTION_RENDERER_ENABLED } from "@/lib/media/remotion-renderer";
 import { resolveLocalMediaPath } from "@/lib/media/media-path-resolver";
@@ -131,7 +143,7 @@ export async function queueExportJob(exportId: string) {
     return false;
   }
 
-  if (existing.status === "done" || existing.status === "failed") {
+  if (existing.status === "done" || existing.status === "failed" || existing.status === "cancelled") {
     logger.info("Export already terminal, skipping enqueue", {
       exportId,
       status: existing.status,
@@ -200,6 +212,18 @@ export async function queueExportJob(exportId: string) {
               throw new Error("Export not found");
             }
 
+            if (exportRecord.status === "cancelled") {
+              logger.info("Export job cancelled before rendering", { exportId });
+              setRuntimeState(exportId, {
+                stage: "failed",
+                progressPct: 100,
+                attempts: attempt,
+                maxAttempts: MAX_RENDER_ATTEMPTS,
+                retryable: false,
+              });
+              return;
+            }
+
             const clipIds = Array.isArray(exportRecord.clipIds) ? (exportRecord.clipIds as string[]) : [];
             const project = exportRecord.project;
             const primaryAsset = project.assets[0];
@@ -208,6 +232,24 @@ export async function queueExportJob(exportId: string) {
               .map((clipId) => project.clips.find((clip) => clip.id === clipId))
               .filter((clip): clip is typeof project.clips[number] => Boolean(clip));
             const includeCaptions = Boolean((exportRecord as { includeCaptions?: boolean | null }).includeCaptions);
+            const enhancementRows: unknown[] =
+              selectedClips.length > 0
+                ? await (prisma as any).clipEnhancement.findMany({
+                    where: {
+                      clipId: { in: selectedClips.map((clip) => clip.id) },
+                      enabled: true,
+                    },
+                    orderBy: [{ startMs: "asc" }, { createdAt: "asc" }],
+                  })
+                : [];
+            const clipEnhancements = enhancementRows.map(serializeEnhancement);
+            const enhancementsByClipId = new Map<string, ClipEnhancement[]>();
+            clipEnhancements.forEach((enhancement: ClipEnhancement) => {
+              const current = enhancementsByClipId.get(enhancement.clipId) ?? [];
+              current.push(enhancement);
+              enhancementsByClipId.set(enhancement.clipId, current);
+            });
+            const enhancementPlan = buildEnhancementRenderPlan(clipEnhancements);
 
             const segments: Array<{
               id: string;
@@ -236,6 +278,7 @@ export async function queueExportJob(exportId: string) {
               }
 
               const transcriptEditRanges = resolveTranscriptEditRanges(clip.viralityFactors, clip.startMs, clip.endMs);
+              const clipEnhancements = enhancementsByClipId.get(clip.id) ?? [];
 
               if (transcriptEditRanges.length > 1) {
                 transcriptEditRanges.forEach((range, index) => {
@@ -246,7 +289,7 @@ export async function queueExportJob(exportId: string) {
                     startMs: range.startMs,
                     endMs: range.endMs,
                     sourcePath,
-                    captionStyle: null,
+                    captionStyle: mergeEnhancementsIntoCaptionStyle(null, clipEnhancements),
                   });
                   if (includeCaptions) {
                     captionPaths[segmentId] = undefined;
@@ -259,7 +302,7 @@ export async function queueExportJob(exportId: string) {
                   startMs: clip.startMs,
                   endMs: clip.endMs,
                   sourcePath,
-                  captionStyle: normalizeClipCaptionStyle(clip.captionStyle),
+                  captionStyle: mergeEnhancementsIntoCaptionStyle(clip.captionStyle, clipEnhancements),
                 });
                 if (includeCaptions) {
                   captionPaths[clip.id] = clip.captionSrt ?? undefined;
@@ -285,12 +328,20 @@ export async function queueExportJob(exportId: string) {
 
             await fs.mkdir(path.dirname(exportRecord.storagePath), { recursive: true });
 
-            const watermarkStyle = resolveWatermarkStyle(project.user.brandKit, project.user.plan);
+            const watermarkStyle = resolveTemplateWatermarkStyle(
+              resolveWatermarkStyle(project.user.brandKit, project.user.plan),
+              selectedClips,
+              project.user.plan,
+            );
             let transientWatermarkPath: string | null = null;
 
             try {
               for (const clip of selectedClips) {
-                const clipReframePlan = selectBestReframePlan(
+                const metadataLayoutPlan = layoutConfigToReframePlan(
+                  extractLayoutConfigFromMetadata(clip.viralityFactors),
+                  presetAspectRatio
+                );
+                const clipReframePlan = metadataLayoutPlan ?? selectBestReframePlan(
                   (clip.viralityFactors as { reframePlans?: ClipReframePlan[] } | null | undefined)?.reframePlans,
                   presetAspectRatio
                 );
@@ -390,6 +441,22 @@ export async function queueExportJob(exportId: string) {
               });
               } // end else (FFmpeg path)
 
+              const latestStatus = await prisma.export.findUnique({
+                where: { id: exportId },
+                select: { status: true },
+              });
+              if (latestStatus?.status === "cancelled") {
+                logger.info("Export completed after user cancellation; preserving cancelled status", { exportId });
+                setRuntimeState(exportId, {
+                  stage: "failed",
+                  progressPct: 100,
+                  attempts: attempt,
+                  maxAttempts: MAX_RENDER_ATTEMPTS,
+                  retryable: false,
+                });
+                break;
+              }
+
               await persistExportStatus(exportId, "done", null);
               logger.info("Export processing completed", {
                 exportId,
@@ -397,6 +464,12 @@ export async function queueExportJob(exportId: string) {
                 renderMethod: hasAnimatedCaptions && REMOTION_RENDERER_ENABLED ? "remotion" : "ffmpeg",
                 segmentCount: segments.length,
                 withCaptions: includeCaptions,
+                enhancementCounts: {
+                  overlays: enhancementPlan.overlays.length,
+                  bRoll: enhancementPlan.bRoll.length,
+                  audio: enhancementPlan.audio.length,
+                },
+                enhancementWarnings: enhancementPlan.warnings,
               });
               setRuntimeState(exportId, {
                 stage: "done",
@@ -489,8 +562,19 @@ async function persistExportStatus(
         where: { id: exportId },
         data: {
           status,
-          error: errorMessage
-        },
+          error: errorMessage,
+          progress: status === "done" || status === "failed" ? 100 : status === "processing" ? 8 : 0,
+          phase:
+            status === "queued"
+              ? "queued"
+              : status === "processing"
+                ? "preparing"
+                : status === "done"
+                  ? "completed"
+                  : "failed",
+          ...(status === "processing" && { startedAt: new Date() }),
+          ...(status === "done" || status === "failed" ? { completedAt: new Date() } : {}),
+        } as any,
         select: { projectId: true },
       });
       await prisma.project.update({
@@ -519,6 +603,47 @@ async function persistExportStatus(
     error: lastError instanceof Error ? lastError.message : String(lastError ?? "unknown")
   });
   throw lastError instanceof Error ? lastError : new Error("Failed to persist export status");
+}
+
+function resolveTemplateWatermarkStyle(
+  base: WatermarkStyle,
+  clips: Array<{ viralityFactors?: unknown }>,
+  plan?: string | null,
+): WatermarkStyle {
+  const metadata = clips
+    .map((clip) => extractTemplateMetadata(clip.viralityFactors))
+    .find((item) => item.watermarkConfig || item.logoUrl);
+  if (!metadata) return base;
+
+  const watermarkConfig =
+    metadata.watermarkConfig && typeof metadata.watermarkConfig === "object"
+      ? (metadata.watermarkConfig as Record<string, unknown>)
+      : {};
+
+  // Free exports must keep the product watermark. Paid plans can use template-level
+  // watermark/logo choices that were applied to the clip metadata.
+  const paid = isPaidPlan(plan);
+  const logoUrl = typeof metadata.logoUrl === "string" ? metadata.logoUrl : null;
+  return {
+    ...base,
+    enabled: paid && watermarkConfig.enabled === false ? false : base.enabled,
+    text: typeof watermarkConfig.text === "string" && watermarkConfig.text.trim()
+      ? watermarkConfig.text.trim()
+      : base.text,
+    logoStoragePath: logoUrl ? resolveTemplateLogoPath(logoUrl) : base.logoStoragePath,
+  };
+}
+
+function extractTemplateMetadata(viralityFactors: unknown): Record<string, unknown> {
+  if (!viralityFactors || typeof viralityFactors !== "object") return {};
+  const metadata = (viralityFactors as { metadata?: unknown }).metadata;
+  return metadata && typeof metadata === "object" ? (metadata as Record<string, unknown>) : {};
+}
+
+function resolveTemplateLogoPath(logoUrl: string) {
+  if (/^https?:\/\//i.test(logoUrl)) return null;
+  if (logoUrl.startsWith("/")) return path.join(process.cwd(), "public", logoUrl);
+  return logoUrl;
 }
 
 // ── Remotion render path ──────────────────────────────────────────────────────

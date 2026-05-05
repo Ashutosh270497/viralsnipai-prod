@@ -12,6 +12,9 @@ export interface CreateCaptionTranslationData {
   clipId: string;
   language: string;
   captionSrt: string;
+  captionVtt?: string | null;
+  label?: string | null;
+  source?: string;
 }
 
 export interface ICaptionTranslationRepository {

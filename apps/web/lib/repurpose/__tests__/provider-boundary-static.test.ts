@@ -24,4 +24,15 @@ describe("V1 provider boundary static guard", () => {
     expect(source).not.toContain("OPENROUTER_TRANSCRIBE_MODEL");
     expect(source).not.toContain("transcribeWithOpenRouter");
   });
+
+  it("registers the executable provider boundary check", () => {
+    const pkg = JSON.parse(read("package.json"));
+    const script = read("scripts/repurpose-provider-boundary-check.ts");
+
+    expect(pkg.scripts["repurpose:boundary-check"]).toBe(
+      "tsx scripts/repurpose-provider-boundary-check.ts",
+    );
+    expect(script).toContain("Repurpose provider boundary check failed");
+    expect(script).toContain("Boundary refinement must remain local");
+  });
 });

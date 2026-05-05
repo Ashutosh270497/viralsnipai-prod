@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Save, Type, RefreshCw, AlertTriangle, Search, Scissors } from "lucide-react";
+import { Save, Type, RefreshCw, AlertTriangle, Search, Scissors, Copy, Plus, XCircle } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -18,6 +18,26 @@ import {
   type ClipCaptionStyleConfig,
 } from "@/lib/repurpose/caption-style-config";
 import { cn } from "@/lib/utils";
+import {
+  detectFillerWords,
+  detectLongPauses,
+  getClipSegments,
+  getClipWords,
+  getTranscriptPrecision,
+  getWordAtTime,
+  parseCanonicalTranscript,
+  searchTranscript,
+  type FillerWordMatch,
+  type LongPauseMatch,
+  type TranscriptUiWord,
+} from "@/lib/repurpose/transcript-ui";
+import {
+  hideCaptionCue,
+  mergeCaptionCues,
+  splitCaptionCue,
+  validateCaptionCues,
+} from "@/lib/repurpose/caption-studio";
+import type { ClipEditOperation } from "@/lib/types";
 
 interface TranscriptEditorProps {
   clipId: string;
@@ -30,6 +50,11 @@ interface TranscriptEditorProps {
   endMs: number;
   previewPath?: string | null;
   smartReframePlan?: SmartReframePlan | null;
+  projectId?: string | null;
+  assetId?: string | null;
+  assetTranscript?: string | null;
+  selectedClipCount?: number;
+  onApplyCaptionStyleToSelected?: (style: ClipCaptionStyleConfig) => Promise<void> | void;
   onSave: () => Promise<void>;
   onGenerateCaptions?: () => void;
   isGenerating?: boolean;
@@ -436,6 +461,11 @@ export function TranscriptEditor({
   endMs,
   previewPath,
   smartReframePlan,
+  projectId,
+  assetId,
+  assetTranscript,
+  selectedClipCount,
+  onApplyCaptionStyleToSelected,
   onSave,
   onGenerateCaptions,
   isGenerating,
@@ -457,6 +487,11 @@ export function TranscriptEditor({
     () => normalizeClipCaptionStyle(captionStyle)
   );
   const [subtitlesPreviewEnabled, setSubtitlesPreviewEnabled] = useState(true);
+  const [selectedWordRange, setSelectedWordRange] = useState<{ startIndex: number; endIndex: number } | null>(null);
+  const [editOperations, setEditOperations] = useState<ClipEditOperation[]>([]);
+  const [operationLoading, setOperationLoading] = useState(false);
+  const [fullTranscriptSearchQuery, setFullTranscriptSearchQuery] = useState("");
+  const [captionTranslateLanguage, setCaptionTranslateLanguage] = useState("hi");
   const safeCaptionStyle = captionStyleDraft;
 
   useEffect(() => {
@@ -472,6 +507,8 @@ export function TranscriptEditor({
     setInitialCaptionStyle(normalizedStyle);
     setCaptionStyleDraft(normalizedStyle);
     setSearchQuery("");
+    setSelectedWordRange(null);
+    setFullTranscriptSearchQuery("");
     setUndoKey(0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [captionSrt, clipId, startMs, endMs]); // captionStyle intentionally excluded — only reset on clip change
@@ -484,6 +521,39 @@ export function TranscriptEditor({
     JSON.stringify(safeCaptionStyle) !== JSON.stringify(initialCaptionStyle);
   const hasChanges = hasEntryChanges || hasStyleChanges;
   const wordTimeline = useMemo(() => buildWordTimeline(entries), [entries]);
+  const parsedTranscript = useMemo(() => parseCanonicalTranscript(assetTranscript), [assetTranscript]);
+  const transcriptPrecision = useMemo(
+    () => getTranscriptPrecision(assetTranscript),
+    [assetTranscript],
+  );
+  const clipWords = useMemo(
+    () => getClipWords(parsedTranscript, startMs, endMs),
+    [endMs, parsedTranscript, startMs],
+  );
+  const clipSegments = useMemo(
+    () => getClipSegments(parsedTranscript, startMs, endMs),
+    [endMs, parsedTranscript, startMs],
+  );
+  const activeWord = useMemo(
+    () => getWordAtTime(parsedTranscript, startMs + currentMs),
+    [currentMs, parsedTranscript, startMs],
+  );
+  const fillerMatches = useMemo(() => {
+    const clipWordIndices = new Set(clipWords.map((word) => word.index));
+    return detectFillerWords(parsedTranscript).filter(
+      (match) => clipWordIndices.has(match.wordStartIndex) || clipWordIndices.has(match.wordEndIndex),
+    );
+  }, [clipWords, parsedTranscript]);
+  const pauseMatches = useMemo(() => {
+    const clipWordIndices = new Set(clipWords.map((word) => word.index));
+    return detectLongPauses(parsedTranscript, 900).filter(
+      (match) => clipWordIndices.has(match.beforeWordIndex) || clipWordIndices.has(match.afterWordIndex),
+    );
+  }, [clipWords, parsedTranscript]);
+  const fullTranscriptSearchResults = useMemo(
+    () => searchTranscript(parsedTranscript, fullTranscriptSearchQuery, { limit: 8 }),
+    [fullTranscriptSearchQuery, parsedTranscript],
+  );
 
   const clipScopedCaptionSrt = useMemo(() => {
     if (entries.length === 0) {
@@ -515,6 +585,285 @@ export function TranscriptEditor({
     onCaptionStyleChange?.(normalizedStyle);
   }
 
+  useEffect(() => {
+    let cancelled = false;
+    async function loadOperations() {
+      try {
+        const response = await fetch(`/api/clips/${clipId}/edit-operations`, { cache: "no-store" });
+        if (!response.ok) return;
+        const payload = (await response.json().catch(() => null)) as
+          | { data?: { operations?: ClipEditOperation[] } }
+          | null;
+        if (!cancelled) {
+          setEditOperations(payload?.data?.operations ?? []);
+        }
+      } catch {
+        if (!cancelled) {
+          setEditOperations([]);
+        }
+      }
+    }
+    void loadOperations();
+    return () => {
+      cancelled = true;
+    };
+  }, [clipId]);
+
+  function getSelectedWords(): TranscriptUiWord[] {
+    if (!selectedWordRange) return [];
+    const min = Math.min(selectedWordRange.startIndex, selectedWordRange.endIndex);
+    const max = Math.max(selectedWordRange.startIndex, selectedWordRange.endIndex);
+    return clipWords.filter((word) => word.index >= min && word.index <= max);
+  }
+
+  function selectWord(word: TranscriptUiWord, additive: boolean) {
+    if (additive && selectedWordRange) {
+      setSelectedWordRange({
+        startIndex: selectedWordRange.startIndex,
+        endIndex: word.index,
+      });
+      return;
+    }
+    setSelectedWordRange({ startIndex: word.index, endIndex: word.index });
+  }
+
+  async function saveEditOperation(input: {
+    type: ClipEditOperation["type"];
+    startMs?: number | null;
+    endMs?: number | null;
+    payload?: Record<string, unknown>;
+  }) {
+    const response = await fetch(`/api/clips/${clipId}/edit-operations`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+      cache: "no-store",
+    });
+    if (!response.ok) {
+      throw new Error("Failed to save edit operation");
+    }
+    const payload = (await response.json().catch(() => null)) as
+      | { data?: { operation?: ClipEditOperation } }
+      | null;
+    const operation = payload?.data?.operation;
+    if (operation) {
+      setEditOperations((prev) => [...prev, operation]);
+    }
+  }
+
+  async function applyWordBoundary(kind: "start" | "end", word: TranscriptUiWord) {
+    const nextStartMs = kind === "start" ? Math.max(0, word.startMs - 300) : startMs;
+    const nextEndMs = kind === "end" ? Math.max(word.endMs + 500, word.endMs) : endMs;
+    if (nextEndMs <= nextStartMs || nextEndMs - nextStartMs < MIN_TRIMMED_CLIP_DURATION_MS) {
+      toast({
+        variant: "destructive",
+        title: "Boundary too short",
+        description: "Choose a wider transcript range before applying this trim.",
+      });
+      return;
+    }
+
+    setOperationLoading(true);
+    try {
+      const response = await fetch(`/api/clips/${clipId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          startMs: nextStartMs,
+          endMs: nextEndMs,
+          previewPath: null,
+          expectedVersion,
+        }),
+        cache: "no-store",
+      });
+      if (!response.ok) {
+        throw new Error("Failed to update clip boundary");
+      }
+      await saveEditOperation({
+        type: kind === "start" ? "trim_start" : "trim_end",
+        startMs: kind === "start" ? nextStartMs : startMs,
+        endMs: kind === "end" ? nextEndMs : endMs,
+        payload: {
+          wordIndex: word.index,
+          word: word.word,
+          originalStartMs: startMs,
+          originalEndMs: endMs,
+          appliedAt: new Date().toISOString(),
+        },
+      });
+      toast({
+        title: "Clip boundary updated",
+        description: "Timing was snapped to transcript word timing. Preview will rebuild on the next caption refresh.",
+      });
+      await onSave();
+    } catch {
+      toast({
+        variant: "destructive",
+        title: "Trim failed",
+        description: "Unable to apply transcript trim. Refresh and try again.",
+      });
+    } finally {
+      setOperationLoading(false);
+    }
+  }
+
+  async function markRemoveRanges(
+    ranges: Array<FillerWordMatch | LongPauseMatch>,
+    source: "fillers" | "pauses" | "selection",
+  ) {
+    if (ranges.length === 0) return;
+    setOperationLoading(true);
+    try {
+      for (const range of ranges) {
+        await saveEditOperation({
+          type: "remove_range",
+          startMs: range.startMs,
+          endMs: range.endMs,
+          payload: {
+            source,
+            text: "text" in range ? range.text : undefined,
+            durationMs: "durationMs" in range ? range.durationMs : undefined,
+          },
+        });
+      }
+      toast({
+        title: source === "fillers" ? "Fillers marked for removal" : source === "pauses" ? "Pauses marked for removal" : "Selection marked for removal",
+        description: "These edits are non-destructive and will be respected by the export render plan.",
+      });
+    } catch {
+      toast({
+        variant: "destructive",
+        title: "Edit failed",
+        description: "Unable to save removal operations.",
+      });
+    } finally {
+      setOperationLoading(false);
+    }
+  }
+
+  async function removeSelectedWords() {
+    const selected = getSelectedWords();
+    if (selected.length === 0) return;
+    await markRemoveRanges(
+      [
+        {
+          id: "selected",
+          startMs: selected[0].startMs,
+          endMs: selected[selected.length - 1].endMs,
+          text: selected.map((word) => word.word).join(" "),
+          wordStartIndex: selected[0].index,
+          wordEndIndex: selected[selected.length - 1].index,
+        },
+      ],
+      "selection",
+    );
+  }
+
+  async function resetEditOperations() {
+    setOperationLoading(true);
+    try {
+      const response = await fetch(`/api/clips/${clipId}/edit-operations/reset`, {
+        method: "POST",
+        cache: "no-store",
+      });
+      if (!response.ok) {
+        throw new Error("Failed to reset edits");
+      }
+      setEditOperations([]);
+      setSelectedWordRange(null);
+      toast({ title: "Transcript edits reset", description: "Non-destructive edit operations were cleared." });
+      await onSave();
+    } catch {
+      toast({ variant: "destructive", title: "Reset failed", description: "Unable to reset transcript edits." });
+    } finally {
+      setOperationLoading(false);
+    }
+  }
+
+  async function copySelectedQuote() {
+    const quote = getSelectedWords().map((word) => word.word).join(" ").trim();
+    if (!quote) return;
+    await navigator.clipboard?.writeText(quote);
+    toast({ title: "Quote copied" });
+  }
+
+  async function createClipFromSelection(words: TranscriptUiWord[]) {
+    if (!projectId || !assetId || words.length === 0) return;
+    setOperationLoading(true);
+    try {
+      const response = await fetch("/api/repurpose/clips/from-transcript-selection", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          projectId,
+          assetId,
+          startWordIndex: words[0].index,
+          endWordIndex: words[words.length - 1].index,
+        }),
+        cache: "no-store",
+      });
+      if (!response.ok) {
+        throw new Error("Failed to create clip");
+      }
+      toast({ title: "Clip created", description: "A new clip was created from the transcript selection." });
+      await onSave();
+    } catch {
+      toast({
+        variant: "destructive",
+        title: "Clip creation failed",
+        description: "Unable to create a clip from this transcript selection.",
+      });
+    } finally {
+      setOperationLoading(false);
+    }
+  }
+
+  async function runCaptionAssist(
+    endpoint: "cleanup" | "highlight-keywords" | "translate",
+    options: { mode?: string; language?: string } = {},
+  ) {
+    if (entries.length === 0) return;
+    setOperationLoading(true);
+    try {
+      const response = await fetch(`/api/repurpose/captions/${endpoint}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          clipId,
+          cues: entries.map((entry, index) => ({ ...entry, index: index + 1 })),
+          mode: options.mode ?? "cleanup",
+          language: options.language,
+        }),
+        cache: "no-store",
+      });
+      if (!response.ok) {
+        throw new Error("Caption assist failed");
+      }
+      const payload = (await response.json().catch(() => null)) as
+        | { data?: { cues?: CaptionEntry[]; srt?: string; track?: { language?: string; label?: string | null } } }
+        | null;
+      const nextEntries = payload?.data?.cues;
+      if (Array.isArray(nextEntries) && nextEntries.length > 0) {
+        setEntries(validateCaptionCues(nextEntries));
+      }
+      toast({
+        title: endpoint === "translate" ? "Caption track translated" : "Caption assist applied",
+        description:
+          endpoint === "translate"
+            ? `${payload?.data?.track?.label ?? options.language ?? "Translated"} captions are now active in the editor.`
+            : "Cue timings were preserved while text was updated.",
+      });
+    } catch {
+      toast({
+        variant: "destructive",
+        title: "Caption assist failed",
+        description: "Unable to update captions with AI. Timing was not changed.",
+      });
+    } finally {
+      setOperationLoading(false);
+    }
+  }
+
   function updateEntryText(idx: number, newText: string) {
     const normalized = normalizeEntryText(newText);
     if (!normalized) return;
@@ -522,26 +871,24 @@ export function TranscriptEditor({
   }
 
   function splitEntry(idx: number) {
-    const entry = entries[idx];
-    if (!entry) return;
-    const words = entry.text.trim().split(/\s+/).filter(Boolean);
-    if (words.length <= 1) return;
-    const mid = Math.ceil(words.length / 2);
-    const midMs = Math.round((entry.startMs + entry.endMs) / 2);
-    const a: CaptionEntry = { index: entry.index, startMs: entry.startMs, endMs: midMs, text: words.slice(0, mid).join(" ") };
-    const b: CaptionEntry = { index: entry.index + 1, startMs: midMs, endMs: entry.endMs, text: words.slice(mid).join(" ") };
-    setEntries(
-      [...entries.slice(0, idx), a, b, ...entries.slice(idx + 1)].map((e, i) => ({ ...e, index: i + 1 }))
-    );
+    setEntries((prev) => splitCaptionCue(prev, idx));
   }
 
   function mergeWithNext(idx: number) {
-    const a = entries[idx];
-    const b = entries[idx + 1];
-    if (!a || !b) return;
-    const merged: CaptionEntry = { index: a.index, startMs: a.startMs, endMs: b.endMs, text: `${a.text.trim()} ${b.text.trim()}`.trim() };
-    setEntries(
-      [...entries.slice(0, idx), merged, ...entries.slice(idx + 2)].map((e, i) => ({ ...e, index: i + 1 }))
+    setEntries((prev) => mergeCaptionCues(prev, idx));
+  }
+
+  function hideEntry(idx: number) {
+    setEntries((prev) => hideCaptionCue(prev, idx));
+  }
+
+  function adjustEntryTiming(idx: number, key: "startMs" | "endMs", value: number) {
+    setEntries((prev) =>
+      validateCaptionCues(
+        prev.map((entry, index) =>
+          index === idx ? { ...entry, [key]: Math.max(0, Math.round(value)) } : entry,
+        ),
+      ),
     );
   }
 
@@ -740,7 +1087,7 @@ export function TranscriptEditor({
       </div>
     ) : null;
 
-  if (!captionSrt || entries.length === 0) {
+  if ((!captionSrt || entries.length === 0) && clipWords.length === 0) {
     return (
       <div className="space-y-3">
         {videoPlayer}
@@ -760,7 +1107,7 @@ export function TranscriptEditor({
     );
   }
 
-  if (captionQuality.tier === "low_quality") {
+  if (captionQuality.tier === "low_quality" && clipWords.length === 0) {
     return (
       <div className="space-y-3">
         {videoPlayer}
@@ -785,6 +1132,49 @@ export function TranscriptEditor({
       {videoPlayer}
       {missingPreviewNotice}
 
+      <WordLevelTranscriptPanel
+        precision={transcriptPrecision}
+        words={clipWords}
+        segments={clipSegments}
+        selectedRange={selectedWordRange}
+        activeWordIndex={activeWord?.index ?? null}
+        fillerCount={fillerMatches.length}
+        pauseCount={pauseMatches.length}
+        operationCount={editOperations.length}
+        isBusy={operationLoading}
+        searchQuery={fullTranscriptSearchQuery}
+        searchResults={fullTranscriptSearchResults}
+        onSearchChange={setFullTranscriptSearchQuery}
+        onWordClick={(word, event) => {
+          selectWord(word, event.shiftKey);
+          remotionPreviewRef.current?.seekToMs(Math.max(0, word.startMs - startMs));
+          handlePreviewTimeUpdate(Math.max(0, word.startMs - startMs));
+        }}
+        onClearSelection={() => setSelectedWordRange(null)}
+        onSetStart={() => {
+          const selected = getSelectedWords();
+          const first = selected[0];
+          if (first) void applyWordBoundary("start", first);
+        }}
+        onSetEnd={() => {
+          const selected = getSelectedWords();
+          const last = selected[selected.length - 1];
+          if (last) void applyWordBoundary("end", last);
+        }}
+        onRemoveSelected={() => void removeSelectedWords()}
+        onCopyQuote={() => void copySelectedQuote()}
+        onCreateClip={() => void createClipFromSelection(getSelectedWords())}
+        onRemoveFillers={() => void markRemoveRanges(fillerMatches, "fillers")}
+        onRemovePauses={() => void markRemoveRanges(pauseMatches, "pauses")}
+        onResetOperations={() => void resetEditOperations()}
+        onCreateClipFromSearch={(startWordIndex, endWordIndex) => {
+          const words = parsedTranscript.words.filter(
+            (word) => word.index >= startWordIndex && word.index <= endWordIndex,
+          );
+          void createClipFromSelection(words);
+        }}
+      />
+
       {captionQuality.tier === "needs_cleanup" && (
         <div className="flex items-center gap-2 rounded-lg border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
           <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
@@ -807,6 +1197,76 @@ export function TranscriptEditor({
             aria-label="Toggle subtitle preview"
           />
         </label>
+      </div>
+
+      <div className="grid gap-2 rounded-xl border border-border/40 bg-muted/15 px-3 py-2 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
+        <div>
+          <p className="text-xs font-semibold text-foreground">AI caption assist</p>
+          <p className="text-[11px] text-muted-foreground/55">
+            OpenRouter edits caption text only. Cue timing stays local and unchanged.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <Button
+            variant="secondary"
+            size="sm"
+            className="h-7 px-2 text-[11px]"
+            disabled={operationLoading}
+            onClick={() => void runCaptionAssist("cleanup", { mode: "cleanup" })}
+          >
+            Clean
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            className="h-7 px-2 text-[11px]"
+            disabled={operationLoading}
+            onClick={() => void runCaptionAssist("cleanup", { mode: "simplify" })}
+          >
+            Simplify
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            className="h-7 px-2 text-[11px]"
+            disabled={operationLoading}
+            onClick={() => void runCaptionAssist("cleanup", { mode: "add_emojis" })}
+          >
+            Emojis
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            className="h-7 px-2 text-[11px]"
+            disabled={operationLoading}
+            onClick={() => void runCaptionAssist("highlight-keywords")}
+          >
+            Keywords
+          </Button>
+          <select
+            value={captionTranslateLanguage}
+            onChange={(event) => setCaptionTranslateLanguage(event.target.value)}
+            className="h-7 rounded-md border border-border/50 bg-background px-2 text-[11px]"
+          >
+            <option value="hi">Hindi</option>
+            <option value="es">Spanish</option>
+            <option value="fr">French</option>
+            <option value="de">German</option>
+            <option value="pt">Portuguese</option>
+            <option value="ja">Japanese</option>
+          </select>
+          <Button
+            variant="secondary"
+            size="sm"
+            className="h-7 px-2 text-[11px]"
+            disabled={operationLoading}
+            onClick={() =>
+              void runCaptionAssist("translate", { language: captionTranslateLanguage })
+            }
+          >
+            Translate
+          </Button>
+        </div>
       </div>
 
       {/* Transcript toolbar: search + segment count + actions */}
@@ -885,8 +1345,10 @@ export function TranscriptEditor({
               isLast={idx === entries.length - 1}
               isActive={currentMs >= entry.startMs && currentMs < entry.endMs}
               onTextChange={updateEntryText}
+              onTimingChange={adjustEntryTiming}
               onSplit={splitEntry}
               onMerge={mergeWithNext}
+              onHide={hideEntry}
               onSeek={(ms) => {
                 remotionPreviewRef.current?.seekToMs(ms);
                 handlePreviewTimeUpdate(ms);
@@ -902,6 +1364,8 @@ export function TranscriptEditor({
         sampleCaption={entries[0]?.text}
         previewPath={previewPath}
         captionEntries={entries}
+        selectedClipCount={selectedClipCount}
+        onApplyToSelected={onApplyCaptionStyleToSelected}
       />
     </div>
   );
@@ -914,14 +1378,290 @@ function msToMinSec(ms: number): string {
   return `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
 }
 
+function WordLevelTranscriptPanel({
+  precision,
+  words,
+  segments,
+  selectedRange,
+  activeWordIndex,
+  fillerCount,
+  pauseCount,
+  operationCount,
+  isBusy,
+  searchQuery,
+  searchResults,
+  onSearchChange,
+  onWordClick,
+  onClearSelection,
+  onSetStart,
+  onSetEnd,
+  onRemoveSelected,
+  onCopyQuote,
+  onCreateClip,
+  onRemoveFillers,
+  onRemovePauses,
+  onResetOperations,
+  onCreateClipFromSearch,
+}: {
+  precision: ReturnType<typeof getTranscriptPrecision>;
+  words: TranscriptUiWord[];
+  segments: ReturnType<typeof getClipSegments>;
+  selectedRange: { startIndex: number; endIndex: number } | null;
+  activeWordIndex: number | null;
+  fillerCount: number;
+  pauseCount: number;
+  operationCount: number;
+  isBusy: boolean;
+  searchQuery: string;
+  searchResults: ReturnType<typeof searchTranscript>;
+  onSearchChange: (value: string) => void;
+  onWordClick: (word: TranscriptUiWord, event: { shiftKey: boolean }) => void;
+  onClearSelection: () => void;
+  onSetStart: () => void;
+  onSetEnd: () => void;
+  onRemoveSelected: () => void;
+  onCopyQuote: () => void;
+  onCreateClip: () => void;
+  onRemoveFillers: () => void;
+  onRemovePauses: () => void;
+  onResetOperations: () => void;
+  onCreateClipFromSearch: (startWordIndex: number, endWordIndex: number) => void;
+}) {
+  const selectedMin = selectedRange
+    ? Math.min(selectedRange.startIndex, selectedRange.endIndex)
+    : null;
+  const selectedMax = selectedRange
+    ? Math.max(selectedRange.startIndex, selectedRange.endIndex)
+    : null;
+  const selectedCount =
+    selectedMin == null || selectedMax == null
+      ? 0
+      : words.filter((word) => word.index >= selectedMin && word.index <= selectedMax).length;
+  const hasWordTiming = precision === "word" && words.length > 0;
+
+  return (
+    <div className="rounded-xl border border-border/40 bg-background/65">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/35 px-3 py-2.5">
+        <div>
+          <p className="text-xs font-semibold text-foreground">Transcript word editor</p>
+          <p className="text-[11px] text-muted-foreground/60">
+            {hasWordTiming
+              ? "Click a word to seek, Shift-click to select a range, then apply precise local edits."
+              : "Word-level timing unavailable. Re-transcribe for precise editing."}
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-1.5 text-[10px]">
+          <Badge variant="outline" className="border-border/50 bg-muted/30 capitalize">
+            {precision.replace(/_/g, " ")}
+          </Badge>
+          <Badge variant="outline" className="border-border/50 bg-muted/30">
+            {fillerCount} fillers
+          </Badge>
+          <Badge variant="outline" className="border-border/50 bg-muted/30">
+            {pauseCount} pauses
+          </Badge>
+          <Badge variant="outline" className="border-border/50 bg-muted/30">
+            {operationCount} edits
+          </Badge>
+        </div>
+      </div>
+
+      {!hasWordTiming ? (
+        <div className="space-y-2 px-3 py-3">
+          <div className="flex items-start gap-2 rounded-lg border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
+            <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            <span>Segment-level transcript mode is active. Word trim, filler removal, and pause removal are disabled until precise timings exist.</span>
+          </div>
+          <div className="max-h-44 overflow-y-auto rounded-lg border border-border/30 bg-muted/20">
+            {segments.length === 0 ? (
+              <p className="px-3 py-4 text-sm text-muted-foreground/50">No timed transcript segments available.</p>
+            ) : (
+              segments.map((segment) => (
+                <div key={segment.id} className="border-b border-border/20 px-3 py-2 last:border-b-0">
+                  <p className="font-mono text-[10px] text-muted-foreground/50">
+                    {msToMinSec(segment.startMs)} → {msToMinSec(segment.endMs)}
+                  </p>
+                  <p className="mt-1 text-sm leading-relaxed text-foreground/75">{segment.text}</p>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-3 px-3 py-3">
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={onSetStart}
+              disabled={selectedCount === 0 || isBusy}
+              className="h-7 rounded-lg border border-border/50 bg-muted/30 px-2.5 text-[11px] font-semibold text-foreground disabled:opacity-40"
+            >
+              Set start here
+            </button>
+            <button
+              type="button"
+              onClick={onSetEnd}
+              disabled={selectedCount === 0 || isBusy}
+              className="h-7 rounded-lg border border-border/50 bg-muted/30 px-2.5 text-[11px] font-semibold text-foreground disabled:opacity-40"
+            >
+              Set end here
+            </button>
+            <button
+              type="button"
+              onClick={onCreateClip}
+              disabled={selectedCount === 0 || isBusy}
+              className="inline-flex h-7 items-center gap-1 rounded-lg border border-primary/30 bg-primary/10 px-2.5 text-[11px] font-semibold text-primary disabled:opacity-40"
+            >
+              <Plus className="h-3 w-3" />
+              New clip
+            </button>
+            <button
+              type="button"
+              onClick={onRemoveSelected}
+              disabled={selectedCount === 0 || isBusy}
+              className="inline-flex h-7 items-center gap-1 rounded-lg border border-red-500/25 bg-red-500/10 px-2.5 text-[11px] font-semibold text-red-300 disabled:opacity-40"
+            >
+              <XCircle className="h-3 w-3" />
+              Remove selected
+            </button>
+            <button
+              type="button"
+              onClick={onCopyQuote}
+              disabled={selectedCount === 0 || isBusy}
+              className="inline-flex h-7 items-center gap-1 rounded-lg border border-border/50 bg-muted/30 px-2.5 text-[11px] font-semibold text-muted-foreground disabled:opacity-40"
+            >
+              <Copy className="h-3 w-3" />
+              Copy quote
+            </button>
+            <button
+              type="button"
+              onClick={onClearSelection}
+              disabled={selectedCount === 0 || isBusy}
+              className="h-7 rounded-lg border border-border/50 bg-background px-2.5 text-[11px] font-semibold text-muted-foreground disabled:opacity-40"
+            >
+              Clear
+            </button>
+          </div>
+
+          <div className="max-h-52 overflow-y-auto rounded-lg border border-border/30 bg-muted/15 px-3 py-3 text-sm leading-7">
+            {words.map((word) => {
+              const isSelected =
+                selectedMin != null && selectedMax != null && word.index >= selectedMin && word.index <= selectedMax;
+              const isActive = word.index === activeWordIndex;
+              return (
+                <button
+                  key={`${word.index}-${word.startMs}`}
+                  type="button"
+                  onClick={(event) => onWordClick(word, event)}
+                  className={cn(
+                    "mr-1.5 rounded px-1.5 py-0.5 text-left transition-colors",
+                    isSelected
+                      ? "bg-primary text-primary-foreground"
+                      : isActive
+                        ? "bg-primary/20 text-primary"
+                        : "text-foreground/75 hover:bg-muted/60 hover:text-foreground",
+                  )}
+                  title={`${msToMinSec(word.startMs)} → ${msToMinSec(word.endMs)}`}
+                >
+                  {word.word}
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="grid gap-2 md:grid-cols-2">
+            <button
+              type="button"
+              onClick={onRemoveFillers}
+              disabled={fillerCount === 0 || isBusy}
+              className="rounded-lg border border-border/45 bg-muted/20 px-3 py-2 text-left text-xs font-medium text-foreground disabled:opacity-40"
+            >
+              Remove fillers
+              <span className="block text-[11px] font-normal text-muted-foreground/60">
+                Marks filler words for non-destructive removal during export.
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={onRemovePauses}
+              disabled={pauseCount === 0 || isBusy}
+              className="rounded-lg border border-border/45 bg-muted/20 px-3 py-2 text-left text-xs font-medium text-foreground disabled:opacity-40"
+            >
+              Remove pauses
+              <span className="block text-[11px] font-normal text-muted-foreground/60">
+                Marks word gaps over 900ms for the export render plan.
+              </span>
+            </button>
+          </div>
+
+          <div className="rounded-lg border border-border/30 bg-muted/10 p-2">
+            <div className="relative">
+              <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground/40" />
+              <input
+                type="search"
+                placeholder="Search full transcript to create a new clip..."
+                value={searchQuery}
+                onChange={(event) => onSearchChange(event.target.value)}
+                className="h-8 w-full rounded-lg border border-border/45 bg-background pl-8 pr-3 text-xs outline-none focus:border-primary/50"
+              />
+            </div>
+            {searchResults.length > 0 && (
+              <div className="mt-2 max-h-36 overflow-y-auto divide-y divide-border/20 rounded-lg border border-border/25 bg-background/70">
+                {searchResults.map((result) => (
+                  <button
+                    key={result.id}
+                    type="button"
+                    disabled={
+                      result.wordStartIndex === undefined ||
+                      result.wordEndIndex === undefined ||
+                      isBusy
+                    }
+                    onClick={() => {
+                      if (result.wordStartIndex !== undefined && result.wordEndIndex !== undefined) {
+                        onCreateClipFromSearch(result.wordStartIndex, result.wordEndIndex);
+                      }
+                    }}
+                    className="block w-full px-3 py-2 text-left text-xs text-foreground/75 hover:bg-muted/35 disabled:opacity-45"
+                  >
+                    <span className="font-mono text-[10px] text-muted-foreground/50">
+                      {result.startMs == null ? "untimed" : msToMinSec(result.startMs)}
+                    </span>
+                    <span className="ml-2">{result.text}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {operationCount > 0 && (
+            <div className="flex items-center justify-between gap-3 rounded-lg border border-cyan-500/20 bg-cyan-500/10 px-3 py-2 text-xs text-cyan-200">
+              <span>{operationCount} non-destructive edit operation{operationCount === 1 ? "" : "s"} saved. Video cuts apply during export rendering.</span>
+              <button
+                type="button"
+                onClick={onResetOperations}
+                disabled={isBusy}
+                className="shrink-0 rounded border border-cyan-300/25 px-2 py-1 text-[11px] font-semibold disabled:opacity-40"
+              >
+                Reset edits
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function SegmentRow({
   entry,
   originalIndex,
   isLast,
   isActive,
   onTextChange,
+  onTimingChange,
   onSplit,
   onMerge,
+  onHide,
   onSeek,
 }: {
   entry: CaptionEntry;
@@ -929,8 +1669,10 @@ function SegmentRow({
   isLast: boolean;
   isActive: boolean;
   onTextChange: (idx: number, text: string) => void;
+  onTimingChange: (idx: number, key: "startMs" | "endMs", value: number) => void;
   onSplit: (idx: number) => void;
   onMerge: (idx: number) => void;
+  onHide: (idx: number) => void;
   onSeek: (ms: number) => void;
 }) {
   const canSplit = entry.text.trim().split(/\s+/).filter(Boolean).length > 1;
@@ -951,6 +1693,27 @@ function SegmentRow({
       >
         {msToMinSec(entry.startMs)} → {msToMinSec(entry.endMs)}
       </button>
+
+      <div className="grid w-[88px] shrink-0 gap-1">
+        <input
+          type="number"
+          value={entry.startMs}
+          min={0}
+          step={50}
+          onChange={(event) => onTimingChange(originalIndex, "startMs", Number(event.target.value))}
+          className="h-6 rounded border border-border/40 bg-background px-1.5 font-mono text-[10px] text-muted-foreground outline-none focus:border-primary/50"
+          title="Cue start milliseconds"
+        />
+        <input
+          type="number"
+          value={entry.endMs}
+          min={entry.startMs + 1}
+          step={50}
+          onChange={(event) => onTimingChange(originalIndex, "endMs", Number(event.target.value))}
+          className="h-6 rounded border border-border/40 bg-background px-1.5 font-mono text-[10px] text-muted-foreground outline-none focus:border-primary/50"
+          title="Cue end milliseconds"
+        />
+      </div>
 
       {/* Editable text */}
       <div
@@ -981,6 +1744,13 @@ function SegmentRow({
             ↓
           </button>
         )}
+        <button
+          onClick={() => onHide(originalIndex)}
+          title="Hide this cue"
+          className="h-5 w-5 flex items-center justify-center rounded text-muted-foreground/40 hover:text-red-300 hover:bg-red-500/10 transition-colors"
+        >
+          ×
+        </button>
       </div>
     </div>
   );

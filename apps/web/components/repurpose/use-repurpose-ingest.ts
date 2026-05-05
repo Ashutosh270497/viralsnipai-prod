@@ -27,7 +27,7 @@ export function useRepurposeIngest({
     typeof process !== "undefined" &&
     typeof process.env.NEXT_PUBLIC_REPURPOSE_DEFAULT_MODEL === "string" &&
     HIGHLIGHT_MODEL_OPTIONS.some(
-      (option) => option.value === process.env.NEXT_PUBLIC_REPURPOSE_DEFAULT_MODEL!.trim()
+      (option) => option.value === process.env.NEXT_PUBLIC_REPURPOSE_DEFAULT_MODEL!.trim(),
     )
       ? process.env.NEXT_PUBLIC_REPURPOSE_DEFAULT_MODEL!.trim()
       : HIGHLIGHT_MODEL_OPTIONS[0].value;
@@ -36,11 +36,14 @@ export function useRepurposeIngest({
   const [highlightAudience, setHighlightAudience] = useState<string>("Growth-focused creators");
   const [highlightTone, setHighlightTone] = useState<string>("Tension → payoff, high energy");
   const [highlightCallToAction, setHighlightCallToAction] = useState<string>(
-    "Drive viewers to subscribe or click through"
+    "Drive viewers to subscribe or click through",
   );
   const [targetClipCount, setTargetClipCount] = useState<number>(5);
-  const [clipLengthPreset, setClipLengthPreset] = useState<"short" | "balanced" | "detailed">("balanced");
-  const [lastHighlightAnalytics, setLastHighlightAnalytics] = useState<AutoHighlightsAnalytics | null>(null);
+  const [clipLengthPreset, setClipLengthPreset] = useState<"short" | "balanced" | "detailed">(
+    "balanced",
+  );
+  const [lastHighlightAnalytics, setLastHighlightAnalytics] =
+    useState<AutoHighlightsAnalytics | null>(null);
 
   const pollTimerRef = useRef<NodeJS.Timeout | null>(null);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -90,6 +93,7 @@ export function useRepurposeIngest({
           tone: highlightTone,
           callToAction: highlightCallToAction,
           target: targetClipCount,
+          clipLengthPreset,
         }),
         cache: "no-store",
         next: { revalidate: 0 },
@@ -114,6 +118,7 @@ export function useRepurposeIngest({
     highlightModel,
     highlightProgress,
     highlightTone,
+    clipLengthPreset,
     onProjectRefresh,
     primaryAssetId,
     targetClipCount,
@@ -236,17 +241,20 @@ export function useRepurposeIngest({
         }
       }, 2500);
 
-      timeoutRef.current = setTimeout(() => {
-        clearPolling();
-        if (youtubeProgress.isActive) {
-          toast({
-            variant: "destructive",
-            title: "Ingestion timeout",
-            description: "The process is taking longer than expected. Refresh and retry.",
-          });
-          youtubeProgress.reset();
-        }
-      }, 10 * 60 * 1000);
+      timeoutRef.current = setTimeout(
+        () => {
+          clearPolling();
+          if (youtubeProgress.isActive) {
+            toast({
+              variant: "destructive",
+              title: "Ingestion timeout",
+              description: "The process is taking longer than expected. Refresh and retry.",
+            });
+            youtubeProgress.reset();
+          }
+        },
+        10 * 60 * 1000,
+      );
     } catch (error) {
       console.error("YouTube ingestion error:", error);
       toast({
@@ -257,7 +265,15 @@ export function useRepurposeIngest({
       youtubeProgress.reset();
       clearPolling();
     }
-  }, [clearPolling, onProjectRefresh, projectId, readJobMetadata, sourceUrl, toast, youtubeProgress]);
+  }, [
+    clearPolling,
+    onProjectRefresh,
+    projectId,
+    readJobMetadata,
+    sourceUrl,
+    toast,
+    youtubeProgress,
+  ]);
 
   useEffect(() => {
     return () => {

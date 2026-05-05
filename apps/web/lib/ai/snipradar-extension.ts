@@ -1,3 +1,4 @@
+import "openai/shims/node";
 import OpenAI from "openai";
 
 import { getActiveClient } from "@/lib/openrouter-client";

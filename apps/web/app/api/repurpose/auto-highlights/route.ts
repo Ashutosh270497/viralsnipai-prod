@@ -1,7 +1,6 @@
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-import { z } from "zod";
 import { getCurrentUser } from "@/lib/auth";
 import { container } from "@/lib/infrastructure/di/container";
 import { TYPES } from "@/lib/infrastructure/di/types";
@@ -9,62 +8,17 @@ import { GenerateAutoHighlightsUseCase } from "@/lib/application/use-cases/Gener
 import { ApiResponseBuilder, ErrorCodes } from "@/lib/api/response";
 import { AppError, withErrorHandling } from "@/lib/utils/error-handler";
 import { logger } from "@/lib/logger";
-import { HIGHLIGHT_MODEL_VALUES } from "@/lib/constants/repurpose";
-import { V1_CLIP_POLICY } from "@/lib/repurpose/clip-policy";
-
-const HIGHLIGHT_MODELS = HIGHLIGHT_MODEL_VALUES;
-
-const schema = z.object({
-  assetId: z.string(),
-  strategy: z.string().optional(),
-  target: z.number().min(1).max(V1_CLIP_POLICY.maxTargetClips).optional(),
-  /**
-   * How to reconcile new highlights with existing clips on the project:
-   *   "merge" (default)   — keep existing clips; skip new ones that overlap existing within 5s
-   *   "replace"           — delete ALL existing clips, then create new ones
-   *   "append"            — keep existing clips; add ALL new clips alongside (may duplicate)
-   * Callers must opt into "replace" explicitly when they want destructive regeneration.
-   */
-  mode: z.enum(['replace', 'merge', 'append']).optional().default('merge'),
-  model: z.string().optional().transform((val) => {
-    if (!val || val.trim().length === 0) return undefined;
-    const trimmed = val.trim();
-    return trimmed;
-  }).superRefine((val, ctx) => {
-    if (val && !HIGHLIGHT_MODELS.includes(val as any)) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: `Invalid OpenRouter reasoning model "${val}".`,
-      });
-    }
-  }),
-  brief: z.string().optional().transform((val) => {
-    if (!val || val.trim().length === 0) return undefined;
-    return val.trim().slice(0, 600);
-  }),
-  audience: z.string().optional().transform((val) => {
-    if (!val || val.trim().length === 0) return undefined;
-    return val.trim().slice(0, 160);
-  }),
-  tone: z.string().optional().transform((val) => {
-    if (!val || val.trim().length === 0) return undefined;
-    return val.trim().slice(0, 160);
-  }),
-  callToAction: z.string().optional().transform((val) => {
-    if (!val || val.trim().length === 0) return undefined;
-    return val.trim().slice(0, 200);
-  })
-});
+import { autoHighlightsRequestSchema } from "@/app/api/repurpose/auto-highlights/schema";
 
 export const POST = withErrorHandling(async (request: Request) => {
   // Step 1: Authenticate user
   const user = await getCurrentUser();
   if (!user) {
-    logger.warn('Auto-highlights request without authentication');
+    logger.warn("Auto-highlights request without authentication");
     return ApiResponseBuilder.errorResponse(
       ErrorCodes.UNAUTHORIZED,
-      'Authentication required',
-      401
+      "Authentication required",
+      401,
     );
   }
 
@@ -72,28 +26,27 @@ export const POST = withErrorHandling(async (request: Request) => {
   let parsedData;
   try {
     const body = await request.json();
-    parsedData = schema.parse(body);
+    parsedData = autoHighlightsRequestSchema.parse(body);
   } catch (error) {
-    logger.error('Auto-highlights validation failed', { error });
+    logger.error("Auto-highlights validation failed", { error });
     throw AppError.validation(
-      'Invalid request data',
-      error instanceof Error ? error.message : undefined
+      "Invalid request data",
+      error instanceof Error ? error.message : undefined,
     );
   }
 
-  logger.info('Auto-highlights request received', {
+  logger.info("Auto-highlights request received", {
     userId: user.id,
     assetId: parsedData.assetId,
     model: parsedData.model,
     targetClips: parsedData.target,
+    clipLengthPreset: parsedData.clipLengthPreset,
     mode: parsedData.mode,
     hasCustomization: !!(parsedData.brief || parsedData.audience || parsedData.tone),
   });
 
   // Step 3: Get use case from DI container
-  const useCase = container.get<GenerateAutoHighlightsUseCase>(
-    TYPES.GenerateAutoHighlightsUseCase
-  );
+  const useCase = container.get<GenerateAutoHighlightsUseCase>(TYPES.GenerateAutoHighlightsUseCase);
 
   let result;
   try {
@@ -109,10 +62,11 @@ export const POST = withErrorHandling(async (request: Request) => {
         brief: parsedData.brief,
         callToAction: parsedData.callToAction,
         mode: parsedData.mode,
+        clipLengthPreset: parsedData.clipLengthPreset,
       },
     });
   } catch (error) {
-    logger.error('Clip generation failed', {
+    logger.error("Clip generation failed", {
       userId: user.id,
       assetId: parsedData.assetId,
       error: error instanceof Error ? error.message : String(error),
@@ -120,7 +74,7 @@ export const POST = withErrorHandling(async (request: Request) => {
     throw error;
   }
 
-  logger.info('Auto-highlights generation completed', {
+  logger.info("Auto-highlights generation completed", {
     userId: user.id,
     assetId: result.assetId,
     clipsCreated: result.clips.length,

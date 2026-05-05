@@ -92,7 +92,7 @@ export async function GET(
           ? 100
           : publicStatus === "failed"
             ? 100
-            : runtime?.progressPct ?? (publicStatus === "queued" ? 2 : 0),
+            : runtime?.progressPct ?? (exportRecord as any).progress ?? (publicStatus === "queued" ? 2 : 0),
       retryable: publicStatus === "retryable" || Boolean(runtime?.retryable),
     },
   });
