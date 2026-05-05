@@ -34,11 +34,22 @@ export interface AnalysisResult {
 @injectable()
 export class AIAnalysisService {
   /**
-   * Generate highlight suggestions from transcript using AI
+   * @deprecated Legacy percentage-based highlight suggestion path.
+   * Do not use for the V1 precision pipeline. The active V1 path generates
+   * timestamped candidates locally and lets OpenRouter select candidate IDs.
    * @param options - Generation options
    * @returns Analysis result with highlight suggestions
    */
   async generateHighlights(options: HighlightGenerationOptions): Promise<AnalysisResult> {
+    return this.generateLegacyPercentageHighlights(options);
+  }
+
+  /**
+   * @deprecated Legacy LLM percentage timestamp path. Kept only for backwards
+   * compatibility with older tests/routes. Final V1 clip boundaries must not
+   * come from startPercent/endPercent.
+   */
+  async generateLegacyPercentageHighlights(options: HighlightGenerationOptions): Promise<AnalysisResult> {
     const {
       transcript,
       durationSec,

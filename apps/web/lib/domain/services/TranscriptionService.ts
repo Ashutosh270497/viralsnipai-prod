@@ -8,24 +8,43 @@
  */
 
 import { injectable } from 'inversify';
-import { transcribeFile } from '@/lib/transcript';
 import { probeDuration } from '@/lib/ffmpeg';
 import { logger } from '@/lib/logger';
 import { AppError } from '@/lib/utils/error-handler';
+import {
+  type CanonicalTranscript,
+  type TranscriptPrecision,
+  transcribeWithOpenAI,
+  hasWordLevelTimestamps,
+  hasSegmentTimestamps,
+  getTranscriptPrecision,
+  logTranscriptPrecision,
+} from '@/lib/ai/providers/openai-transcription-provider';
 
 export interface TranscriptionResult {
   text: string;
   segments?: Array<{
+    id?: string;
     start: number;
     end: number;
     text: string;
+    speaker?: string | null;
     words?: Array<{
+      index?: number;
       word: string;
       start: number;
       end: number;
+      confidence?: number | null;
     }>;
   }>;
   duration?: number;
+  durationSec?: number | null;
+  language?: string | null;
+  precision?: TranscriptPrecision;
+  provider?: 'openai';
+  model?: string;
+  warnings?: string[];
+  createdAt?: string;
 }
 
 export interface TranscriptionOptions {
@@ -49,12 +68,16 @@ export class TranscriptionService {
     try {
       logger.info('Starting transcription', { filePath, options });
 
-      const transcription = await transcribeFile(filePath);
+      const transcription = await transcribeWithOpenAI(filePath);
+      logTranscriptPrecision(transcription);
 
       logger.info('Transcription completed', {
         filePath,
         segmentCount: transcription.segments?.length ?? 0,
         hasWords: transcription.segments?.some((s) => s.words && s.words.length > 0) ?? false,
+        precision: transcription.precision,
+        provider: transcription.provider,
+        model: transcription.model,
       });
 
       return transcription;
@@ -76,21 +99,21 @@ export class TranscriptionService {
     try {
       const parsed = JSON.parse(transcriptData);
 
-      if (parsed && typeof parsed === 'object' && parsed.text) {
-        // Legacy format: JSON with text and segments (from old implementation)
-        logger.info('Parsed legacy JSON transcript with segments', {
-          segmentCount: parsed.segments?.length ?? 0,
+      if (parsed && typeof parsed === 'object' && typeof parsed.text === 'string') {
+        const canonical = this.normalizeStoredTranscript(parsed);
+        logger.info('Parsed JSON transcript', {
+          segmentCount: canonical.segments?.length ?? 0,
+          precision: canonical.precision,
+          provider: canonical.provider,
         });
-        return parsed;
+        return canonical;
       } else {
-        // Plain text format (current standard)
         logger.info('Using transcript as plain text');
-        return { text: transcriptData };
+        return this.legacyPlainTextTranscript(transcriptData);
       }
     } catch {
-      // Current format: plain text (not JSON)
       logger.info('Using raw transcript as plain text');
-      return { text: transcriptData };
+      return this.legacyPlainTextTranscript(transcriptData);
     }
   }
 
@@ -111,9 +134,14 @@ export class TranscriptionService {
   ): Promise<TranscriptionResult> {
     if (existingTranscript) {
       const parsed = this.parseTranscript(existingTranscript);
-      if (options?.forceRetranscribeOnUntimed && !this.hasTimedSegments(parsed)) {
-        logger.warn('Existing transcript has no timing data, re-transcribing source', {
+      const needsPrecision =
+        options?.forceRetranscribeOnUntimed &&
+        (!this.hasTimedSegments(parsed) || parsed.precision === 'none' || parsed.precision === 'approximate');
+
+      if (needsPrecision) {
+        logger.warn('Existing transcript has insufficient timing data, re-transcribing source with OpenAI', {
           filePath,
+          precision: parsed.precision ?? 'unknown',
         });
         return await this.transcribe(filePath, options);
       }
@@ -145,36 +173,104 @@ export class TranscriptionService {
   }
 
   /**
-   * Serialize transcription result for database storage
-   * Only stores the plain text to keep database size manageable.
-   * Word-level timestamps are available during transcription but not persisted.
+   * Serialize transcription result for database storage.
+   * New V1 transcripts are stored as canonical JSON so word/segment timings can
+   * drive deterministic clip boundaries and captions.
    *
    * @param transcription - Transcription result
    * @returns Plain text transcript for storage
    */
   serializeTranscription(transcription: TranscriptionResult): string {
-    const hasSegments = Array.isArray(transcription.segments) && transcription.segments.length > 0;
-
-    if (!hasSegments) {
-      return transcription.text;
-    }
-
     return JSON.stringify({
       text: transcription.text,
-      segments: transcription.segments,
+      language: transcription.language ?? null,
+      durationSec: transcription.durationSec ?? transcription.duration ?? null,
+      segments: transcription.segments ?? [],
+      precision: transcription.precision ?? getTranscriptPrecision({ segments: (transcription.segments ?? []) as CanonicalTranscript['segments'] }),
+      provider: transcription.provider ?? 'openai',
+      model: transcription.model ?? process.env.OPENAI_TRANSCRIBE_MODEL ?? process.env.WHISPER_MODEL ?? 'whisper-1',
+      warnings: transcription.warnings ?? [],
+      createdAt: transcription.createdAt ?? new Date().toISOString(),
     });
   }
 
   hasTimedSegments(transcription: TranscriptionResult): boolean {
-    if (!Array.isArray(transcription.segments) || transcription.segments.length === 0) {
-      return false;
-    }
+    return hasSegmentTimestamps({ segments: (transcription.segments ?? []) as CanonicalTranscript['segments'] });
+  }
 
-    return transcription.segments.some(
-      (segment) =>
-        Number.isFinite(segment.start) &&
-        Number.isFinite(segment.end) &&
-        segment.end > segment.start
-    );
+  hasWordLevelTimestamps(transcription: TranscriptionResult): boolean {
+    return hasWordLevelTimestamps({ segments: (transcription.segments ?? []) as CanonicalTranscript['segments'] });
+  }
+
+  private normalizeStoredTranscript(parsed: Record<string, unknown>): TranscriptionResult {
+    const segments = Array.isArray(parsed.segments)
+      ? parsed.segments.map((segment, index) => {
+          const record = segment as Record<string, unknown>;
+          const words = Array.isArray(record.words)
+            ? record.words
+                .map((word, wordIndex) => {
+                  const wordRecord = word as Record<string, unknown>;
+                  const text = typeof wordRecord.word === 'string' ? wordRecord.word.trim() : '';
+                  const start = Number(wordRecord.start);
+                  const end = Number(wordRecord.end);
+                  if (!text || !Number.isFinite(start) || !Number.isFinite(end) || end <= start) {
+                    return null;
+                  }
+                  return {
+                    index: Number.isFinite(Number(wordRecord.index)) ? Number(wordRecord.index) : wordIndex,
+                    word: text,
+                    start,
+                    end,
+                    confidence: typeof wordRecord.confidence === 'number' ? wordRecord.confidence : null,
+                  };
+                })
+                .filter((word): word is {
+                  index: number;
+                  word: string;
+                  start: number;
+                  end: number;
+                  confidence: number | null;
+                } => Boolean(word))
+            : undefined;
+          return {
+            id: typeof record.id === 'string' ? record.id : `seg-${index + 1}`,
+            start: Number(record.start),
+            end: Number(record.end),
+            text: typeof record.text === 'string' ? record.text : '',
+            speaker: typeof record.speaker === 'string' ? record.speaker : null,
+            ...(words && words.length > 0 ? { words } : {}),
+          };
+        })
+        .filter((segment) => segment.text && Number.isFinite(segment.start) && Number.isFinite(segment.end))
+      : [];
+
+    const precision =
+      typeof parsed.precision === 'string'
+        ? parsed.precision as TranscriptPrecision
+        : getTranscriptPrecision({ segments: segments as CanonicalTranscript['segments'] });
+
+    return {
+      text: String(parsed.text ?? ''),
+      language: typeof parsed.language === 'string' ? parsed.language : null,
+      durationSec: typeof parsed.durationSec === 'number' ? parsed.durationSec : null,
+      segments,
+      precision,
+      provider: 'openai',
+      model: typeof parsed.model === 'string' ? parsed.model : process.env.OPENAI_TRANSCRIBE_MODEL ?? 'whisper-1',
+      warnings: Array.isArray(parsed.warnings) ? parsed.warnings.filter((item): item is string => typeof item === 'string') : [],
+      createdAt: typeof parsed.createdAt === 'string' ? parsed.createdAt : new Date().toISOString(),
+    };
+  }
+
+  private legacyPlainTextTranscript(text: string): TranscriptionResult {
+    return {
+      text,
+      segments: [],
+      precision: 'none',
+      provider: 'openai',
+      model: 'legacy-import',
+      warnings: ['Legacy transcript has no timestamp data.'],
+      createdAt: new Date().toISOString(),
+    };
   }
 }

@@ -35,6 +35,9 @@ import { TranscriptionService } from '@/lib/domain/services/TranscriptionService
 import { TranslationService } from '@/lib/domain/services/TranslationService';
 import { AIAnalysisService } from '@/lib/domain/services/AIAnalysisService';
 import { ClipExtractionService } from '@/lib/domain/services/ClipExtractionService';
+import { ClipCandidateGenerationService } from '@/lib/domain/services/ClipCandidateGenerationService';
+import { ClipRerankingService } from '@/lib/domain/services/ClipRerankingService';
+import { ClipBoundaryRefinementService } from '@/lib/domain/services/ClipBoundaryRefinementService';
 import { CaptionGenerationService } from '@/lib/domain/services/CaptionGenerationService';
 import { CaptionExportService } from '@/lib/domain/services/CaptionExportService';
 import { VideoExtractionService } from '@/lib/domain/services/VideoExtractionService';
@@ -107,6 +110,9 @@ function bindDomainServices(): void {
   container.bind(TYPES.TranslationService).to(TranslationService);
   container.bind(TYPES.AIAnalysisService).to(AIAnalysisService);
   container.bind(TYPES.ClipExtractionService).to(ClipExtractionService);
+  container.bind(TYPES.ClipCandidateGenerationService).to(ClipCandidateGenerationService);
+  container.bind(TYPES.ClipRerankingService).to(ClipRerankingService);
+  container.bind(TYPES.ClipBoundaryRefinementService).to(ClipBoundaryRefinementService);
   container.bind(TYPES.CaptionGenerationService).to(CaptionGenerationService);
   container.bind(TYPES.CaptionExportService).to(CaptionExportService);
   container.bind(TYPES.VideoExtractionService).to(VideoExtractionService);

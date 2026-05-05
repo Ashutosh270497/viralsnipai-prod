@@ -4,10 +4,10 @@
  * Orchestrates the entire auto-highlights generation workflow:
  * 1. Validate asset and permissions
  * 2. Transcribe video (if needed)
- * 3. Generate AI highlight suggestions
- * 4. Extract and normalize clips
- * 5. Analyze virality
- * 6. Save clips to database
+ * 3. Generate timestamped candidates locally
+ * 4. Rerank candidates via OpenRouter
+ * 5. Refine boundaries locally
+ * 6. Analyze virality, save clips, generate previews
  *
  * @module GenerateAutoHighlightsUseCase
  */
@@ -20,6 +20,9 @@ import type { IClipRepository } from '@/lib/domain/repositories/IClipRepository'
 import { TranscriptionService } from '@/lib/domain/services/TranscriptionService';
 import { AIAnalysisService } from '@/lib/domain/services/AIAnalysisService';
 import { ClipExtractionService } from '@/lib/domain/services/ClipExtractionService';
+import { ClipCandidateGenerationService, type ClipCandidate } from '@/lib/domain/services/ClipCandidateGenerationService';
+import { ClipBoundaryRefinementService } from '@/lib/domain/services/ClipBoundaryRefinementService';
+import { ClipRerankingService } from '@/lib/domain/services/ClipRerankingService';
 import { ThumbnailGenerationService } from '@/lib/domain/services/ThumbnailGenerationService';
 import { VideoExtractionService } from '@/lib/domain/services/VideoExtractionService';
 import { materializeMediaLocally } from '@/lib/media/media-path-resolver';
@@ -29,6 +32,7 @@ import { logger } from '@/lib/logger';
 import { AppError } from '@/lib/utils/error-handler';
 import type { Clip, ViralityFactors as ClipViralityFactors, EnhancementData } from '@/lib/types';
 import type { TranscriptionSegment } from '@/lib/transcript';
+import type { CanonicalTranscript, TranscriptPrecision } from '@/lib/ai/providers/openai-transcription-provider';
 import { buildSRT, type CaptionEntry } from '@/lib/srt-utils';
 import { PRESETS, probeVideoGeometry } from '@/lib/ffmpeg';
 import {
@@ -38,6 +42,7 @@ import {
   selectBestReframePlan,
 } from '@/lib/repurpose/clip-optimization';
 import { detectRepurposeSceneCuts } from '@/lib/repurpose/scene-detection';
+import { V1_CLIP_POLICY } from '@/lib/repurpose/clip-policy';
 import path from 'path';
 import fs from 'fs/promises';
 import { nanoid } from 'nanoid';
@@ -94,6 +99,15 @@ export interface GenerateAutoHighlightsOutput {
     previewsGenerated: number;
     previewFailures: number;
     previewFailureReasons: PreviewGenerationFailure[];
+    providerTranscription?: 'openai';
+    providerReasoning?: 'openrouter';
+    transcriptionModel?: string;
+    rerankModel?: string;
+    viralityModel?: string;
+    transcriptPrecision?: TranscriptPrecision;
+    candidatesGenerated?: number;
+    candidatesReranked?: number;
+    lowPrecisionWarning?: string | null;
   };
 }
 
@@ -121,6 +135,25 @@ async function runWithConcurrencyLimit<T>(
   await Promise.allSettled(workers);
 }
 
+function buildFallbackTitle(candidate: ClipCandidate): string {
+  const words = candidate.firstWords || candidate.text;
+  const title = words
+    .replace(/[^\w\s'"-]/g, "")
+    .split(/\s+/)
+    .slice(0, 9)
+    .join(" ")
+    .trim();
+  return title || "Selected highlight";
+}
+
+function getLowPrecisionWarning(transcript: CanonicalTranscript): string | null {
+  if (transcript.precision === "word") return null;
+  if (transcript.precision === "segment" || transcript.precision === "diarized_segment") {
+    return "Transcript has segment-level timing only; clip boundaries use lower-confidence segment snapping.";
+  }
+  return "Transcript timing precision is low; clips may need manual review.";
+}
+
 @injectable()
 export class GenerateAutoHighlightsUseCase {
   constructor(
@@ -133,6 +166,10 @@ export class GenerateAutoHighlightsUseCase {
     @inject(TYPES.ThumbnailGenerationService) private thumbnailService: ThumbnailGenerationService,
     @inject(TYPES.VideoExtractionService) private videoExtractionService: VideoExtractionService
   ) {}
+
+  private readonly candidateGenerationService = new ClipCandidateGenerationService();
+  private readonly clipRerankingService = new ClipRerankingService();
+  private readonly boundaryRefinementService = new ClipBoundaryRefinementService();
 
   async execute(input: GenerateAutoHighlightsInput): Promise<GenerateAutoHighlightsOutput> {
     const { assetId, userId, options = {} } = input;
@@ -189,54 +226,30 @@ export class GenerateAutoHighlightsUseCase {
 
     const transcriptionSourcePath = sourcePath || asset.storagePath || asset.path;
 
-    let transcriptionResult = await this.transcriptionService.getOrCreateTranscription(
+    const transcriptionResult = await this.transcriptionService.getOrCreateTranscription(
       transcriptionSourcePath,
-      asset.transcript ?? null
+      asset.transcript ?? null,
+      { forceRetranscribeOnUntimed: true }
     );
 
-    if (!this.transcriptionService.hasTimedSegments(transcriptionResult)) {
-      logger.warn('Transcript is missing timing segments. Re-transcribing source for clip accuracy.', {
-        assetId,
-        sourcePath: transcriptionSourcePath,
-      });
-
-      transcriptionResult = await this.transcriptionService.transcribe(transcriptionSourcePath);
+    // Save canonical transcript JSON whenever the stored transcript is missing
+    // or legacy/low precision data forced an OpenAI re-transcription.
+    const serializedTranscript = this.transcriptionService.serializeTranscription(transcriptionResult);
+    if (!asset.transcript || asset.transcript !== serializedTranscript) {
       transcriptionGenerated = true;
       await this.assetRepo.update(assetId, {
-        transcript: this.transcriptionService.serializeTranscription(transcriptionResult),
+        transcript: serializedTranscript,
         durationSec,
       });
     }
 
-    // Save transcription if newly generated
-    if (!asset.transcript) {
-      transcriptionGenerated = true;
-      await this.assetRepo.update(assetId, {
-        transcript: this.transcriptionService.serializeTranscription(transcriptionResult),
-        durationSec,
-      });
-    }
+    const canonicalTranscript = transcriptionResult as CanonicalTranscript;
+    const targetCount = Math.min(
+      V1_CLIP_POLICY.maxTargetClips,
+      Math.max(1, options.targetClipCount ?? V1_CLIP_POLICY.defaultTargetClips)
+    );
 
-    // Step 3: Generate AI highlight suggestions
-    const targetCount =
-      options.targetClipCount || this.aiAnalysisService.determineOptimalClipCount(durationSec);
-
-    const analysisResult = await this.aiAnalysisService.generateHighlights({
-      transcript: transcriptionResult.text,
-      durationSec,
-      targetCount,
-      model: options.model,
-      audience: options.audience,
-      tone: options.tone,
-      brief: options.brief,
-      callToAction: options.callToAction,
-    });
-
-    if (analysisResult.suggestions.length === 0) {
-      throw AppError.internal('AI failed to generate any highlight suggestions');
-    }
-
-    // Step 4: Detect scene transitions (visual motion proxy) for cleaner cuts.
+    // Step 3: Detect scene transitions (visual motion proxy) for cleaner cuts.
     let sceneCutsMs: number[] = [];
     try {
       const sceneDetection = await detectRepurposeSceneCuts({
@@ -299,17 +312,120 @@ export class GenerateAutoHighlightsUseCase {
       }
     }
 
-    // Step 5: Extract and normalize clips
-    const extractedClips = this.clipExtractionService.extractClips(
-      analysisResult.suggestions,
-      durationSec * 1000, // Convert to milliseconds
-      transcriptionResult,
-      {
+    // Step 5: Generate real timestamped candidates locally, rerank candidate
+    // IDs with OpenRouter, then refine final boundaries locally. OpenRouter
+    // never creates or controls final timestamps.
+    const generatedCandidates = this.candidateGenerationService.generateCandidates({
+      transcript: canonicalTranscript,
+      durationMs: durationSec * 1000,
+      sceneCutsMs,
+      policy: V1_CLIP_POLICY,
+      audience: options.audience,
+      tone: options.tone,
+      brief: options.brief,
+    });
+
+    if (generatedCandidates.length === 0) {
+      throw AppError.internal('Failed to generate any timestamped clip candidates');
+    }
+
+    let rerankModel = options.model ?? process.env.OPENROUTER_HIGHLIGHT_RERANK_MODEL ?? 'google/gemini-2.5-pro';
+    let rerankWarnings: string[] = [];
+    let selectedCandidatePairs: Array<{
+      candidate: ClipCandidate;
+      title: string;
+      hook: string;
+      callToAction?: string | null;
+      llmScore: number | null;
+      finalScore: number;
+      viralReason?: string;
+      editingNotes?: string[];
+      platformFit?: Record<string, number>;
+    }> = [];
+
+    try {
+      const reranked = await this.clipRerankingService.rerank({
+        candidates: generatedCandidates,
         targetClipCount: targetCount,
-        minClipCount: Math.min(targetCount, 3),
+        audience: options.audience,
+        tone: options.tone,
+        brief: options.brief,
+        callToAction: options.callToAction,
+        transcriptPrecision: canonicalTranscript.precision,
+        sourceDurationSec: durationSec,
+        model: options.model,
+      });
+      rerankModel = reranked.model;
+      rerankWarnings = reranked.overallWarnings;
+      selectedCandidatePairs = reranked.selected
+        .map((selection) => {
+          const candidate = generatedCandidates.find((item) => item.id === selection.candidateId);
+          if (!candidate) return null;
+          return {
+            candidate,
+            title: selection.title,
+            hook: selection.hook,
+            callToAction: selection.callToAction ?? options.callToAction ?? null,
+            llmScore: selection.llmScore,
+            finalScore: selection.finalScore,
+            viralReason: selection.viralReason,
+            editingNotes: selection.editingNotes,
+            platformFit: selection.platformFit,
+          };
+        })
+        .filter((item): item is NonNullable<typeof item> => Boolean(item));
+    } catch (error) {
+      logger.warn('OpenRouter candidate reranking failed; falling back to deterministic candidate order', {
+        assetId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      rerankWarnings = ['OpenRouter reranking unavailable; used deterministic candidate ranking.'];
+      selectedCandidatePairs = generatedCandidates.slice(0, targetCount).map((candidate) => ({
+        candidate,
+        title: buildFallbackTitle(candidate),
+        hook: candidate.firstWords || candidate.text.slice(0, 120),
+        callToAction: options.callToAction ?? null,
+        llmScore: null,
+        finalScore: candidate.deterministicScore,
+        viralReason: 'Selected by deterministic transcript and scene-quality score.',
+        editingNotes: [],
+        platformFit: {},
+      }));
+    }
+
+    const extractedClips = selectedCandidatePairs.map((pair) => {
+      const refined = this.boundaryRefinementService.refine({
+        candidate: pair.candidate,
+        transcript: canonicalTranscript,
         sceneCutsMs,
-      }
-    );
+        durationMs: durationSec * 1000,
+        policy: V1_CLIP_POLICY,
+      });
+      const qualitySignals = analyzeClipQuality({
+        startMs: refined.startMs,
+        endMs: refined.endMs,
+        transcriptionSegments: transcriptionResult.segments,
+        sceneCutsMs,
+        minDurationMs: V1_CLIP_POLICY.minMs,
+        maxDurationMs: V1_CLIP_POLICY.maxMs,
+      });
+
+      return {
+        title: pair.title,
+        hook: pair.hook,
+        startMs: refined.startMs,
+        endMs: refined.endMs,
+        callToAction: pair.callToAction ?? undefined,
+        qualitySignals,
+        selectionScore: pair.finalScore,
+        candidate: pair.candidate,
+        llmScore: pair.llmScore,
+        boundary: refined,
+        viralReason: pair.viralReason,
+        editingNotes: pair.editingNotes ?? [],
+        platformFit: pair.platformFit ?? {},
+      };
+    });
 
     if (extractedClips.length === 0) {
       throw AppError.internal('Failed to extract any valid clips');
@@ -360,7 +476,7 @@ export class GenerateAutoHighlightsUseCase {
           clips: existingClipsBefore,
           analytics: {
             transcriptionGenerated,
-            suggestionsReceived: analysisResult.suggestions.length,
+            suggestionsReceived: selectedCandidatePairs.length,
             clipsCreated: 0,
             averageViralityScore: null,
             mode,
@@ -370,6 +486,15 @@ export class GenerateAutoHighlightsUseCase {
             previewsGenerated: 0,
             previewFailures: 0,
             previewFailureReasons: [],
+            providerTranscription: 'openai',
+            providerReasoning: 'openrouter',
+            transcriptionModel: canonicalTranscript.model,
+            rerankModel,
+            viralityModel: process.env.OPENROUTER_VIRALITY_MODEL ?? 'google/gemini-3.1-flash-lite-preview',
+            transcriptPrecision: canonicalTranscript.precision,
+            candidatesGenerated: generatedCandidates.length,
+            candidatesReranked: selectedCandidatePairs.length,
+            lowPrecisionWarning: getLowPrecisionWarning(canonicalTranscript),
           },
         };
       }
@@ -475,6 +600,7 @@ export class GenerateAutoHighlightsUseCase {
         storyArc: viralityAnalysis?.factors.storyArc ?? 0,
         pacing: viralityAnalysis?.factors.pacing ?? 0,
         transcriptQuality: viralityAnalysis?.factors.transcriptQuality ?? 0,
+        shareability: viralityAnalysis?.factors.shareability,
         reasoning: viralityAnalysis?.reasoning,
         improvements: viralityAnalysis?.improvements ?? [],
         enhancement: enhancement || undefined,
@@ -484,6 +610,18 @@ export class GenerateAutoHighlightsUseCase {
           aiScore: viralityAnalysis?.score ?? null,
           deterministicScore: qualitySignals.overallScore,
           selectionScore: extractedClip.selectionScore ?? qualitySignals.overallScore,
+          llmScore: extractedClip.llmScore,
+          candidateId: extractedClip.candidate.id,
+          candidateType: extractedClip.candidate.candidateType,
+          candidateReasons: extractedClip.candidate.reasons,
+          viralReason: extractedClip.viralReason,
+          editingNotes: extractedClip.editingNotes,
+          platformFit: extractedClip.platformFit,
+          boundaryConfidence: extractedClip.boundary.confidence,
+          boundaryPrecision: extractedClip.boundary.precision,
+          boundaryReasons: extractedClip.boundary.boundaryReasons,
+          providerTranscription: 'openai',
+          providerReasoning: 'openrouter',
           sourceGeometry,
         },
       };
@@ -665,7 +803,7 @@ export class GenerateAutoHighlightsUseCase {
       clips: updatedClips,
       analytics: {
         transcriptionGenerated,
-        suggestionsReceived: analysisResult.suggestions.length,
+        suggestionsReceived: selectedCandidatePairs.length,
         clipsCreated: createdClips.length,
         averageViralityScore,
         mode,
@@ -675,6 +813,15 @@ export class GenerateAutoHighlightsUseCase {
         previewsGenerated: previewGeneratedClipIds.size,
         previewFailures: previewFailureReasons.length,
         previewFailureReasons,
+        providerTranscription: 'openai',
+        providerReasoning: 'openrouter',
+        transcriptionModel: canonicalTranscript.model,
+        rerankModel,
+        viralityModel: process.env.OPENROUTER_VIRALITY_MODEL ?? 'google/gemini-3.1-flash-lite-preview',
+        transcriptPrecision: canonicalTranscript.precision,
+        candidatesGenerated: generatedCandidates.length,
+        candidatesReranked: selectedCandidatePairs.length,
+        lowPrecisionWarning: getLowPrecisionWarning(canonicalTranscript) ?? rerankWarnings[0] ?? null,
       },
     };
   }

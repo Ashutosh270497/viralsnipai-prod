@@ -10,13 +10,14 @@ import { ApiResponseBuilder, ErrorCodes } from "@/lib/api/response";
 import { AppError, withErrorHandling } from "@/lib/utils/error-handler";
 import { logger } from "@/lib/logger";
 import { HIGHLIGHT_MODEL_VALUES } from "@/lib/constants/repurpose";
+import { V1_CLIP_POLICY } from "@/lib/repurpose/clip-policy";
 
 const HIGHLIGHT_MODELS = HIGHLIGHT_MODEL_VALUES;
 
 const schema = z.object({
   assetId: z.string(),
   strategy: z.string().optional(),
-  target: z.number().min(1).max(12).optional(),
+  target: z.number().min(1).max(V1_CLIP_POLICY.maxTargetClips).optional(),
   /**
    * How to reconcile new highlights with existing clips on the project:
    *   "merge" (default)   — keep existing clips; skip new ones that overlap existing within 5s

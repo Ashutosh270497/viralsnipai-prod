@@ -42,6 +42,7 @@ export interface ViralityFactors {
   storyArc: number;             // 0-100
   pacing: number;               // 0-100
   transcriptQuality: number;    // 0-100
+  shareability?: number;         // 0-100
   reasoning?: string;
   improvements?: string[];
   enhancement?: EnhancementData;

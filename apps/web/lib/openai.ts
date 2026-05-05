@@ -11,6 +11,7 @@ import {
   buildEmptyOpenRouterContentError,
   getOpenRouterCandidateModels,
 } from "./openrouter-client";
+import { V1_CLIP_POLICY } from "@/lib/repurpose/clip-policy";
 
 const hasApiKey = Boolean(process.env.OPENAI_API_KEY);
 const client = hasApiKey
@@ -269,7 +270,20 @@ export async function generateScript(payload: ScriptPayload) {
 
 export { client as openAIClient };
 
+/**
+ * @deprecated Legacy percentage-based highlight generator. Do not use for V1
+ * precision clipping; it asks an LLM for startPercent/endPercent. The V1
+ * pipeline now generates timestamped candidates locally and uses OpenRouter
+ * only to select candidate IDs.
+ */
 export async function generateHighlights(payload: HighlightPayload) {
+  return generateLegacyPercentageHighlights(payload);
+}
+
+/**
+ * @deprecated Kept for backwards compatibility only.
+ */
+export async function generateLegacyPercentageHighlights(payload: HighlightPayload) {
   const requestedModel = payload.model?.trim();
   const wantsOpenRouterModel = requestedModel ? requestedModel.includes("/") : false;
 
@@ -289,8 +303,8 @@ export async function generateHighlights(payload: HighlightPayload) {
   const clipLimit = determineClipLimit(payload.durationSec);
   const minClipCount = Math.min(clipLimit, 3);
   const maxClipCount = clipLimit;
-  const minClipSeconds = 30;
-  const maxClipSeconds = 45;
+  const minClipSeconds = Math.round(V1_CLIP_POLICY.minMs / 1000);
+  const maxClipSeconds = Math.round(V1_CLIP_POLICY.maxMs / 1000);
 
   if (requestedModel && !wantsOpenRouterModel) {
     throw new Error(`Highlight model "${requestedModel}" is not an OpenRouter model ID.`);

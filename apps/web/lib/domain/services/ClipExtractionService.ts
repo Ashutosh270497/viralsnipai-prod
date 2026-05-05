@@ -1,7 +1,8 @@
 /**
  * Clip Extraction Service
  *
- * Handles extraction, normalization, and deduplication of clips from AI suggestions.
+ * Handles legacy extraction, normalization, and deduplication of clips from
+ * LLM percentage suggestions.
  * Ensures clips meet duration requirements and don't overlap significantly.
  *
  * @module ClipExtractionService
@@ -13,6 +14,7 @@ import type { TranscriptionSegment } from '@/lib/transcript';
 import { logger } from '@/lib/logger';
 import { analyzeClipQuality } from '@/lib/repurpose/clip-optimization';
 import type { ClipQualitySignals } from '@/lib/types';
+import { V1_CLIP_POLICY } from '@/lib/repurpose/clip-policy';
 
 export interface ExtractedClip {
   title: string;
@@ -38,14 +40,16 @@ export interface ClipExtractionOptions {
   sceneCutsMs?: number[];
 }
 
-const DEFAULT_MIN_DURATION_MS = 60_000; // 60 seconds
-const DEFAULT_MAX_DURATION_MS = 95_000; // 95 seconds
+const DEFAULT_MIN_DURATION_MS = V1_CLIP_POLICY.minMs;
+const DEFAULT_MAX_DURATION_MS = V1_CLIP_POLICY.maxMs;
 const DEFAULT_DEDUP_THRESHOLD_MS = 5_000; // 5 seconds
 
 @injectable()
 export class ClipExtractionService {
   /**
-   * Extract and process clips from AI highlight suggestions
+   * @deprecated Legacy percentage-based extraction. Do not use in V1 precision
+   * auto-highlights. Use ClipCandidateGenerationService +
+   * ClipBoundaryRefinementService instead.
    * @param suggestions - AI-generated highlight suggestions
    * @param durationMs - Total video duration in milliseconds
    * @param transcription - Transcription data with segments
@@ -53,6 +57,19 @@ export class ClipExtractionService {
    * @returns Processed clips ready for storage
    */
   extractClips(
+    suggestions: HighlightSuggestion[],
+    durationMs: number,
+    transcription: TranscriptionData,
+    options: ClipExtractionOptions = {}
+  ): ExtractedClip[] {
+    return this.extractClipsFromLegacyPercentageSuggestions(suggestions, durationMs, transcription, options);
+  }
+
+  /**
+   * @deprecated Final V1 clips must not be derived from LLM-generated
+   * startPercent/endPercent. This is kept for backwards compatibility only.
+   */
+  extractClipsFromLegacyPercentageSuggestions(
     suggestions: HighlightSuggestion[],
     durationMs: number,
     transcription: TranscriptionData,

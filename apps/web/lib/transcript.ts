@@ -1,31 +1,21 @@
 import fs from "fs";
-import { promises as fsp } from "fs";
 import { promisify } from "util";
-import path from "path";
-import { toFile } from "openai";
-import type { TranscriptionSegment as AudioTranscriptionSegment } from "openai/resources/audio/transcriptions";
 
-import { openAIClient } from "@/lib/openai";
-import { transcodeToMp3 } from "@/lib/ffmpeg";
-
-// Whisper API hard limit. We use 24 MB to leave a safe margin.
-const WHISPER_MAX_BYTES = 24 * 1024 * 1024;
-const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
-const OPENROUTER_REFERER = "https://snipradar.app";
-const OPENROUTER_TITLE = "ViralSnipAI";
+import { transcribeWithOpenAI } from "@/lib/ai/providers/openai-transcription-provider";
 
 const stat = promisify(fs.stat);
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export type TranscriptionSegment = {
   start: number;
   end: number;
   text: string;
-  speaker?: string;
+  speaker?: string | null;
   words?: Array<{
+    index?: number;
     word: string;
     start: number;
     end: number;
+    confidence?: number | null;
   }>;
 };
 
@@ -34,23 +24,8 @@ export type TranscriptionResult = {
   segments: TranscriptionSegment[];
 };
 
-const DEFAULT_MODEL = process.env.WHISPER_MODEL ?? "gpt-4o-mini-transcribe";
-const MAX_ATTEMPTS = Number(process.env.TRANSCRIBE_MAX_ATTEMPTS ?? 3);
-const RETRY_DELAY_BASE_MS = Number(process.env.TRANSCRIBE_RETRY_DELAY_MS ?? 4000);
-const MAX_DIRECT_UPLOAD_BYTES = Number(process.env.TRANSCRIBE_MAX_DIRECT_BYTES ?? 24 * 1024 * 1024);
-const TIMING_FALLBACK_MODEL = process.env.TRANSCRIBE_TIMING_FALLBACK_MODEL ?? "whisper-1";
-const OPENROUTER_TRANSCRIBE_MODEL =
-  process.env.OPENROUTER_TRANSCRIBE_MODEL ?? "openai/gpt-4o-audio-preview";
-const OPENROUTER_TRANSCRIBE_MAX_TOKENS = Number(process.env.OPENROUTER_TRANSCRIBE_MAX_TOKENS ?? 12000);
-const OPENROUTER_TRANSCRIBE_TIMEOUT_MS = Number(process.env.OPENROUTER_TRANSCRIBE_TIMEOUT_MS ?? 180000);
-const AUDIO_EXTENSIONS = new Set([".mp3", ".m4a", ".aac", ".wav", ".webm", ".ogg", ".oga", ".flac"]);
-
 export async function transcribeFile(filePath: string): Promise<TranscriptionResult> {
   const mode = (process.env.USE_MOCK_TRANSCRIBE ?? "auto").toLowerCase();
-  const provider = (
-    process.env.TRANSCRIBE_PROVIDER ??
-    (process.env.OPENROUTER_ENABLED === "true" && process.env.OPENROUTER_API_KEY ? "openrouter" : "openai")
-  ).toLowerCase();
 
   const fileName = filePath.split("/").pop() ?? "asset";
   const stats = await stat(filePath);
@@ -60,317 +35,25 @@ export async function transcribeFile(filePath: string): Promise<TranscriptionRes
     return generateMockResult(fileName, durationGuess);
   }
 
-  const prepared = await prepareTranscriptionSource(filePath);
+  // V1 provider boundary: transcription/timing precision is OpenAI-only.
+  // OpenRouter is intentionally not used here because LLM audio reasoning must
+  // not become a source of final clip timestamps.
+  const canonical = await transcribeWithOpenAI(filePath);
+  return {
+    text: canonical.text,
+    segments: canonical.segments.map((segment) => ({
+      start: segment.start,
+      end: segment.end,
+      text: segment.text,
+      speaker: segment.speaker ?? undefined,
+      words: segment.words?.map((word) => ({
+        word: word.word,
+        start: word.start,
+        end: word.end,
+      })),
+    })),
+  };
 
-  if (provider === "openrouter") {
-    try {
-      return await transcribeWithOpenRouter(prepared.path);
-    } finally {
-      await prepared.cleanup();
-    }
-  }
-
-  if (provider !== "openai") {
-    throw new Error(
-      `Unsupported TRANSCRIBE_PROVIDER "${provider}". Use "openrouter" for OpenRouter audio transcription or "openai" for legacy direct transcription.`
-    );
-  }
-
-  if (!openAIClient) {
-    await prepared.cleanup();
-    throw new Error(
-      "Live transcription requires OPENAI_API_KEY for TRANSCRIBE_PROVIDER=openai. Set TRANSCRIBE_PROVIDER=openrouter and OPENROUTER_API_KEY to route transcription through OpenRouter."
-    );
-  }
-
-  try {
-    const plans: Array<{ model: string; format: "verbose_json" | "json" }> = [
-      { model: DEFAULT_MODEL, format: "verbose_json" },
-      ...(TIMING_FALLBACK_MODEL !== DEFAULT_MODEL
-        ? [{ model: TIMING_FALLBACK_MODEL, format: "verbose_json" as const }]
-        : []),
-      { model: DEFAULT_MODEL, format: "json" },
-    ];
-    let response: any = null;
-    let usedFormat: "verbose_json" | "json" = "json";
-    let lastError: unknown = null;
-
-    for (const plan of plans) {
-      const attemptTranscription = async () => {
-        // Read the file into a Buffer and wrap with toFile() so the SDK sets
-        // the correct Content-Length header. Using a raw ReadStream inside a
-        // webpack-bundled RSC context causes ECONNRESET because node-fetch@2
-        // cannot determine Content-Length from a stream, and OpenAI drops the
-        // connection when the header is missing or incorrect.
-        const fileBuffer = await fsp.readFile(prepared.path);
-        const ext = path.extname(prepared.path).toLowerCase();
-        const mimeType =
-          ext === ".mp3" ? "audio/mpeg" :
-          ext === ".mp4" || ext === ".m4a" ? "audio/mp4" :
-          ext === ".wav" ? "audio/wav" :
-          ext === ".webm" ? "audio/webm" :
-          "audio/mpeg";
-        const fileObject = await toFile(
-          fileBuffer,
-          path.basename(prepared.path),
-          { type: mimeType }
-        );
-
-        const params: any = {
-          file: fileObject,
-          model: plan.model,
-          response_format: plan.format,
-        };
-
-        if (plan.format === "verbose_json") {
-          params.timestamp_granularities = ["segment", "word"];
-        }
-
-        // Use a 3-minute timeout for audio uploads — the default 60 s is too
-        // tight for long videos where server-side processing takes 60-120 s.
-        return await openAIClient!.audio.transcriptions.create(params, {
-          timeout: 180_000,
-        });
-      };
-
-      const attempts = Math.max(1, MAX_ATTEMPTS);
-      let formatResponse: Awaited<ReturnType<typeof attemptTranscription>> | null = null;
-      let formatError: unknown = null;
-
-      for (let attempt = 0; attempt < attempts; attempt += 1) {
-        try {
-          formatResponse = await attemptTranscription();
-          break;
-        } catch (error) {
-          formatError = error;
-          if (attempt === attempts - 1 || !isRetryableTranscriptionError(error)) {
-            break;
-          }
-
-          const backoff = RETRY_DELAY_BASE_MS * Math.pow(2, attempt);
-          console.warn(
-            `Transcription attempt ${attempt + 1} (${plan.model}/${plan.format}) failed (${parseErrorMessage(
-              error
-            )}). Retrying in ${backoff}ms...`
-          );
-          await sleep(backoff);
-        }
-      }
-
-      if (formatResponse) {
-        response = formatResponse;
-        usedFormat = plan.format;
-        break;
-      }
-
-      lastError = formatError;
-      if (plan.format === "verbose_json" && isUnsupportedVerboseModeError(formatError)) {
-        console.warn(
-          `[Transcribe] ${plan.model} does not support verbose_json timestamps. Trying next fallback.`
-        );
-        continue;
-      }
-
-      // On retryable connection errors (ECONNRESET, timeouts) continue to the
-      // next plan instead of throwing immediately — the fallback model or format
-      // may succeed where the primary one did not.
-      if (formatError && isRetryableTranscriptionError(formatError)) {
-        console.warn(
-          `[Transcribe] Plan ${plan.model}/${plan.format} failed with retryable error (${parseErrorMessage(formatError)}). Trying next fallback plan.`
-        );
-        continue;
-      }
-
-      if (formatError) {
-        throw formatError;
-      }
-    }
-
-    if (!response) {
-      if (lastError) {
-        throw lastError;
-      }
-      throw new Error("Transcription provider returned no response.");
-    }
-
-    if (usedFormat === "verbose_json" && typeof response === "object") {
-      const verbose = response as {
-        text?: string;
-        segments?: AudioTranscriptionSegment[];
-        words?: Array<{
-          word: string;
-          start: number;
-          end: number;
-        }>;
-      };
-
-      const text = (verbose.text ?? "").trim();
-      const segments = Array.isArray(verbose.segments)
-        ? verbose.segments
-            .map((segment, index) => {
-              // Extract words for this segment if available
-              const segmentWords = verbose.words
-                ? verbose.words.filter(
-                    (w) => w.start >= (segment.start ?? 0) && w.end <= (segment.end ?? Infinity)
-                  )
-                : undefined;
-
-              return {
-                start: segment.start ?? index * 5,
-                end: segment.end ?? segment.start ?? (index + 1) * 5,
-                text: segment.text?.trim() ?? "",
-                words: segmentWords
-              };
-            })
-            .filter((segment) => segment.text.length > 0)
-        : [];
-
-      if (text.length === 0) {
-        throw new Error("Transcription provider returned empty text.");
-      }
-
-      return {
-        text,
-        segments
-      };
-    }
-
-    const plainText = (response.text ?? "").trim();
-    if (!plainText) {
-      throw new Error("Transcription provider returned empty text.");
-    }
-    return {
-      text: plainText,
-      segments: []
-    };
-  } catch (error) {
-    console.error("Transcription request failed", error);
-    const reason = error instanceof Error ? error.message : "Unknown transcription error.";
-    throw new Error(`Transcription failed: ${reason}. Synthetic transcripts are disabled unless USE_MOCK_TRANSCRIBE=true.`);
-  } finally {
-    await prepared.cleanup();
-  }
-}
-
-async function transcribeWithOpenRouter(filePath: string): Promise<TranscriptionResult> {
-  const apiKey = process.env.OPENROUTER_API_KEY;
-  if (!apiKey) {
-    throw new Error("OpenRouter transcription requires OPENROUTER_API_KEY.");
-  }
-
-  const fileBuffer = await fsp.readFile(filePath);
-  const format = getOpenRouterAudioFormat(filePath);
-  const controller = new AbortController();
-  const timeout = windowlessSetTimeout(() => controller.abort(), OPENROUTER_TRANSCRIBE_TIMEOUT_MS);
-
-  try {
-    const response = await fetch(`${OPENROUTER_BASE_URL}/chat/completions`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-        "HTTP-Referer": OPENROUTER_REFERER,
-        "X-OpenRouter-Title": OPENROUTER_TITLE
-      },
-      body: JSON.stringify({
-        model: OPENROUTER_TRANSCRIBE_MODEL,
-        messages: [
-          {
-            role: "system",
-            content:
-              "You are a production speech-to-text engine. Transcribe the user's audio exactly. Do not summarize, invent, translate, or generate placeholder text."
-          },
-          {
-            role: "user",
-            content: [
-              {
-                type: "text",
-                text:
-                  "Return only JSON in this shape: {\"text\":\"full transcript\",\"segments\":[{\"start\":0,\"end\":5,\"text\":\"segment text\"}]}. Use the actual spoken words. If exact timestamps are unavailable, split the transcript into approximate chronological segments."
-              },
-              {
-                type: "input_audio",
-                input_audio: {
-                  data: fileBuffer.toString("base64"),
-                  format
-                }
-              }
-            ]
-          }
-        ],
-        temperature: 0,
-        max_tokens: Number.isFinite(OPENROUTER_TRANSCRIBE_MAX_TOKENS)
-          ? OPENROUTER_TRANSCRIBE_MAX_TOKENS
-          : 12000,
-        stream: false,
-        provider: {
-          allow_fallbacks: true
-        }
-      }),
-      signal: controller.signal
-    });
-
-    if (!response.ok) {
-      const errorBody = await safeParseJson(response);
-      const message =
-        typeof errorBody?.error?.message === "string"
-          ? errorBody.error.message
-          : response.statusText || "OpenRouter transcription failed.";
-      throw new Error(`OpenRouter transcription failed (${response.status}): ${message}`);
-    }
-
-    const body = await response.json();
-    const content = extractOpenRouterMessageContent(body);
-    if (!content.trim()) {
-      throw new Error(`OpenRouter model "${OPENROUTER_TRANSCRIBE_MODEL}" returned empty transcription content.`);
-    }
-
-    const transcription = parseOpenRouterTranscriptionContent(content);
-    if (!transcription.text.trim()) {
-      throw new Error(`OpenRouter model "${OPENROUTER_TRANSCRIBE_MODEL}" returned no transcript text.`);
-    }
-    if (isSyntheticTranscriptText(transcription.text)) {
-      throw new Error("OpenRouter returned synthetic placeholder text instead of real transcription.");
-    }
-
-    return transcription;
-  } catch (error) {
-    if (error instanceof Error && error.name === "AbortError") {
-      throw new Error(`OpenRouter transcription timed out after ${OPENROUTER_TRANSCRIBE_TIMEOUT_MS}ms.`);
-    }
-    throw error;
-  } finally {
-    clearTimeout(timeout);
-  }
-}
-
-function getOpenRouterAudioFormat(filePath: string): string {
-  const ext = path.extname(filePath).toLowerCase().replace(".", "");
-  if (["mp3", "wav", "aac", "ogg", "flac", "m4a"].includes(ext)) {
-    return ext;
-  }
-  return "mp3";
-}
-
-function extractOpenRouterMessageContent(body: any): string {
-  const content = body?.choices?.[0]?.message?.content;
-  if (typeof content === "string") {
-    return content;
-  }
-  if (Array.isArray(content)) {
-    return content
-      .map((part) => {
-        if (typeof part === "string") {
-          return part;
-        }
-        if (part && typeof part === "object" && typeof part.text === "string") {
-          return part.text;
-        }
-        return "";
-      })
-      .join("\n");
-  }
-  return "";
 }
 
 export function parseOpenRouterTranscriptionContent(content: string): TranscriptionResult {
@@ -445,134 +128,8 @@ function stripJsonFence(value: string) {
     .trim();
 }
 
-async function safeParseJson(response: Response): Promise<any | null> {
-  try {
-    return await response.json();
-  } catch {
-    return null;
-  }
-}
-
-function windowlessSetTimeout(callback: () => void, ms: number) {
-  return setTimeout(callback, Number.isFinite(ms) && ms > 0 ? ms : 180000);
-}
-
 export function isSyntheticTranscriptText(text: string): boolean {
   return /this is synthetic transcript segment \d+/i.test(text.slice(0, 1000));
-}
-
-function isUnsupportedVerboseModeError(error: unknown): boolean {
-  const message = parseErrorMessage(error).toLowerCase();
-  if (!message) {
-    return false;
-  }
-
-  return (
-    message.includes("timestamp_granularities") ||
-    message.includes("response_format") ||
-    message.includes("verbose_json") ||
-    message.includes("not supported")
-  );
-}
-
-function isRetryableTranscriptionError(error: unknown) {
-  if (!error || typeof error !== "object") {
-    return false;
-  }
-  const err = error as { status?: number; code?: string | number; message?: string; cause?: unknown };
-  const status = err.status ?? (typeof err.code === "number" ? err.code : undefined);
-  const message = parseErrorMessage(error);
-  if (status && [408, 409, 425, 429, 500, 502, 503, 504].includes(status)) {
-    return true;
-  }
-  if (message) {
-    const lower = message.toLowerCase();
-    if (
-      lower.includes("timeout") ||
-      lower.includes("timed out") ||
-      lower.includes("connection") ||
-      lower.includes("econnreset") ||
-      lower.includes("rate limit")
-    ) {
-      return true;
-    }
-  }
-  // APIConnectionError wraps the underlying FetchError in `cause` — check it
-  // directly so ECONNRESET is always caught even if the top-level message
-  // changes between OpenAI SDK versions.
-  if (err.cause && typeof err.cause === "object") {
-    const cause = err.cause as { code?: string; errno?: string };
-    if (cause.code === "ECONNRESET" || cause.errno === "ECONNRESET") {
-      return true;
-    }
-  }
-  return false;
-}
-
-function parseErrorMessage(error: unknown) {
-  if (error instanceof Error) {
-    return error.message;
-  }
-  if (error && typeof error === "object") {
-    const err = error as Record<string, unknown>;
-    if (typeof err.message === "string") {
-      return err.message;
-    }
-    if (typeof err["error"] === "string") {
-      return err["error"];
-    }
-  }
-  return "";
-}
-
-async function prepareTranscriptionSource(originalPath: string) {
-  const originalStats = await stat(originalPath);
-  const ext = path.extname(originalPath).toLowerCase();
-  const isAudio = AUDIO_EXTENSIONS.has(ext);
-  const canStreamOriginal = isAudio && originalStats.size <= MAX_DIRECT_UPLOAD_BYTES;
-
-  if (canStreamOriginal) {
-    return {
-      path: originalPath,
-      cleanup: async () => {}
-    };
-  }
-
-  const baseName = path.basename(originalPath, ext || undefined);
-  const timestamp = Date.now();
-  const targetPath = path.join(path.dirname(originalPath), `${baseName}-${timestamp}-transcribe.mp3`);
-
-  try {
-    await transcodeToMp3({
-      inputPath: originalPath,
-      outputPath: targetPath
-    });
-  } catch (error) {
-    console.error("Failed to transcode audio for transcription", error);
-    throw new Error(
-      "Unable to prepare audio for transcription. Verify FFmpeg is installed and the source media is accessible."
-    );
-  }
-
-  // Guard against transcoded files that still exceed Whisper's 25 MB limit.
-  // At 64 kbps mono this rarely happens (limit ≈ 54 min), but reject early
-  // with a clear message rather than letting OpenAI drop the connection.
-  const transcodedStats = await stat(targetPath);
-  if (transcodedStats.size > WHISPER_MAX_BYTES) {
-    await fsp.unlink(targetPath).catch(() => null);
-    const sizeMb = (transcodedStats.size / (1024 * 1024)).toFixed(1);
-    throw new Error(
-      `Transcoded audio is ${sizeMb} MB which exceeds the 24 MB Whisper limit. ` +
-      `Try a shorter source video (under ~50 minutes) or set USE_MOCK_TRANSCRIBE=true.`
-    );
-  }
-
-  return {
-    path: targetPath,
-    cleanup: async () => {
-      await fsp.unlink(targetPath).catch(() => null);
-    }
-  };
 }
 
 function generateMockResult(fileName: string, durationSeconds: number): TranscriptionResult {

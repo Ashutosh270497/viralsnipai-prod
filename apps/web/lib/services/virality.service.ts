@@ -8,7 +8,7 @@
 import { logger } from '../logger';
 import type { TranscriptionSegment } from '../transcript';
 import { transcriptEnhancementService } from './transcript-enhancement.service';
-import { HAS_OPENROUTER_KEY, openRouterClient } from '@/lib/openrouter-client';
+import { scoreClipVirality } from '@/lib/ai/providers/openrouter-reasoning-provider';
 
 // ── Config ────────────────────────────────────────────────────────────────────
 // Use a fast, cheap structured-output model — NOT the large highlights/reasoning
@@ -16,10 +16,6 @@ import { HAS_OPENROUTER_KEY, openRouterClient } from '@/lib/openrouter-client';
 // gemini-3.1-flash-lite-preview: reliable JSON, low cost, fast (~1-2s per clip).
 const VIRALITY_MODEL =
   process.env.OPENROUTER_VIRALITY_MODEL ?? 'google/gemini-3.1-flash-lite-preview';
-
-// 2048 tokens is enough for all 5 scores + 3 sentences of reasoning + 3 improvements.
-// Well within the ~29 870 per-request credit limit on standard OpenRouter keys.
-const VIRALITY_MAX_TOKENS = 2048;
 
 // Truncate very long transcripts so input tokens stay predictable.
 const MAX_TRANSCRIPT_CHARS = 1800;
@@ -32,6 +28,7 @@ export interface ViralityFactors {
   storyArc: number;          // 0-100: Clear beginning, tension, and payoff
   pacing: number;            // 0-100: No dead air, dynamic flow
   transcriptQuality: number; // 0-100: Clear, engaging language
+  shareability?: number;     // 0-100: Platform-native share/quote potential
 }
 
 export interface EnhancedViralityFactors extends ViralityFactors {
@@ -69,37 +66,6 @@ function clamp(n: number): number {
   return Math.max(0, Math.min(100, Number.isFinite(n) ? n : 50));
 }
 
-/**
- * Extract a JSON object from a model response that may contain:
- *   - Raw JSON: {"score": ...}
- *   - Markdown-fenced JSON: ```json\n{...}\n```
- *   - Prefixed text then JSON
- */
-function extractJson(raw: string): ViralityAnalysis | null {
-  // Strip markdown fences
-  const stripped = raw
-    .replace(/^```(?:json)?\s*/im, '')
-    .replace(/\s*```\s*$/m, '')
-    .trim();
-
-  // Try direct parse
-  try {
-    return JSON.parse(stripped) as ViralityAnalysis;
-  } catch {
-    // Try to find the outermost {...} block
-    const start = stripped.indexOf('{');
-    const end = stripped.lastIndexOf('}');
-    if (start !== -1 && end > start) {
-      try {
-        return JSON.parse(stripped.slice(start, end + 1)) as ViralityAnalysis;
-      } catch {
-        // fall through
-      }
-    }
-    return null;
-  }
-}
-
 // ── Service ───────────────────────────────────────────────────────────────────
 
 export class ViralityService {
@@ -115,11 +81,6 @@ export class ViralityService {
   }): Promise<ViralityAnalysis> {
     const { transcript, startSec, endSec, metadata } = params;
 
-    if (!HAS_OPENROUTER_KEY || !openRouterClient) {
-      logger.warn('Virality: OpenRouter not configured — using default scores');
-      return defaultAnalysis('OpenRouter API key not set.');
-    }
-
     // Truncate long transcripts
     const safeTranscript =
       transcript.length > MAX_TRANSCRIPT_CHARS
@@ -127,41 +88,14 @@ export class ViralityService {
         : transcript;
 
     const duration = Math.round(endSec - startSec);
-    const userPrompt = [
-      `Analyze this ${duration}-second clip for viral potential.`,
-      '',
-      `Transcript:\n${safeTranscript}`,
-      metadata?.title ? `Title: ${metadata.title}` : '',
-      metadata?.summary ? `Summary: ${metadata.summary}` : '',
-    ]
-      .filter(Boolean)
-      .join('\n');
-
     try {
-      const response = await openRouterClient.chat.completions.create({
+      const parsed = await scoreClipVirality({
+        text: safeTranscript,
+        firstThreeSecondsText: safeTranscript.split(/\s+/).slice(0, 14).join(' '),
+        durationSec: duration,
+        deterministicQualitySignals: metadata,
         model: VIRALITY_MODEL,
-        messages: [
-          { role: 'system', content: this.getSystemPrompt() },
-          { role: 'user', content: userPrompt },
-        ],
-        temperature: 0.4,
-        max_tokens: VIRALITY_MAX_TOKENS,
-        // Do NOT pass response_format — Gemini models on OpenRouter may ignore it
-        // and returning the json_object header actually confuses some versions.
-        // We parse the JSON ourselves with fence-stripping + recovery instead.
       });
-
-      const raw = response.choices?.[0]?.message?.content ?? '';
-      if (!raw.trim()) {
-        logger.warn('Virality: empty response from model');
-        return defaultAnalysis('Model returned empty response.');
-      }
-
-      const parsed = extractJson(raw);
-      if (!parsed) {
-        logger.warn('Virality: could not parse JSON from model response', { raw: raw.slice(0, 200) });
-        return defaultAnalysis('Could not parse model response as JSON.');
-      }
 
       // Validate and normalise all numeric fields
       const analysis: ViralityAnalysis = {
@@ -172,6 +106,7 @@ export class ViralityService {
           storyArc:         clamp(parsed.factors?.storyArc),
           pacing:           clamp(parsed.factors?.pacing),
           transcriptQuality:clamp(parsed.factors?.transcriptQuality),
+          shareability:     clamp(parsed.factors?.shareability ?? parsed.score),
         },
         reasoning:    typeof parsed.reasoning === 'string' ? parsed.reasoning : '',
         improvements: Array.isArray(parsed.improvements) ? parsed.improvements.filter(Boolean) : [],
@@ -186,34 +121,6 @@ export class ViralityService {
       // Return defaults instead of throwing — keeps the whole clip batch alive.
       return defaultAnalysis(`AI analysis failed: ${msg.slice(0, 120)}`);
     }
-  }
-
-  // ── System prompt (concise — fewer input tokens per clip) ──────────────────
-
-  private getSystemPrompt(): string {
-    return `You are a viral short-form video analyst. Score clips for TikTok/Reels/Shorts.
-
-Return ONLY valid JSON, no markdown, no explanation outside the JSON:
-{
-  "score": <0-100 overall>,
-  "factors": {
-    "hookStrength": <0-100>,
-    "emotionalPeak": <0-100>,
-    "storyArc": <0-100>,
-    "pacing": <0-100>,
-    "transcriptQuality": <0-100>
-  },
-  "reasoning": "<2 sentences on main strengths/weaknesses>",
-  "improvements": ["<actionable fix 1>", "<actionable fix 2>"]
-}
-
-Scoring:
-- hookStrength: Does the first 3 sec stop the scroll? (90+ = scroll-stopper)
-- emotionalPeak: Authentic intensity/vulnerability/humor (90+ = high stakes)
-- storyArc: Setup → conflict → payoff structure (90+ = delivers on hook)
-- pacing: No dead air, rapid-fire value (90+ = zero lulls)
-- transcriptQuality: Punchy, specific, quotable language (90+ = shareable)
-- score: Weighted average; add 5-10 if clip has viral mechanics (transformation, curiosity gap, contrarian take).`;
   }
 
   // ── Enhanced analysis (with transcript segment data) ──────────────────────
