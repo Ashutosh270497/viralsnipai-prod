@@ -79,6 +79,7 @@ export function useRepurposeIngest({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           assetId: primaryAssetId,
+          mode: "merge",
           model: highlightModel,
           brief: highlightBrief,
           audience: highlightAudience,

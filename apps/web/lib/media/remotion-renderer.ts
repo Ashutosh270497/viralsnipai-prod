@@ -14,9 +14,13 @@
  *   - Output is encoded at CRF 18 with H.264 / yuv420p / AAC 256k
  *   - No extra re-encode after Remotion unless required for watermark
  *   - Never uses previewPath as input
+ *   - Local pre-cropped files are served to Remotion over loopback HTTP with
+ *     range support because OffthreadVideo cannot consume file:// URLs here.
  */
 
 import path from "path";
+import { createReadStream } from "fs";
+import { createServer, type Server } from "http";
 import { promises as fs } from "fs";
 import { logger } from "@/lib/logger";
 import type { ClipCaptionStyleConfig } from "@/lib/repurpose/caption-style-config";
@@ -49,6 +53,7 @@ export interface ClipExportCompositionProps {
 
 const REMOTION_CRF = Number(process.env.REMOTION_EXPORT_CRF ?? 18);
 const REMOTION_AUDIO_BITRATE = process.env.REMOTION_EXPORT_AUDIO_BITRATE ?? "256k";
+const REMOTION_BROWSER_EXECUTABLE = process.env.PUPPETEER_EXECUTABLE_PATH || null;
 
 // Concurrency: number of browser threads used per render.
 // 1 is safest on memory-constrained servers; increase for faster renders.
@@ -85,6 +90,11 @@ export interface RemotionRenderResult {
   fileSizeBytes: number;
 }
 
+type LocalFileServer = {
+  url: string;
+  close: () => Promise<void>;
+};
+
 // ── Public API ────────────────────────────────────────────────────────────────
 
 /**
@@ -111,8 +121,8 @@ export async function renderWithRemotion(input: RemotionRenderInput): Promise<Re
 
   const durationInFrames = Math.max(1, Math.ceil((input.durationMs / 1000) * REMOTION_FPS));
 
-  // file:// URIs let OffthreadVideo read local files directly
-  const previewUrl = `file://${path.resolve(input.preVideoPath)}`;
+  const localFileServer = await serveLocalVideoFile(input.preVideoPath);
+  const previewUrl = localFileServer.url;
 
   const inputProps: ClipExportCompositionProps = {
     previewUrl,
@@ -148,6 +158,7 @@ export async function renderWithRemotion(input: RemotionRenderInput): Promise<Re
       serveUrl: bundleLocation,
       id: REMOTION_COMPOSITION_ID,
       inputProps: serializableProps,
+      browserExecutable: REMOTION_BROWSER_EXECUTABLE,
     });
 
     // Override duration so the composition matches the actual clip length
@@ -175,9 +186,8 @@ export async function renderWithRemotion(input: RemotionRenderInput): Promise<Re
       // Ensure the output has faststart for progressive download
       overwrite: true,
       concurrency: REMOTION_CONCURRENCY,
+      browserExecutable: REMOTION_BROWSER_EXECUTABLE,
       chromiumOptions: {
-        // Use system Chrome if available (faster than downloading Chromium)
-        executablePath: process.env.PUPPETEER_EXECUTABLE_PATH ?? undefined,
         // swiftshader: software GL, works on servers without GPU
         gl: "swiftshader",
         // Allow file:// sources in OffthreadVideo
@@ -208,5 +218,61 @@ export async function renderWithRemotion(input: RemotionRenderInput): Promise<Re
     return { success: true, renderDurationMs, fileSizeBytes };
   } finally {
     clearTimeout(timeout);
+    await localFileServer.close().catch(() => undefined);
   }
+}
+
+async function serveLocalVideoFile(filePath: string): Promise<LocalFileServer> {
+  const absolutePath = path.resolve(filePath);
+  const fileName = path.basename(absolutePath);
+  const contentType = fileName.endsWith(".mov") ? "video/quicktime" : "video/mp4";
+
+  const server: Server = createServer(async (req, res) => {
+    try {
+      const stats = await fs.stat(absolutePath);
+      const fileSize = stats.size;
+      const range = req.headers.range;
+
+      res.setHeader("Accept-Ranges", "bytes");
+      res.setHeader("Content-Type", contentType);
+
+      if (range) {
+        const match = range.match(/bytes=(\d*)-(\d*)/);
+        const start = match?.[1] ? Number(match[1]) : 0;
+        const end = match?.[2] ? Number(match[2]) : fileSize - 1;
+        const safeStart = Math.max(0, Math.min(start, fileSize - 1));
+        const safeEnd = Math.max(safeStart, Math.min(end, fileSize - 1));
+        const chunkSize = safeEnd - safeStart + 1;
+
+        res.writeHead(206, {
+          "Content-Range": `bytes ${safeStart}-${safeEnd}/${fileSize}`,
+          "Content-Length": chunkSize,
+        });
+        createReadStream(absolutePath, { start: safeStart, end: safeEnd }).pipe(res);
+        return;
+      }
+
+      res.writeHead(200, { "Content-Length": fileSize });
+      createReadStream(absolutePath).pipe(res);
+    } catch (error) {
+      res.statusCode = 500;
+      res.end(error instanceof Error ? error.message : "Failed to read local video");
+    }
+  });
+
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => resolve());
+  });
+
+  const address = server.address();
+  if (!address || typeof address === "string") {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    throw new Error("Failed to bind local Remotion video server");
+  }
+
+  return {
+    url: `http://127.0.0.1:${address.port}/${encodeURIComponent(fileName)}`,
+    close: () => new Promise((resolve) => server.close(() => resolve())),
+  };
 }

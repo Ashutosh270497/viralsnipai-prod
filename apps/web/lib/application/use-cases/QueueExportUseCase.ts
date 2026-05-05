@@ -132,6 +132,7 @@ export class QueueExportUseCase {
 
     // Step 6: Update project timestamp
     await this.projectRepo.update(projectId, {
+      status: 'exporting',
       updatedAt: new Date(),
     });
 

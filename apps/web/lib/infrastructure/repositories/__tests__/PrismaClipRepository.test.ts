@@ -13,10 +13,12 @@ jest.mock('@/lib/prisma', () => ({
       create: jest.fn(),
       createMany: jest.fn(),
       update: jest.fn(),
+      updateMany: jest.fn(),
       delete: jest.fn(),
       deleteMany: jest.fn(),
       count: jest.fn(),
     },
+    $transaction: jest.fn(),
   },
 }));
 
@@ -208,14 +210,99 @@ describe('PrismaClipRepository', () => {
         viralityFactors: null,
       }));
 
-      (prisma.clip.createMany as jest.Mock).mockResolvedValue({ count: 2 });
-      (prisma.clip.findMany as jest.Mock).mockResolvedValue(mockCreatedClips);
+      (prisma.$transaction as jest.Mock).mockResolvedValue(mockCreatedClips);
 
       const result = await repository.createMany(clipsData);
 
       expect(result).toHaveLength(2);
       expect(result[0].title).toBe('Clip 1');
       expect(result[1].title).toBe('Clip 2');
+    });
+  });
+
+  describe('splitClip', () => {
+    it('should create both replacement clips and delete the original in one transaction', async () => {
+      const createdAt = new Date('2026-05-03T00:00:00.000Z');
+      const updatedAt = new Date('2026-05-03T00:00:00.000Z');
+      const firstClipData = {
+        projectId: 'project-1',
+        assetId: 'asset-1',
+        startMs: 1000,
+        endMs: 3000,
+        title: 'Clip (Part 1)',
+        viralityScore: 88,
+      };
+      const secondClipData = {
+        projectId: 'project-1',
+        assetId: 'asset-1',
+        startMs: 3000,
+        endMs: 5000,
+        title: 'Clip (Part 2)',
+        viralityScore: 88,
+      };
+      const firstCreated = {
+        id: 'clip-first',
+        ...firstClipData,
+        order: 0,
+        summary: null,
+        callToAction: null,
+        captionSrt: null,
+        captionStyle: null,
+        previewPath: null,
+        thumbnail: null,
+        viralityFactors: null,
+        createdAt,
+        updatedAt,
+      };
+      const secondCreated = {
+        id: 'clip-second',
+        ...secondClipData,
+        order: 0,
+        summary: null,
+        callToAction: null,
+        captionSrt: null,
+        captionStyle: null,
+        previewPath: null,
+        thumbnail: null,
+        viralityFactors: null,
+        createdAt,
+        updatedAt,
+      };
+
+      (prisma.$transaction as jest.Mock).mockResolvedValue([
+        firstCreated,
+        secondCreated,
+        { id: 'clip-original' },
+      ]);
+
+      const result = await repository.splitClip({
+        originalClipId: 'clip-original',
+        firstClipData,
+        secondClipData,
+      });
+
+      expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+      expect(prisma.clip.create).toHaveBeenNthCalledWith(1, {
+        data: {
+          ...firstClipData,
+          summary: undefined,
+          callToAction: undefined,
+          viralityFactors: undefined,
+        },
+      });
+      expect(prisma.clip.create).toHaveBeenNthCalledWith(2, {
+        data: {
+          ...secondClipData,
+          summary: undefined,
+          callToAction: undefined,
+          viralityFactors: undefined,
+        },
+      });
+      expect(prisma.clip.delete).toHaveBeenCalledWith({
+        where: { id: 'clip-original' },
+      });
+      expect(result.firstClip.id).toBe('clip-first');
+      expect(result.secondClip.id).toBe('clip-second');
     });
   });
 

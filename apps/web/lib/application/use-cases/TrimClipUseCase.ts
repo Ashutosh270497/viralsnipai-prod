@@ -17,6 +17,8 @@ import type { IClipRepository } from '@/lib/domain/repositories/IClipRepository'
 import type { IAssetRepository } from '@/lib/domain/repositories/IAssetRepository';
 import type { IProjectRepository } from '@/lib/domain/repositories/IProjectRepository';
 import { ClipManipulationService } from '@/lib/domain/services/ClipManipulationService';
+import { TranscriptionService } from '@/lib/domain/services/TranscriptionService';
+import { materializeMediaLocally } from '@/lib/media/media-path-resolver';
 import { logger } from '@/lib/logger';
 import { AppError } from '@/lib/utils/error-handler';
 import type { Clip } from '@/lib/types';
@@ -39,6 +41,7 @@ export class TrimClipUseCase {
     @inject(TYPES.IClipRepository) private clipRepo: IClipRepository,
     @inject(TYPES.IAssetRepository) private assetRepo: IAssetRepository,
     @inject(TYPES.IProjectRepository) private projectRepo: IProjectRepository,
+    @inject(TYPES.TranscriptionService) private transcriptionService: TranscriptionService,
     @inject(TYPES.ClipManipulationService)
     private clipManipulation: ClipManipulationService
   ) {}
@@ -59,12 +62,37 @@ export class TrimClipUseCase {
       throw AppError.forbidden('Access denied to this clip');
     }
 
-    // Step 2: Get asset to validate boundaries
-    let assetDurationSec = 300; // Default 5 minutes
-    if (clip.assetId) {
-      const asset = await this.assetRepo.findById(clip.assetId);
-      if (asset?.durationSec) {
-        assetDurationSec = asset.durationSec;
+    // Step 2: Get asset duration to validate boundaries
+    if (!clip.assetId) {
+      throw AppError.badRequest('Clip has no source asset for trim validation');
+    }
+
+    const asset = await this.assetRepo.findById(clip.assetId);
+    if (!asset) {
+      throw AppError.notFound('Asset not found for clip');
+    }
+
+    let assetDurationSec = asset.durationSec;
+    if (!assetDurationSec || assetDurationSec <= 0) {
+      // Try local first, then materialize from S3/HTTPS if needed. Always
+      // clean up downloaded tempfiles even on probe failure.
+      const materialized = await materializeMediaLocally([asset.storagePath, asset.path]);
+      if (!materialized) {
+        throw AppError.badRequest(
+          'Unable to validate trim boundaries because the source asset file is not available on local storage or remote storage.'
+        );
+      }
+
+      try {
+        assetDurationSec = await this.transcriptionService.probeDuration(materialized.localPath);
+        if (!assetDurationSec || assetDurationSec <= 0) {
+          throw AppError.badRequest(
+            'Unable to validate trim boundaries because the source video duration could not be determined.'
+          );
+        }
+        await this.assetRepo.update(asset.id, { durationSec: assetDurationSec });
+      } finally {
+        await materialized.cleanup();
       }
     }
 

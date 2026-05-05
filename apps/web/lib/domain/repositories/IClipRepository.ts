@@ -79,6 +79,17 @@ export interface IClipRepository {
   update(id: string, data: UpdateClipData): Promise<Clip>;
 
   /**
+   * Update an existing clip only if the caller's expected version matches.
+   * Used by user-facing PATCH endpoints to avoid silent last-write-wins edits.
+   *
+   * @param id - Clip ID
+   * @param expectedVersion - Version the caller last read
+   * @param data - Updated fields
+   * @returns Updated clip, or null when the version is stale or the clip is missing
+   */
+  updateWithVersion(id: string, expectedVersion: number, data: UpdateClipData): Promise<Clip | null>;
+
+  /**
    * Delete a clip
    * @param id - Clip ID
    */
@@ -90,6 +101,22 @@ export interface IClipRepository {
    * @returns Number of deleted clips
    */
   deleteByProjectId(projectId: string): Promise<number>;
+
+  /**
+   * Atomically replace one clip with two new clips.
+   * Creates the two new clips and deletes the original inside a single
+   * database transaction. If any step fails the entire operation is rolled
+   * back, so the caller never sees partial state (e.g. one new clip + the
+   * original still present).
+   *
+   * @param input - the original clip id plus full data for the two new clips
+   * @returns the two newly-created clips
+   */
+  splitClip(input: {
+    originalClipId: string;
+    firstClipData: CreateClipData & { projectId: string; assetId: string };
+    secondClipData: CreateClipData & { projectId: string; assetId: string };
+  }): Promise<{ firstClip: Clip; secondClip: Clip }>;
 
   /**
    * Count clips for a project

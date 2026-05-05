@@ -22,6 +22,7 @@ import { AIAnalysisService } from '@/lib/domain/services/AIAnalysisService';
 import { ClipExtractionService } from '@/lib/domain/services/ClipExtractionService';
 import { ThumbnailGenerationService } from '@/lib/domain/services/ThumbnailGenerationService';
 import { VideoExtractionService } from '@/lib/domain/services/VideoExtractionService';
+import { materializeMediaLocally } from '@/lib/media/media-path-resolver';
 import { viralityService } from '@/lib/services/virality.service';
 import { transcriptEnhancementService, type TranscriptEnhancement } from '@/lib/services/transcript-enhancement.service';
 import { logger } from '@/lib/logger';
@@ -43,6 +44,15 @@ import { nanoid } from 'nanoid';
 
 const PREVIEW_PRESET = 'shorts_9x16_1080' as const;
 const PREVIEW_TARGET_RATIO = PRESETS[PREVIEW_PRESET].width / PRESETS[PREVIEW_PRESET].height;
+const PREVIEW_CONCURRENCY_LIMIT = 3;
+
+export type AutoHighlightsMode = 'replace' | 'merge' | 'append';
+
+export interface PreviewGenerationFailure {
+  clipId: string;
+  stage: 'source_resolution' | 'preview' | 'thumbnail' | 'database_update';
+  reason: string;
+}
 
 export interface GenerateAutoHighlightsInput {
   assetId: string;
@@ -54,6 +64,14 @@ export interface GenerateAutoHighlightsInput {
     tone?: string;
     brief?: string;
     callToAction?: string;
+    /**
+     * Reconciliation strategy when the project already has clips.
+     * - "merge" (default): keep existing clips; skip new ones whose start time is within
+     *   MERGE_OVERLAP_WINDOW_MS of an existing clip's start time
+     * - "replace": delete all existing clips before creating new ones
+     * - "append": keep existing clips; add all new clips (no dedup)
+     */
+    mode?: AutoHighlightsMode;
   };
 }
 
@@ -65,7 +83,42 @@ export interface GenerateAutoHighlightsOutput {
     suggestionsReceived: number;
     clipsCreated: number;
     averageViralityScore: number | null;
+    /** Mode used for this run. */
+    mode: AutoHighlightsMode;
+    /** Number of pre-existing clips deleted (only > 0 when mode === 'replace'). */
+    existingClipsDeleted: number;
+    /** Number of new clips skipped due to overlap with existing (only when mode === 'merge'). */
+    skippedDueToOverlap: number;
+    /** Number of pre-existing clips preserved on the project. */
+    existingClipsPreserved: number;
+    previewsGenerated: number;
+    previewFailures: number;
+    previewFailureReasons: PreviewGenerationFailure[];
   };
+}
+
+/**
+ * Two clips whose start times are within this window are considered duplicates
+ * for the purposes of merge-mode dedup. Picked to absorb minor differences
+ * between AI runs while still surfacing genuinely new highlights.
+ */
+const MERGE_OVERLAP_WINDOW_MS = 5_000;
+
+async function runWithConcurrencyLimit<T>(
+  items: T[],
+  limit: number,
+  worker: (item: T, index: number) => Promise<void>
+): Promise<void> {
+  const queue = items.map((item, index) => ({ item, index }));
+  const workers = Array.from({ length: Math.min(limit, queue.length) }, async () => {
+    while (queue.length > 0) {
+      const next = queue.shift();
+      if (!next) return;
+      await worker(next.item, next.index);
+    }
+  });
+
+  await Promise.allSettled(workers);
 }
 
 @injectable()
@@ -105,17 +158,36 @@ export class GenerateAutoHighlightsUseCase {
     let transcriptionGenerated = false;
     let durationSec = asset.durationSec;
 
+    // Materialize the source asset to a local path for FFmpeg/transcription/CV.
+    // For local-driver assets this is a no-op probe; for S3/HTTPS-stored assets
+    // this streams the file to a tempfile. We MUST clean it up before every
+    // return below — see the try/finally pattern in TrimClipUseCase for the
+    // simpler shape; here we use explicit cleanup since the method is large
+    // and has multiple early returns.
+    const materialized = await materializeMediaLocally([asset.storagePath, asset.path]);
+    const sourcePath = materialized?.localPath ?? null;
+
     // Probe duration if not available
     if (!durationSec || durationSec <= 0) {
-      const probedDuration = await this.transcriptionService.probeDuration(asset.path);
-      durationSec = probedDuration || 180; // Default to 3 minutes if probe fails
-
-      if (probedDuration) {
-        await this.assetRepo.update(assetId, { durationSec });
+      if (!sourcePath) {
+        throw AppError.badRequest(
+          'Unable to determine source video duration because the asset file is not available on local storage or remote storage.'
+        );
       }
+
+      const probedDuration = await this.transcriptionService.probeDuration(sourcePath);
+      if (!probedDuration || probedDuration <= 0) {
+        await materialized?.cleanup();
+        throw AppError.badRequest(
+          'Unable to determine source video duration. Please re-upload or retranscode the source video.'
+        );
+      }
+
+      durationSec = probedDuration;
+      await this.assetRepo.update(assetId, { durationSec });
     }
 
-    const transcriptionSourcePath = asset.storagePath || asset.path;
+    const transcriptionSourcePath = sourcePath || asset.storagePath || asset.path;
 
     let transcriptionResult = await this.transcriptionService.getOrCreateTranscription(
       transcriptionSourcePath,
@@ -170,6 +242,8 @@ export class GenerateAutoHighlightsUseCase {
       const sceneDetection = await detectRepurposeSceneCuts({
         inputPath: transcriptionSourcePath,
         maxCuts: 350,
+        // Per-project override; null/undefined → use env default → CV default.
+        threshold: project.sceneCutThreshold ?? null,
       });
       sceneCutsMs = sceneDetection.cutsMs;
       logger.info('Scene detection completed for auto-highlights', {
@@ -178,6 +252,8 @@ export class GenerateAutoHighlightsUseCase {
         cvProvider: sceneDetection.cvProvider,
         cuts: sceneCutsMs.length,
         fallbackReason: sceneDetection.fallbackReason,
+        threshold: sceneDetection.thresholdUsed,
+        thresholdSource: sceneDetection.thresholdSource,
       });
     } catch (error) {
       logger.warn('Scene detection failed, continuing with transcript-only alignment', {
@@ -186,14 +262,41 @@ export class GenerateAutoHighlightsUseCase {
       });
     }
 
-    let sourceGeometry = null;
-    try {
-      sourceGeometry = await probeVideoGeometry(transcriptionSourcePath);
-    } catch (error) {
-      logger.warn('Video geometry probe failed, continuing without reframe plans', {
-        assetId,
-        error: error instanceof Error ? error.message : String(error),
-      });
+    let sourceGeometry =
+      asset.sourceWidth && asset.sourceHeight
+        ? {
+            width: asset.sourceWidth,
+            height: asset.sourceHeight,
+            aspectRatio: asset.sourceHeight > 0 ? asset.sourceWidth / asset.sourceHeight : 1,
+            orientation:
+              Math.abs(asset.sourceWidth / asset.sourceHeight - 1) < 0.05
+                ? ('square' as const)
+                : asset.sourceWidth > asset.sourceHeight
+                  ? ('landscape' as const)
+                  : ('portrait' as const),
+            sourceRatioLabel:
+              Math.abs(asset.sourceWidth / asset.sourceHeight - 9 / 16) < 0.05
+                ? ('9:16' as const)
+                : Math.abs(asset.sourceWidth / asset.sourceHeight - 1) < 0.05
+                  ? ('1:1' as const)
+                  : Math.abs(asset.sourceWidth / asset.sourceHeight - 16 / 9) < 0.08
+                    ? ('16:9' as const)
+                    : ('custom' as const),
+          }
+        : null;
+    if (!sourceGeometry) {
+      try {
+        sourceGeometry = await probeVideoGeometry(transcriptionSourcePath);
+        await this.assetRepo.update(assetId, {
+          sourceWidth: sourceGeometry.width,
+          sourceHeight: sourceGeometry.height,
+        });
+      } catch (error) {
+        logger.warn('Video geometry probe failed, continuing without reframe plans', {
+          assetId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
     }
 
     // Step 5: Extract and normalize clips
@@ -212,16 +315,82 @@ export class GenerateAutoHighlightsUseCase {
       throw AppError.internal('Failed to extract any valid clips');
     }
 
-    // Step 5: Delete existing clips for this asset (clean slate)
-    await this.clipRepo.deleteByProjectId(asset.projectId);
+    // Step 5: Reconcile with existing clips per requested mode
+    const mode: AutoHighlightsMode = options.mode ?? 'merge';
+    const existingClipsBefore = await this.clipRepo.findByProjectId(asset.projectId);
+    let existingClipsDeleted = 0;
+    let skippedDueToOverlap = 0;
+    let clipsToCreate = extractedClips;
+
+    if (mode === 'replace') {
+      if (existingClipsBefore.length > 0) {
+        existingClipsDeleted = await this.clipRepo.deleteByProjectId(asset.projectId);
+        logger.info('Auto-highlights replace mode: cleared existing clips', {
+          assetId,
+          projectId: asset.projectId,
+          existingClipsDeleted,
+        });
+      }
+    } else if (mode === 'merge') {
+      const existingStartsMs = existingClipsBefore.map((c) => c.startMs);
+      const filtered = extractedClips.filter((candidate) => {
+        const collides = existingStartsMs.some(
+          (existingStart) => Math.abs(existingStart - candidate.startMs) <= MERGE_OVERLAP_WINDOW_MS
+        );
+        if (collides) skippedDueToOverlap += 1;
+        return !collides;
+      });
+      logger.info('Auto-highlights merge mode: deduplicated against existing clips', {
+        assetId,
+        projectId: asset.projectId,
+        existingCount: existingClipsBefore.length,
+        candidateCount: extractedClips.length,
+        keptCount: filtered.length,
+        skippedDueToOverlap,
+        windowMs: MERGE_OVERLAP_WINDOW_MS,
+      });
+      if (filtered.length === 0) {
+        logger.warn('Auto-highlights merge mode: every candidate overlapped with existing clips', {
+          assetId,
+          projectId: asset.projectId,
+        });
+        await materialized?.cleanup();
+        return {
+          assetId,
+          clips: existingClipsBefore,
+          analytics: {
+            transcriptionGenerated,
+            suggestionsReceived: analysisResult.suggestions.length,
+            clipsCreated: 0,
+            averageViralityScore: null,
+            mode,
+            existingClipsDeleted: 0,
+            skippedDueToOverlap,
+            existingClipsPreserved: existingClipsBefore.length,
+            previewsGenerated: 0,
+            previewFailures: 0,
+            previewFailureReasons: [],
+          },
+        };
+      }
+      clipsToCreate = filtered;
+    } else {
+      // 'append' — keep everything, create all new candidates as-is
+      logger.info('Auto-highlights append mode: appending all candidates without dedup', {
+        assetId,
+        projectId: asset.projectId,
+        existingCount: existingClipsBefore.length,
+        candidateCount: extractedClips.length,
+      });
+    }
 
     // Step 6: Analyze virality for each clip
     logger.info('Analyzing virality for clips', {
-      clipCount: extractedClips.length,
+      clipCount: clipsToCreate.length,
     });
 
     const viralityAnalyses = await viralityService.analyzeClips(
-      extractedClips.map((clip, index) => ({
+      clipsToCreate.map((clip, index) => ({
         id: `segment-${index}`,
         transcript: this.clipExtractionService.getTranscriptSegment(
           transcriptionResult,
@@ -245,8 +414,8 @@ export class GenerateAutoHighlightsUseCase {
         segmentCount: transcriptionResult.segments.length,
       });
 
-      for (let i = 0; i < extractedClips.length; i++) {
-        const clip = extractedClips[i];
+      for (let i = 0; i < clipsToCreate.length; i++) {
+        const clip = clipsToCreate[i];
         const segments = transcriptionResult.segments.filter((seg) => {
           const segStartMs = seg.start * 1000;
           const segEndMs = seg.end * 1000;
@@ -282,8 +451,8 @@ export class GenerateAutoHighlightsUseCase {
     // Step 8: Create clips in database (with SRT captions from transcript segments)
     const createdClips: Clip[] = [];
 
-    for (let i = 0; i < extractedClips.length; i++) {
-      const extractedClip = extractedClips[i];
+    for (let i = 0; i < clipsToCreate.length; i++) {
+      const extractedClip = clipsToCreate[i];
       const viralityAnalysis = viralityAnalyses.get(`segment-${i}`);
       const enhancement = enhancementAnalyses.get(`segment-${i}`);
       const qualitySignals =
@@ -350,96 +519,115 @@ export class GenerateAutoHighlightsUseCase {
     const previewsDir = path.join(process.cwd(), 'public', 'uploads', 'previews', asset.projectId);
     await fs.mkdir(previewsDir, { recursive: true });
 
-    // Get absolute path to source video
-    let sourceVideoPath: string;
-    const assetPath = asset.storagePath || asset.path;
-
-    if (path.isAbsolute(assetPath)) {
-      // Already absolute path (e.g., /Users/.../file.mp4)
-      sourceVideoPath = assetPath;
-    } else if (assetPath.startsWith('/uploads')) {
-      // Public URL path - convert to absolute file system path
-      sourceVideoPath = path.join(process.cwd(), 'public', assetPath);
-    } else {
-      // Relative path - prepend public directory
-      sourceVideoPath = path.join(process.cwd(), 'public', assetPath);
-    }
+    // Reuse the materialized source from earlier — we already paid the
+    // download cost (if any) at the top of this method.
+    const sourceVideoPath = sourcePath ?? null;
+    const previewFailureReasons: PreviewGenerationFailure[] = [];
+    const previewGeneratedClipIds = new Set<string>();
 
     logger.info('Source video path resolved', {
-      assetPath,
+      assetPath: asset.storagePath || asset.path,
       resolvedPath: sourceVideoPath,
       projectId: asset.projectId,
     });
 
-    // Generate preview videos and thumbnails in parallel
-    const previewPromises = createdClips.map(async (clip) => {
-      try {
-        // Generate preview video filename
-        const previewFilename = `clip-${clip.id}-${nanoid(8)}.mp4`;
-        const previewOutputPath = path.join(previewsDir, previewFilename);
-        const previewPublicUrl = `/uploads/previews/${asset.projectId}/${previewFilename}`;
-
-        // Extract video clip
-        const previewReframePlan = selectBestReframePlan(
-          clip.viralityFactors?.reframePlans,
-          PREVIEW_TARGET_RATIO
-        );
-
-        await this.videoExtractionService.extractClip({
-          inputPath: sourceVideoPath,
-          startMs: clip.startMs,
-          endMs: clip.endMs,
-          outputPath: previewOutputPath,
-          preset: PREVIEW_PRESET,
-          reframePlan: previewReframePlan,
-        });
-
-        logger.info('Preview video generated for clip', {
+    if (!sourceVideoPath) {
+      const reason = 'Source video file not found on local storage; preview generation skipped.';
+      previewFailureReasons.push(
+        ...createdClips.map((clip) => ({
           clipId: clip.id,
-          previewPath: previewPublicUrl,
-        });
+          stage: 'source_resolution' as const,
+          reason,
+        }))
+      );
+      logger.error('Failed to resolve source video path for previews', {
+        assetId,
+        projectId: asset.projectId,
+        candidates: [asset.storagePath, asset.path].filter(Boolean),
+      });
+    }
 
-        // Generate thumbnail
-        let thumbnailUrl: string | undefined;
+    // Generate preview videos and thumbnails with bounded FFmpeg concurrency.
+    if (sourceVideoPath) {
+      await runWithConcurrencyLimit(createdClips, PREVIEW_CONCURRENCY_LIMIT, async (clip) => {
+        let failureStage: PreviewGenerationFailure['stage'] = 'preview';
         try {
-          const thumbnailResult = await this.thumbnailService.generateClipThumbnail(
-            sourceVideoPath,
-            clip.startMs,
-            clip.endMs,
-            asset.projectId,
-            clip.id
+          // Generate preview video filename
+          const previewFilename = `clip-${clip.id}-${nanoid(8)}.mp4`;
+          const previewOutputPath = path.join(previewsDir, previewFilename);
+          const previewPublicUrl = `/uploads/previews/${asset.projectId}/${previewFilename}`;
+
+          // Extract video clip
+          const previewReframePlan = selectBestReframePlan(
+            clip.viralityFactors?.reframePlans,
+            PREVIEW_TARGET_RATIO
           );
 
-          if (thumbnailResult) {
-            thumbnailUrl = thumbnailResult.publicUrl;
-            logger.info('Thumbnail generated for clip', {
+          await this.videoExtractionService.extractClip({
+            inputPath: sourceVideoPath,
+            startMs: clip.startMs,
+            endMs: clip.endMs,
+            outputPath: previewOutputPath,
+            preset: PREVIEW_PRESET,
+            reframePlan: previewReframePlan,
+          });
+
+          logger.info('Preview video generated for clip', {
+            clipId: clip.id,
+            previewPath: previewPublicUrl,
+          });
+
+          // Generate thumbnail
+          let thumbnailUrl: string | undefined;
+          try {
+            const thumbnailResult = await this.thumbnailService.generateClipThumbnail(
+              sourceVideoPath,
+              clip.startMs,
+              clip.endMs,
+              asset.projectId,
+              clip.id
+            );
+
+            if (thumbnailResult) {
+              thumbnailUrl = thumbnailResult.publicUrl;
+              logger.info('Thumbnail generated for clip', {
+                clipId: clip.id,
+                thumbnailUrl,
+              });
+            }
+          } catch (thumbnailError) {
+            previewFailureReasons.push({
               clipId: clip.id,
-              thumbnailUrl,
+              stage: 'thumbnail',
+              reason: thumbnailError instanceof Error ? thumbnailError.message : String(thumbnailError),
+            });
+            logger.warn('Failed to generate thumbnail for clip', {
+              clipId: clip.id,
+              error: thumbnailError instanceof Error ? thumbnailError.message : String(thumbnailError),
             });
           }
-        } catch (thumbnailError) {
-          logger.warn('Failed to generate thumbnail for clip', {
-            clipId: clip.id,
-            error: thumbnailError instanceof Error ? thumbnailError.message : String(thumbnailError),
+
+          // Update clip with preview path and thumbnail
+          failureStage = 'database_update';
+          await this.clipRepo.update(clip.id, {
+            previewPath: previewPublicUrl,
+            ...(thumbnailUrl && { thumbnail: thumbnailUrl }),
           });
+          previewGeneratedClipIds.add(clip.id);
+        } catch (error) {
+          previewFailureReasons.push({
+            clipId: clip.id,
+            stage: failureStage,
+            reason: error instanceof Error ? error.message : String(error),
+          });
+          logger.error('Failed to generate preview for clip', {
+            clipId: clip.id,
+            error: error instanceof Error ? error.message : String(error),
+          });
+          // Continue without preview - log error but don't fail the entire process
         }
-
-        // Update clip with preview path and thumbnail
-        await this.clipRepo.update(clip.id, {
-          previewPath: previewPublicUrl,
-          ...(thumbnailUrl && { thumbnail: thumbnailUrl }),
-        });
-      } catch (error) {
-        logger.error('Failed to generate preview for clip', {
-          clipId: clip.id,
-          error: error instanceof Error ? error.message : String(error),
-        });
-        // Continue without preview - log error but don't fail the entire process
-      }
-    });
-
-    // Wait for all previews to complete
-    await Promise.allSettled(previewPromises);
+      });
+    }
 
     // Reload clips with previews and thumbnails
     const updatedClips = await this.clipRepo.findByProjectId(asset.projectId);
@@ -458,7 +646,19 @@ export class GenerateAutoHighlightsUseCase {
       assetId,
       clipsCreated: createdClips.length,
       averageViralityScore,
+      mode,
+      existingClipsDeleted,
+      skippedDueToOverlap,
+      previewsGenerated: previewGeneratedClipIds.size,
+      previewFailures: previewFailureReasons.length,
     });
+
+    // existingClipsPreserved counts pre-existing clips left intact in non-replace modes.
+    // In replace mode all existing clips were deleted, so 0.
+    const existingClipsPreserved = mode === 'replace' ? 0 : existingClipsBefore.length;
+
+    // Cleanup the materialized tempfile (no-op for local-driver assets).
+    await materialized?.cleanup();
 
     return {
       assetId,
@@ -466,8 +666,15 @@ export class GenerateAutoHighlightsUseCase {
       analytics: {
         transcriptionGenerated,
         suggestionsReceived: analysisResult.suggestions.length,
-        clipsCreated: updatedClips.length,
+        clipsCreated: createdClips.length,
         averageViralityScore,
+        mode,
+        existingClipsDeleted,
+        skippedDueToOverlap,
+        existingClipsPreserved,
+        previewsGenerated: previewGeneratedClipIds.size,
+        previewFailures: previewFailureReasons.length,
+        previewFailureReasons,
       },
     };
   }
@@ -528,11 +735,11 @@ export class GenerateAutoHighlightsUseCase {
     dedupedWords.sort((a, b) => a.start - b.start || a.end - b.end);
 
     if (dedupedWords.length > 0) {
-      const WORDS_PER_CUE = 4;
+      const wordsPerCue = this.getAdaptiveWordsPerCue(dedupedWords, clipStartSec, clipEndSec);
       const entries: CaptionEntry[] = [];
 
-      for (let i = 0; i < dedupedWords.length; i += WORDS_PER_CUE) {
-        const chunk = dedupedWords.slice(i, i + WORDS_PER_CUE);
+      for (let i = 0; i < dedupedWords.length; i += wordsPerCue) {
+        const chunk = dedupedWords.slice(i, i + wordsPerCue);
         const first = chunk[0];
         const last = chunk[chunk.length - 1];
 
@@ -583,5 +790,25 @@ export class GenerateAutoHighlightsUseCase {
       }));
 
     return fallbackEntries.length > 0 ? buildSRT(fallbackEntries) : undefined;
+  }
+
+  private getAdaptiveWordsPerCue(
+    words: Array<{ start: number; end: number }>,
+    clipStartSec: number,
+    clipEndSec: number
+  ): number {
+    const firstStart = words[0]?.start ?? clipStartSec;
+    const lastEnd = words[words.length - 1]?.end ?? clipEndSec;
+    const spokenDurationSec = Math.max(
+      1,
+      Math.min(clipEndSec, lastEnd) - Math.max(clipStartSec, firstStart)
+    );
+    const wordsPerSecond = words.length / spokenDurationSec;
+
+    if (wordsPerSecond < 1.8) return 3;
+    if (wordsPerSecond < 2.7) return 4;
+    if (wordsPerSecond < 3.6) return 5;
+    if (wordsPerSecond < 4.5) return 6;
+    return 7;
   }
 }

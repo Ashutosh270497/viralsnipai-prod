@@ -56,6 +56,8 @@ export class PrismaAssetRepository implements IAssetRepository {
         storagePath: data.storagePath,
         type: data.type,
         durationSec: data.durationSec,
+        sourceWidth: data.sourceWidth,
+        sourceHeight: data.sourceHeight,
         transcript: data.transcript,
       },
     });
@@ -69,6 +71,8 @@ export class PrismaAssetRepository implements IAssetRepository {
       data: {
         ...(data.path !== undefined && { path: data.path }),
         ...(data.durationSec !== undefined && { durationSec: data.durationSec }),
+        ...(data.sourceWidth !== undefined && { sourceWidth: data.sourceWidth }),
+        ...(data.sourceHeight !== undefined && { sourceHeight: data.sourceHeight }),
         ...(data.transcript !== undefined && { transcript: data.transcript }),
       },
     });
@@ -114,6 +118,8 @@ export class PrismaAssetRepository implements IAssetRepository {
       type: prismaAsset.type,
       durationSec: prismaAsset.durationSec,
       durationSeconds: prismaAsset.durationSec,
+      sourceWidth: prismaAsset.sourceWidth,
+      sourceHeight: prismaAsset.sourceHeight,
       transcript: prismaAsset.transcript,
       transcription: prismaAsset.transcript,
       createdAt: prismaAsset.createdAt.toISOString(),

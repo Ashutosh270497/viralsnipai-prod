@@ -35,6 +35,7 @@ const patchSchema = z
     previewPath: z.string().nullable().optional(),
     startMs: z.number().int().min(0).optional(),
     endMs: z.number().int().positive().optional(),
+    expectedVersion: z.number().int().min(1),
     transcriptEditRangesMs: z
       .array(
         z
@@ -94,6 +95,14 @@ export const PATCH = withErrorHandling(
 
     const useCase = container.get<UpdateClipUseCase>(TYPES.UpdateClipUseCase);
 
+    const exportSettings: NonNullable<UpdateClipInput['updates']['exportSettings']> = {};
+    if (result.data.reframeMode !== undefined) exportSettings.reframeMode = result.data.reframeMode;
+    if (result.data.trackingSmoothness !== undefined) exportSettings.trackingSmoothness = result.data.trackingSmoothness;
+    if (result.data.exportQuality !== undefined) exportSettings.exportQuality = result.data.exportQuality;
+    if (result.data.captionsEnabled !== undefined) exportSettings.captionsEnabled = result.data.captionsEnabled;
+    if (result.data.captionSafeZoneEnabled !== undefined) exportSettings.captionSafeZoneEnabled = result.data.captionSafeZoneEnabled;
+    const hasExportSettings = Object.keys(exportSettings).length > 0;
+
     const normalizedUpdates: UpdateClipInput['updates'] = {
       ...(result.data.title !== undefined ? { title: result.data.title } : {}),
       ...(result.data.summary !== undefined ? { summary: result.data.summary } : {}),
@@ -112,11 +121,13 @@ export const PATCH = withErrorHandling(
               : null,
           }
         : {}),
+      ...(hasExportSettings ? { exportSettings } : {}),
     };
 
     const output = await useCase.execute({
       clipId: id,
       userId: user.id,
+      expectedVersion: result.data.expectedVersion,
       updates: normalizedUpdates,
     });
 

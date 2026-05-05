@@ -292,7 +292,6 @@ ASSETS
 FLAG-GATED
 ├── Transcribe             /transcribe           ← Manual Whisper transcription (flag off)
 ├── Imagen                 /imagen               ← Google Imagen image gen (flag off)
-├── Video Lab              /video                ← Video generation tools
 ├── Voicer                 /voicer               ← ElevenLabs TTS workspace (flag on)
 └── Veo                    /veo                  ← Google Veo video gen (flag + FORCE_VEO_ENABLED)
 ```
@@ -859,7 +858,6 @@ All flags in `apps/web/lib/feature-flags.ts`, read from environment variables:
 | `transcribeUiEnabled` | `TRANSCRIBE_UI_ENABLED` | `false` | Transcribe workspace |
 | `imagenEnabled` | `IMAGEN_ENABLED` | `false` | Google Imagen workspace |
 | `veoEnabled` | `VEO_ENABLED` + `FORCE_VEO_ENABLED` | `false` | Google Veo (double-guarded) |
-| `soraEnabled` | `SORA_ENABLED` | `false` | Sora integration (future) |
 | `voicerEnabled` | `VOICER_ENABLED` | `true` | ElevenLabs Voicer |
 | `snipRadarEnabled` | `SNIPRADAR_ENABLED` | `true` | Entire SnipRadar ecosystem |
 | `snipRadarOverviewV2Enabled` | `SNIPRADAR_V2_OVERVIEW_ENABLED` | `true` | SnipRadar Overview v2 |
@@ -1097,9 +1095,9 @@ All 8 phases of the Vugola+ upgrade plan are implemented at `Built` or `QA Compl
 - Extend TTS to 50+ languages via OpenAI TTS native support.
 - Language selector in Voice tab of Script Generator.
 
-#### 9. Sora Integration (Flag-Gated)
-- Sora video generation workspace (`/video` route + `SORA_ENABLED` flag).
-- Currently stubbed with flag but no active implementation.
+#### 9. V3 Video Generation
+- Video generation is consolidated under the V3 Veo workspace and launch-version feature gates.
+- Removed the old Sora placeholder workspace from the active app surface.
 
 #### 10. Additional Browser Extension UX Experiments
 - Multi-option reply picker

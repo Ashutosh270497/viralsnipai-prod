@@ -85,13 +85,23 @@ export function queueYouTubeIngestJob(params: YouTubeIngestJobParams): void {
         metadata: Record<string, unknown>,
         status?: 'queued' | 'processing' | 'completed' | 'failed'
       ) => {
-        await prisma.youTubeIngestJob.update({
-          where: { id: ingestJobId },
-          data: {
-            ...(status ? { status } : {}),
-            metadata: metadata as any,
-          },
-        });
+        await prisma.$transaction([
+          prisma.youTubeIngestJob.update({
+            where: { id: ingestJobId },
+            data: {
+              ...(status ? { status } : {}),
+              metadata: metadata as any,
+            },
+          }),
+          ...(status === 'processing' || status === 'queued'
+            ? [
+                prisma.project.update({
+                  where: { id: projectId },
+                  data: { status: 'ingesting' },
+                }),
+              ]
+            : []),
+        ]);
       };
 
       const updateProgress = async (update: IngestProgressUpdate) => {
@@ -149,21 +159,27 @@ export function queueYouTubeIngestJob(params: YouTubeIngestJobParams): void {
         const processingTime = Date.now() - startTime;
 
         // Update ingest job with success
-        await prisma.youTubeIngestJob.update({
-          where: { id: ingestJobId },
-          data: {
-            assetId: output.asset.id,
-            status: 'completed',
-            processingTime,
-            metadata: {
-              ...output.metadata,
-              phase: 'Completed',
-              phaseKey: 'completed',
-              progress: 100,
-            } as any,
-            error: null,
-          },
-        });
+        await prisma.$transaction([
+          prisma.youTubeIngestJob.update({
+            where: { id: ingestJobId },
+            data: {
+              assetId: output.asset.id,
+              status: 'completed',
+              processingTime,
+              metadata: {
+                ...output.metadata,
+                phase: 'Completed',
+                phaseKey: 'completed',
+                progress: 100,
+              } as any,
+              error: null,
+            },
+          }),
+          prisma.project.update({
+            where: { id: projectId },
+            data: { status: 'ready' },
+          }),
+        ]);
 
         logger.info('YouTube ingest job completed successfully', {
           ingestJobId,
@@ -177,13 +193,19 @@ export function queueYouTubeIngestJob(params: YouTubeIngestJobParams): void {
         });
 
         // Update ingest job with error
-        await prisma.youTubeIngestJob.update({
-          where: { id: ingestJobId },
-          data: {
-            status: 'failed',
-            error: error instanceof Error ? error.message : 'Unknown error',
-          },
-        });
+        await prisma.$transaction([
+          prisma.youTubeIngestJob.update({
+            where: { id: ingestJobId },
+            data: {
+              status: 'failed',
+              error: error instanceof Error ? error.message : 'Unknown error',
+            },
+          }),
+          prisma.project.update({
+            where: { id: projectId },
+            data: { status: 'failed' },
+          }),
+        ]);
 
         throw error;
       }
@@ -198,26 +220,39 @@ export function queueYouTubeIngestJob(params: YouTubeIngestJobParams): void {
       const mappedStatus = mapQueueStatusToIngestStatus(status);
 
       // Update status in database
-      await prisma.youTubeIngestJob.update({
-        where: { id: ingestJobId },
-        data: {
-          status: mappedStatus,
-          metadata:
-            mappedStatus === 'failed'
-              ? {
-                  phase: 'Failed',
-                  phaseKey: 'failed',
-                  progress: 100,
-                }
-              : undefined,
-          error:
-            status === 'failed' && error
-              ? error instanceof Error
-                ? error.message
-                : String(error)
-              : null,
-        },
-      });
+      await prisma.$transaction([
+        prisma.youTubeIngestJob.update({
+          where: { id: ingestJobId },
+          data: {
+            status: mappedStatus,
+            metadata:
+              mappedStatus === 'failed'
+                ? {
+                    phase: 'Failed',
+                    phaseKey: 'failed',
+                    progress: 100,
+                  }
+                : undefined,
+            error:
+              status === 'failed' && error
+                ? error instanceof Error
+                  ? error.message
+                  : String(error)
+                : null,
+          },
+        }),
+        prisma.project.update({
+          where: { id: projectId },
+          data: {
+            status:
+              mappedStatus === 'failed'
+                ? 'failed'
+                : mappedStatus === 'completed'
+                  ? 'ready'
+                  : 'ingesting',
+          },
+        }),
+      ]);
     },
   });
 

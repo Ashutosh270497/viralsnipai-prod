@@ -10,6 +10,8 @@ import { prisma } from '@/lib/prisma';
 import { queueYouTubeIngestJob } from '@/lib/youtube-ingest-queue';
 import { youtubeUrlSchema } from '@/lib/validations';
 
+const ACTIVE_INGEST_STATUSES = ['queued', 'processing'] as const;
+
 const schema = z.object({
   projectId: z.string(),
   sourceUrl: youtubeUrlSchema,
@@ -43,7 +45,8 @@ export const POST = withErrorHandling(async (request: Request) => {
     });
   }
 
-  const { projectId, sourceUrl } = result.data;
+  const { projectId } = result.data;
+  const sourceUrl = result.data.sourceUrl.trim();
 
   // Step 2.5: Verify project ownership before creating job
   const project = await prisma.project.findFirst({
@@ -64,25 +67,85 @@ export const POST = withErrorHandling(async (request: Request) => {
     userId: user.id,
   });
 
-  // Step 3: Create ingest job record
-  const ingestJob = await prisma.youTubeIngestJob.create({
-    data: {
+  // Step 3: Return an active job for the same project/source instead of
+  // creating duplicate ingest workers on double-clicks or retries.
+  const activeJob = await prisma.youTubeIngestJob.findFirst({
+    where: {
       projectId,
       sourceUrl,
-      status: 'queued',
-      metadata: {
-        phase: 'Queued',
-        phaseKey: 'queued',
-        progress: 5,
-        message: 'Job queued',
-      } as any,
+      status: { in: [...ACTIVE_INGEST_STATUSES] },
     },
+    orderBy: { createdAt: 'desc' },
   });
+
+  if (activeJob) {
+    logger.info('Returning existing active YouTube ingest job', {
+      jobId: activeJob.id,
+      projectId,
+      sourceUrl,
+      status: activeJob.status,
+    });
+
+    return ApiResponseBuilder.success(
+      {
+        jobId: activeJob.id,
+        status: activeJob.status,
+        reused: true,
+      },
+      'YouTube video ingestion already queued'
+    );
+  }
+
+  let ingestJob;
+  try {
+    ingestJob = await prisma.youTubeIngestJob.create({
+      data: {
+        projectId,
+        sourceUrl,
+        status: 'queued',
+        metadata: {
+          phase: 'Queued',
+          phaseKey: 'queued',
+          progress: 5,
+          message: 'Job queued',
+        } as any,
+      },
+    });
+  } catch (error) {
+    if (typeof error === 'object' && error && 'code' in error && error.code === 'P2002') {
+      const existingJob = await prisma.youTubeIngestJob.findFirst({
+        where: {
+          projectId,
+          sourceUrl,
+          status: { in: [...ACTIVE_INGEST_STATUSES] },
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+
+      if (existingJob) {
+        return ApiResponseBuilder.success(
+          {
+            jobId: existingJob.id,
+            status: existingJob.status,
+            reused: true,
+          },
+          'YouTube video ingestion already queued'
+        );
+      }
+    }
+
+    throw error;
+  }
 
   logger.info('YouTube ingest job created', {
     jobId: ingestJob.id,
     projectId,
     sourceUrl,
+  });
+
+  await prisma.project.update({
+    where: { id: projectId },
+    data: { status: 'ingesting' },
   });
 
   // Step 4: Queue the background job

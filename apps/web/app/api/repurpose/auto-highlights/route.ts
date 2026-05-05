@@ -17,6 +17,14 @@ const schema = z.object({
   assetId: z.string(),
   strategy: z.string().optional(),
   target: z.number().min(1).max(12).optional(),
+  /**
+   * How to reconcile new highlights with existing clips on the project:
+   *   "merge" (default)   — keep existing clips; skip new ones that overlap existing within 5s
+   *   "replace"           — delete ALL existing clips, then create new ones
+   *   "append"            — keep existing clips; add ALL new clips alongside (may duplicate)
+   * Callers must opt into "replace" explicitly when they want destructive regeneration.
+   */
+  mode: z.enum(['replace', 'merge', 'append']).optional().default('merge'),
   model: z.string().optional().transform((val) => {
     if (!val || val.trim().length === 0) return undefined;
     const trimmed = val.trim();
@@ -70,6 +78,7 @@ export const POST = withErrorHandling(async (request: Request) => {
     assetId: parsedData.assetId,
     model: parsedData.model,
     targetClips: parsedData.target,
+    mode: parsedData.mode,
     hasCustomization: !!(parsedData.brief || parsedData.audience || parsedData.tone),
   });
 
@@ -91,6 +100,7 @@ export const POST = withErrorHandling(async (request: Request) => {
         tone: parsedData.tone,
         brief: parsedData.brief,
         callToAction: parsedData.callToAction,
+        mode: parsedData.mode,
       },
     });
   } catch (error) {

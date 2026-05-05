@@ -39,7 +39,7 @@ const GATED_ROUTES: GatedRoute[] = [
     description: "Image generation is not part of the focused V1 video repurposing launch.",
   },
   {
-    prefixes: ["/veo", "/video"],
+    prefixes: ["/veo"],
     feature: "veo",
     title: "Video generation is coming soon",
     description: "V1 only supports repurposing existing long-form videos into short-form clips.",

@@ -16,6 +16,7 @@ interface CaptionEditorDialogProps {
   clipTitle?: string | null;
   previewPath?: string | null;
   captionSrt?: string | null;
+  expectedVersion: number;
   onSave: () => Promise<void> | void;
 }
 
@@ -26,6 +27,7 @@ export function CaptionEditorDialog({
   clipTitle,
   previewPath,
   captionSrt,
+  expectedVersion,
   onSave
 }: CaptionEditorDialogProps) {
   const { toast } = useToast();
@@ -72,7 +74,7 @@ export function CaptionEditorDialog({
       const response = await fetch(`/api/clips/${clipId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ captionSrt: newSrt }),
+        body: JSON.stringify({ captionSrt: newSrt, expectedVersion }),
         cache: "no-store"
       });
 

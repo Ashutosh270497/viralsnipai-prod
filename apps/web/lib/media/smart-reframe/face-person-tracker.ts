@@ -39,27 +39,42 @@ function resolveFfmpegBinary(): string {
   return "ffmpeg"; // System PATH fallback
 }
 
+export interface ExtractSampleFramesResult {
+  /** Absolute paths to the JPEG frames produced by FFmpeg (may be empty). */
+  framePaths: string[];
+  /** Absolute path to the temp directory holding the frames. */
+  tempDir: string;
+}
+
 /**
  * Extract JPEG frames from a clip time range using FFmpeg.
- * Returns an array of absolute paths to the temp JPEG files.
- * The caller is responsible for deleting them after use.
+ * Returns the produced frame paths AND the temp directory (always created),
+ * so the caller can `cleanupTempDir(tempDir)` even when 0 frames were produced.
+ *
+ * Why both: when FFmpeg writes 0 files (corrupt segment, codec issue, very
+ * short clip) the directory still exists from `mkdir`. Returning only the
+ * frame list let callers leak the directory — see C4 audit finding.
  */
 export async function extractSampleFrames(params: {
   sourcePath: string;
   startMs: number;
   endMs: number;
   tempDir?: string;
-}): Promise<string[]> {
+}): Promise<ExtractSampleFramesResult> {
   const { sourcePath, startMs, endMs } = params;
   const durationMs = Math.max(0, endMs - startMs);
 
-  if (durationMs <= 0) return [];
+  // Always allocate a tempDir even on the zero-duration early exit, so the
+  // return shape stays consistent and callers don't branch on missing dir.
+  const tempDir = params.tempDir ?? path.join(os.tmpdir(), `sr-frames-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+
+  if (durationMs <= 0) {
+    return { framePaths: [], tempDir };
+  }
 
   const intervalMs = SAMPLE_INTERVAL_MS > 0 ? SAMPLE_INTERVAL_MS : 750;
   const desiredFrames = Math.min(MAX_FRAMES, Math.max(1, Math.ceil(durationMs / intervalMs)));
 
-  // Use a unique temp directory per analysis run
-  const tempDir = params.tempDir ?? path.join(os.tmpdir(), `sr-frames-${Date.now()}-${Math.random().toString(36).slice(2)}`);
   await fs.mkdir(tempDir, { recursive: true });
 
   const outputPattern = path.join(tempDir, "frame_%04d.jpg");
@@ -93,10 +108,10 @@ export async function extractSampleFrames(params: {
   });
 
   // Collect produced frames
-  let files: string[] = [];
+  let framePaths: string[] = [];
   try {
     const entries = await fs.readdir(tempDir);
-    files = entries
+    framePaths = entries
       .filter((f) => f.startsWith("frame_") && f.endsWith(".jpg"))
       .sort()
       .map((f) => path.join(tempDir, f));
@@ -104,16 +119,29 @@ export async function extractSampleFrames(params: {
     // directory might not exist if ffmpeg never ran
   }
 
-  return files;
+  return { framePaths, tempDir };
 }
 
 /**
- * Delete all temp frame files and the directory.
+ * Delete a temp frame directory unconditionally.
+ * Safe to call when the directory was never created.
+ */
+export async function cleanupTempDir(tempDir: string | null | undefined): Promise<void> {
+  if (!tempDir) return;
+  await fs.rm(tempDir, { recursive: true, force: true }).catch(() => null);
+}
+
+/**
+ * Backward-compatible cleanup helper.
+ * Prefer cleanupTempDir(tempDir) for new code — this overload only works when
+ * at least one frame was produced.
+ *
+ * @deprecated use cleanupTempDir
  */
 export async function cleanupTempFrames(framePaths: string[]): Promise<void> {
   if (framePaths.length === 0) return;
   const dir = path.dirname(framePaths[0]);
-  await fs.rm(dir, { recursive: true, force: true }).catch(() => null);
+  await cleanupTempDir(dir);
 }
 
 // ── Detection aggregation ─────────────────────────────────────────────────────
@@ -155,6 +183,9 @@ export async function aggregateFrameDetections(
 /**
  * Full pipeline: sample frames → detect → aggregate.
  * Always returns an AggregatedDetections (may have empty arrays on failure).
+ *
+ * The temp directory created by FFmpeg is cleaned in `finally` regardless of
+ * whether any frames were produced — see C4 audit finding for context.
  */
 export async function sampleAndDetect(params: {
   sourcePath: string;
@@ -166,14 +197,16 @@ export async function sampleAndDetect(params: {
     return { faceBoxes: [], personBoxes: [], totalFrames: 0 };
   }
 
-  let framePaths: string[] = [];
+  let tempDir: string | null = null;
   try {
     const extractStart = Date.now();
-    framePaths = await extractSampleFrames({
+    const extracted = await extractSampleFrames({
       sourcePath: params.sourcePath,
       startMs: params.startMs,
       endMs: params.endMs,
     });
+    tempDir = extracted.tempDir;
+    const framePaths = extracted.framePaths;
     const extractDurationMs = Date.now() - extractStart;
 
     if (framePaths.length === 0) {
@@ -212,6 +245,6 @@ export async function sampleAndDetect(params: {
     });
     return { faceBoxes: [], personBoxes: [], totalFrames: 0 };
   } finally {
-    await cleanupTempFrames(framePaths);
+    await cleanupTempDir(tempDir);
   }
 }

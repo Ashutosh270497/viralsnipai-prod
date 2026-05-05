@@ -62,17 +62,6 @@ export const FEATURE_FLAG_REGISTRY: Record<FeatureFlagKey, FeatureFlagDefinition
       "Set VEO_ENABLED or NEXT_PUBLIC_VEO_ENABLED to false, or omit FORCE_VEO_ENABLED=true, to block Veo access.",
     removeWhen: null,
   },
-  soraEnabled: {
-    key: "soraEnabled",
-    envVar: "SORA_ENABLED",
-    publicEnvVar: "NEXT_PUBLIC_SORA_ENABLED",
-    owner: "media_ai",
-    stage: "experiment",
-    defaultValue: false,
-    description: "Sora integration placeholder flag.",
-    killSwitchBehavior: "Keep disabled by default until the Sora workspace moves beyond placeholder status.",
-    removeWhen: "Remove if Sora is not shipped or after its production rollout model is finalized.",
-  },
   voicerEnabled: {
     key: "voicerEnabled",
     envVar: "VOICER_ENABLED",

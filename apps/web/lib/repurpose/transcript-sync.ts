@@ -1,3 +1,5 @@
+import { ms } from '@/lib/media/time-units';
+
 export type TranscriptEditRange = {
   startMs: number;
   endMs: number;
@@ -35,8 +37,8 @@ export function normalizeTranscriptEditRanges(
   const sorted = ranges
     .filter((range) => Number.isFinite(range.startMs) && Number.isFinite(range.endMs))
     .map((range) => ({
-      startMs: Math.max(clipStartMs, Math.min(range.startMs, clipEndMs)),
-      endMs: Math.max(clipStartMs, Math.min(range.endMs, clipEndMs)),
+      startMs: ms(Math.max(clipStartMs, Math.min(range.startMs, clipEndMs))),
+      endMs: ms(Math.max(clipStartMs, Math.min(range.endMs, clipEndMs))),
     }))
     .filter((range) => range.endMs - range.startMs >= minDurationMs)
     .sort((a, b) => a.startMs - b.startMs || a.endMs - b.endMs);
@@ -49,7 +51,7 @@ export function normalizeTranscriptEditRanges(
   for (const range of sorted) {
     const previous = merged[merged.length - 1];
     if (previous && range.startMs <= previous.endMs + mergeGapMs) {
-      previous.endMs = Math.max(previous.endMs, range.endMs);
+      previous.endMs = ms(Math.max(previous.endMs, range.endMs));
     } else {
       merged.push({ ...range });
     }

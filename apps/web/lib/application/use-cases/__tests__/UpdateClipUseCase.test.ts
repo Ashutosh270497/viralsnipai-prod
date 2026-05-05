@@ -10,6 +10,7 @@ function buildClip(overrides: Partial<Clip> = {}): Clip {
     assetId: "asset_1",
     startMs: 10_000,
     endMs: 20_000,
+    version: 1,
     createdAt: new Date().toISOString(),
     viralityFactors: {
       hookStrength: 50,
@@ -57,8 +58,10 @@ describe("UpdateClipUseCase", () => {
       create: jest.fn(),
       createMany: jest.fn(),
       update: jest.fn().mockResolvedValue(updatedClip),
+      updateWithVersion: jest.fn().mockResolvedValue(updatedClip),
       delete: jest.fn(),
       deleteByProjectId: jest.fn(),
+      splitClip: jest.fn(),
       countByProjectId: jest.fn(),
     };
 
@@ -77,6 +80,7 @@ describe("UpdateClipUseCase", () => {
     const output = await useCase.execute({
       clipId: clip.id,
       userId: project.userId,
+      expectedVersion: clip.version,
       updates: {
         transcriptEditRangesMs: [
           { startMs: 9_000, endMs: 10_550 }, // clamped
@@ -87,8 +91,9 @@ describe("UpdateClipUseCase", () => {
       },
     });
 
-    expect(clipRepo.update).toHaveBeenCalledTimes(1);
-    const [, updatePayload] = clipRepo.update.mock.calls[0];
+    expect(clipRepo.updateWithVersion).toHaveBeenCalledTimes(1);
+    const [, expectedVersion, updatePayload] = clipRepo.updateWithVersion.mock.calls[0];
+    expect(expectedVersion).toBe(clip.version);
     const metadata = (updatePayload.viralityFactors?.metadata ?? {}) as Record<string, unknown>;
     expect(metadata.transcriptEditRangesMs).toEqual([
       { startMs: 10_000, endMs: 10_550 },

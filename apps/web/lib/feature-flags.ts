@@ -5,7 +5,6 @@ export type FeatureFlags = {
   transcribeUiEnabled: boolean;
   imagenEnabled: boolean;
   veoEnabled: boolean;
-  soraEnabled: boolean;
   voicerEnabled: boolean;
   snipRadarEnabled: boolean;
   snipRadarOverviewV2Enabled: boolean;
@@ -30,7 +29,6 @@ export const FEATURE_FLAG_KEYS = [
   "transcribeUiEnabled",
   "imagenEnabled",
   "veoEnabled",
-  "soraEnabled",
   "voicerEnabled",
   "snipRadarEnabled",
   "snipRadarOverviewV2Enabled",
@@ -58,7 +56,6 @@ export function readEnvFeatureFlags(): FeatureFlags {
   const envValue = process.env.UI_V2_ENABLED ?? process.env.NEXT_PUBLIC_UI_V2_ENABLED ?? "false";
   const transcribeValue =
     process.env.TRANSCRIBE_UI_ENABLED ?? process.env.NEXT_PUBLIC_TRANSCRIBE_UI_ENABLED ?? "false";
-  const soraValue = process.env.SORA_ENABLED ?? process.env.NEXT_PUBLIC_SORA_ENABLED ?? "false";
   const forceVeoEnabled = parseBooleanFlag(process.env.FORCE_VEO_ENABLED);
   const snipRadarEnabled = isFeatureEnabled("snipRadar");
   const voiceCloningEnabled = isFeatureEnabled("voiceCloning");
@@ -68,7 +65,6 @@ export function readEnvFeatureFlags(): FeatureFlags {
     imagenEnabled: isFeatureEnabled("imagen"),
     // Veo is temporarily paused unless FORCE_VEO_ENABLED=true is supplied.
     veoEnabled: forceVeoEnabled && isFeatureEnabled("veo"),
-    soraEnabled: parseBooleanFlag(soraValue),
     voicerEnabled: voiceCloningEnabled,
     snipRadarEnabled,
     snipRadarOverviewV2Enabled: snipRadarEnabled,
@@ -101,10 +97,6 @@ export function isImagenEnabled(): boolean {
 
 export function isVeoEnabled(): boolean {
   return readEnvFeatureFlags().veoEnabled;
-}
-
-export function isSoraEnabled(): boolean {
-  return readEnvFeatureFlags().soraEnabled;
 }
 
 export function isVoicerEnabled(): boolean {

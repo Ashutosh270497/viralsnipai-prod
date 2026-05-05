@@ -96,10 +96,18 @@ export function getRazorpayPublicConfig() {
   const availability = buildAvailability(config);
   const missingEnvKeys = getMissingRazorpayEnvKeys(config);
 
+  // IMPORTANT: never fall back to `config.keyId` here. `config.keyId` is sourced
+  // from `RAZORPAY_KEY_ID` (the server-side env var) and must never reach the
+  // browser. The Razorpay key ID *is* designed to be public, but only when
+  // explicitly exposed via `NEXT_PUBLIC_RAZORPAY_KEY_ID`. Falling back to the
+  // server-side var would risk shipping a misconfigured server's secrets in
+  // any deployment that forgot to set the public copy.
+  const publicKey = process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID ?? null;
+
   return {
     provider: "razorpay" as const,
     configured: Boolean(config.keyId && config.keySecret && hasAnyConfiguredPlan(availability)),
-    publicKey: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID ?? config.keyId,
+    publicKey,
     missingEnvKeys,
     availability,
   };
@@ -110,6 +118,7 @@ export function getMissingRazorpayEnvKeys(config = readRazorpayConfig()) {
   if (!config.keyId) missing.push("RAZORPAY_KEY_ID");
   if (!config.keySecret) missing.push("RAZORPAY_KEY_SECRET");
   if (!config.webhookSecret) missing.push("RAZORPAY_WEBHOOK_SECRET");
+  if (!process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID) missing.push("NEXT_PUBLIC_RAZORPAY_KEY_ID");
   if (!config.planIds.plus.IN) missing.push("RAZORPAY_PLAN_ID_PLUS_INR");
   if (!config.planIds.plus.GLOBAL) missing.push("RAZORPAY_PLAN_ID_PLUS_USD");
   if (!config.planIds.pro.IN) missing.push("RAZORPAY_PLAN_ID_PRO_INR");

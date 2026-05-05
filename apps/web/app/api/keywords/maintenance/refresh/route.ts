@@ -6,6 +6,7 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { createDefaultKeywordResearchOrchestrator } from "@/lib/keywords/keyword-research-orchestrator";
 import { getKeywordSearchQueue } from "@/lib/keywords/search-queue";
+import { extractMachineSecret, timingSafeSecretEqual } from "@/lib/snipradar/request-guards";
 
 function clampInt(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, Math.trunc(value)));
@@ -22,10 +23,7 @@ function getEnvInt(name: string, fallback: number, min: number, max: number): nu
 function isAuthorizedMachineCall(req: NextRequest): boolean {
   const secret = process.env.KEYWORD_MAINTENANCE_CRON_SECRET;
   if (!secret) return false;
-  const provided =
-    req.headers.get("x-cron-secret") ??
-    req.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
-  return provided === secret;
+  return timingSafeSecretEqual(extractMachineSecret(req), secret);
 }
 
 /**

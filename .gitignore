@@ -1,6 +1,8 @@
 # Dependencies
 node_modules/
 .pnpm-store/
+.venv/
+venv/
 
 # Builds
 .next/
@@ -27,6 +29,8 @@ apps/web/public/voice-translations/
 # Misc
 .DS_Store
 .DS_Store?
+__pycache__/
+*.py[cod]
 *.backup
 *.old
 *.tmp

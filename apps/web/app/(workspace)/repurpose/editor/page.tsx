@@ -567,6 +567,7 @@ export default function RepurposeEditorPage() {
                     clipTitle={activeClip.title}
                     captionSrt={activeClip.captionSrt}
                     captionStyle={activeClip.captionStyle}
+                    expectedVersion={activeClip.version}
                     startMs={activeClip.startMs}
                     endMs={activeClip.endMs}
                     previewPath={activeClip.previewPath}

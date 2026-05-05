@@ -23,7 +23,7 @@ export default async function VeoPage() {
         <Alert>
           <AlertTitle>Temporarily unavailable</AlertTitle>
           <AlertDescription>
-            Veo access is paused while we introduce the new Sora-2 powered Video Lab. Existing Veo projects remain safe and will return soon.
+            Veo access is paused while the V3 video generation workspace is being finalized. Existing Veo projects remain safe and will return soon.
           </AlertDescription>
         </Alert>
       ) : (

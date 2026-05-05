@@ -6,7 +6,6 @@ import { enqueueRender, processJobs } from "@clippers/jobs";
 
 import { prisma } from "@/lib/prisma";
 import { renderExport, PRESETS, probeSourceMetadata, extractAndRenderSegment } from "@/lib/ffmpeg";
-import { getLocalUploadDir } from "@/lib/storage";
 import { generateWatermarkOverlayBuffer, resolveWatermarkStyle } from "@/lib/watermark";
 import { logger } from "@/lib/logger";
 import { resolveTranscriptEditRanges } from "@/lib/repurpose/transcript-edit-ranges";
@@ -14,6 +13,7 @@ import { selectBestReframePlan } from "@/lib/repurpose/clip-optimization";
 import { normalizeClipCaptionStyle } from "@/lib/repurpose/caption-style-config";
 import { concatClipsPassthrough } from "@/lib/ffmpeg";
 import { shouldUseRemotionRenderer, renderWithRemotion, REMOTION_RENDERER_ENABLED } from "@/lib/media/remotion-renderer";
+import { resolveLocalMediaPath } from "@/lib/media/media-path-resolver";
 import type { ClipReframePlan } from "@/lib/types";
 
 processJobs();
@@ -203,7 +203,6 @@ export async function queueExportJob(exportId: string) {
             const clipIds = Array.isArray(exportRecord.clipIds) ? (exportRecord.clipIds as string[]) : [];
             const project = exportRecord.project;
             const primaryAsset = project.assets[0];
-            const uploadDir = getLocalUploadDir();
 
             const selectedClips = clipIds
               .map((clipId) => project.clips.find((clip) => clip.id === clipId))
@@ -229,10 +228,7 @@ export async function queueExportJob(exportId: string) {
                 primaryAsset?.storagePath,
                 primaryAsset?.path,
               ];
-              const sourcePath = await resolveLocalSourcePath(
-                candidates,
-                uploadDir
-              );
+              const sourcePath = await resolveLocalMediaPath(candidates);
 
               if (!sourcePath) {
                 unresolvedSources.push({ clipId: clip.id, candidates });
@@ -489,12 +485,24 @@ async function persistExportStatus(
   let lastError: unknown = null;
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
-      await prisma.export.update({
+      const updatedExport = await prisma.export.update({
         where: { id: exportId },
         data: {
           status,
           error: errorMessage
-        }
+        },
+        select: { projectId: true },
+      });
+      await prisma.project.update({
+        where: { id: updatedExport.projectId },
+        data: {
+          status:
+            status === "failed"
+              ? "failed"
+              : status === "done"
+                ? "ready"
+                : "exporting",
+        },
       });
       return;
     } catch (updateError) {
@@ -671,41 +679,3 @@ async function renderWithRemotionPath(params: {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-
-async function resolveLocalSourcePath(
-  candidates: Array<string | null | undefined>,
-  uploadDir: string
-): Promise<string | null> {
-  for (const raw of candidates) {
-    if (!raw || typeof raw !== "string") continue;
-    const candidate = raw.trim();
-    if (!candidate) continue;
-
-    const possiblePaths: string[] = [];
-
-    if (path.isAbsolute(candidate)) {
-      possiblePaths.push(candidate);
-    }
-    if (candidate.startsWith("/api/uploads/")) {
-      possiblePaths.push(path.join(uploadDir, candidate.slice("/api/uploads/".length)));
-    }
-    if (candidate.startsWith("/uploads/")) {
-      possiblePaths.push(path.join(uploadDir, candidate.slice("/uploads/".length)));
-      possiblePaths.push(path.join(process.cwd(), "public", candidate.replace(/^\/+/, "")));
-    }
-    if (!candidate.startsWith("http://") && !candidate.startsWith("https://")) {
-      possiblePaths.push(path.resolve(process.cwd(), candidate));
-    }
-
-    for (const fullPath of possiblePaths) {
-      try {
-        await fs.access(fullPath);
-        return fullPath;
-      } catch {
-        // Try next path candidate.
-      }
-    }
-  }
-
-  return null;
-}

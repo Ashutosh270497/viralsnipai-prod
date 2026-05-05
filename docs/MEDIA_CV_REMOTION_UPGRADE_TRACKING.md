@@ -2,6 +2,25 @@
 
 Goal: upgrade ViralSnipAI into a best-in-class video repurposing product while keeping the current FFmpeg export path stable and high quality.
 
+Last synced with codebase: 2026-04-28.
+
+## Current Audit Summary
+
+Codebase audit result:
+- Phases 0-7 are implemented and wired into the app.
+- Phase 8 Remotion premium export path is implemented behind `REMOTION_RENDERER_ENABLED=true`, with FFmpeg static-caption fallback on Remotion failure. A local Chromium MP4 render smoke passed on 2026-04-28.
+- Phase 9 production health/deployment files are implemented, but real production readiness still requires deploying the web app + CV worker and checking `/api/health` in that environment.
+- Phase 10 productization UI is implemented in code.
+- Next.js production build passes locally as of 2026-04-28.
+
+Known gaps / validation still required:
+- Remotion export has an opt-in end-to-end Chromium render smoke command, but it is not run by default because it launches Chromium and renders an MP4.
+- `apps/web/remotion-compositions` is intentionally excluded from the Next.js TypeScript project, but is now covered by `tsconfig.remotion.json` and `pnpm --filter web run remotion:typecheck`.
+- `REMOTION_RENDERER_ENABLED` defaults to `false`, so animated premium exports require explicit production env configuration plus a working Chrome/Chromium path.
+- Phase 4 YOLO is code-complete, but the actual ONNX model is not committed or auto-downloaded by design. Deployment must supply `CV_YOLO_MODEL_PATH` if YOLO person detection is required.
+- The legacy `CaptionRenderer` abstraction still falls back to FFmpeg static rendering for `remotion_animated`; the actual Remotion export path is currently wired through `render-queue.ts` and `lib/media/remotion-renderer.ts`.
+- Full repo `tsc --noEmit -p apps/web/tsconfig.json` still reports stale type errors in unrelated test fixtures. The production build and focused Phase 8-10 checks pass.
+
 ## Target Architecture
 
 ```txt
@@ -64,7 +83,7 @@ Acceptance:
 
 ## Phase 1: Python CV Worker Foundation
 
-Status: Implemented foundation
+Status: Completed
 
 Proposed location:
 
@@ -289,7 +308,7 @@ Implemented files:
 
 ## Phase 8: Remotion Premium Renderer
 
-Status: Completed
+Status: Completed and locally smoke-validated; production env validation pending
 
 Tasks:
 - Add `@remotion/renderer` and `@remotion/bundler`. Done.
@@ -300,6 +319,9 @@ Tasks:
 - Select renderer based on `captionStyle.animation.type`. Done in `render-queue.ts`.
 - Remotion failure falls back to FFmpeg static captions per segment. Done.
 - Jest module resolution fixed to prevent `remotion/` local dir shadowing npm package. Done.
+- Add Remotion-specific TypeScript check. Done via `tsconfig.remotion.json`.
+- Add real MP4 render smoke harness. Done via `pnpm --filter web run remotion:smoke`.
+- Serve local pre-cropped MP4s over loopback HTTP with range support for `OffthreadVideo`. Done.
 
 Renderer selection logic (render-queue.ts):
 ```txt
@@ -331,18 +353,22 @@ Environment variables:
 - `REMOTION_RENDER_TIMEOUT_MS=600000` — per-render timeout (default: 10 min)
 
 Acceptance:
-- Animated captions (karaoke/pop/fade/slide/bounce) export correctly. ✓
+- Animated captions (karaoke/pop/fade/slide/bounce) are implemented in the server composition and route through Remotion when enabled. ✓
 - Remotion failure gracefully falls back to FFmpeg static captions. ✓
 - FFmpeg path is unchanged for animation.type === "none". ✓
 - Pre-cropped video from FFmpeg is the input to Remotion (original quality). ✓
 - Preview files are never used as export input. ✓
-- 16 new tests passing for renderer routing logic and quality constants. ✓
+- Unit tests cover renderer routing logic and quality constants. ✓
+- Remotion composition typecheck passes. ✓
+- Local real Chromium MP4 render smoke passes. ✓
 
 Implemented files:
 - `apps/web/remotion-compositions/index.ts`
 - `apps/web/remotion-compositions/ClipExportComposition.tsx`
 - `apps/web/lib/media/remotion-bundle.ts`
 - `apps/web/lib/media/remotion-renderer.ts`
+- `apps/web/tsconfig.remotion.json`
+- `apps/web/scripts/remotion-render-smoke.ts`
 - `apps/web/lib/__tests__/remotion-renderer.test.ts`
 - `apps/web/lib/render-queue.ts` (Remotion routing added)
 - `apps/web/package.json` (@remotion/renderer, @remotion/bundler added)
@@ -351,7 +377,7 @@ Implemented files:
 
 ## Phase 9: Production Deployment
 
-Status: Completed
+Status: Completed in code/docs; deployed environment validation pending
 
 Tasks:
 - Extend `/api/health` to cover all services. Done.
@@ -372,8 +398,8 @@ Acceptance:
 - CV worker can be deployed independently (separate Dockerfile + docker-compose service). ✓
 - Web app degrades gracefully if CV worker is unavailable (all fallback paths preserved). ✓
 - Render queue remains stable (no changes to queue logic, new snapshot export only). ✓
-- All 110 relevant tests passing. ✓
-- 0 TypeScript errors in new production files. ✓
+- Health and deployment wiring are implemented. ✓
+- Production validation still requires running the deployed stack and confirming `/api/health` reports expected service states.
 
 Implemented files:
 - `apps/web/lib/health/health-service.ts`
@@ -390,7 +416,7 @@ Implemented files:
 
 ## Phase 10: Productization
 
-Status: Completed
+Status: Completed in code
 
 UI controls implemented:
 - Stable Smart Crop. Done.
@@ -421,8 +447,8 @@ Packaging:
 Acceptance:
 - V1 remains focused and stable — no behavioral changes to free path. ✓
 - Premium features improve output quality with clear visual indicators. ✓
-- All 133 tests passing. ✓
-- 0 TypeScript errors in new production files. ✓
+- Productization controls and indicators are implemented. ✓
+- Production build, focused unit tests, Remotion typecheck, and local Remotion MP4 smoke have passed. ✓
 
 Implemented files:
 - `apps/web/components/repurpose/framing-panel.tsx` (full rewrite — CropWindowPreview, premium gates, thumbnail, overlay logic)

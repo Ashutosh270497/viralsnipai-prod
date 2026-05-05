@@ -25,6 +25,7 @@ interface TranscriptEditorProps {
   captionSrt?: string | null;
   captionStyle?: ClipCaptionStyleConfig | null;
   onCaptionStyleChange?: (style: ClipCaptionStyleConfig) => void;
+  expectedVersion: number;
   startMs: number;
   endMs: number;
   previewPath?: string | null;
@@ -430,6 +431,7 @@ export function TranscriptEditor({
   captionSrt,
   captionStyle,
   onCaptionStyleChange,
+  expectedVersion,
   startMs,
   endMs,
   previewPath,
@@ -612,12 +614,14 @@ export function TranscriptEditor({
         captionStyle: ClipCaptionStyleConfig;
         previewPath?: null;
         transcriptEditRangesMs?: Array<{ startMs: number; endMs: number }> | null;
+        expectedVersion: number;
       } = {
         captionSrt: captionSrtToPersist,
         startMs: nextStartMs,
         endMs: nextEndMs,
         captionStyle: normalizedCaptionStyle,
         transcriptEditRangesMs: hasInternalEditCuts ? absoluteEditRanges : null,
+        expectedVersion,
       };
 
       if (retimedFromTranscript) {
@@ -636,7 +640,7 @@ export function TranscriptEditor({
       const updatePayload = (await updateResponse.json().catch(() => null)) as
         | {
             data?: {
-              clip?: { startMs?: number; endMs?: number };
+              clip?: { startMs?: number; endMs?: number; version?: number };
               normalizedTranscriptEditRangesMs?: Array<{ startMs: number; endMs: number }> | null;
             };
           }
@@ -671,6 +675,7 @@ export function TranscriptEditor({
               endMs: nextEndMs,
               captionStyle: normalizedCaptionStyle,
               transcriptEditRangesMs: rangesForPersistence,
+              expectedVersion: Number(updatePayload?.data?.clip?.version) || expectedVersion + 1,
             }),
             cache: "no-store",
           });

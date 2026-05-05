@@ -11,6 +11,8 @@ export interface ProjectAsset {
   path: string;
   type: "audio" | "video" | string;
   durationSec?: number | null;
+  sourceWidth?: number | null;
+  sourceHeight?: number | null;
   transcript?: string | null;
   sourceLanguage?: string;
   createdAt: string;
@@ -31,6 +33,7 @@ export interface ProjectClip {
   thumbnail?: string | null;
   viralityScore?: number | null;
   viralityFactors?: ViralityFactors | null;
+  version: number;
 }
 
 export interface ProjectExport {
@@ -50,6 +53,7 @@ export interface ProjectDetail {
   id: string;
   title: string;
   topic?: string | null;
+  status?: "ready" | "ingesting" | "exporting" | "failed" | string;
   assets: ProjectAsset[];
   clips: ProjectClip[];
   exports: ProjectExport[];

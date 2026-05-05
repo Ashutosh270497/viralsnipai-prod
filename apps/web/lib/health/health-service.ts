@@ -217,7 +217,6 @@ async function checkCvWorker(): Promise<ServiceCheck> {
 function checkExportQueue(): ServiceCheck {
   try {
     // Dynamic import to avoid circular deps — render-queue is the only consumer
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { getExportQueueSnapshot } = require("@/lib/render-queue") as {
       getExportQueueSnapshot: () => { activeJobs: number; stages: Record<string, number> };
     };

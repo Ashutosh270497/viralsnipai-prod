@@ -31,6 +31,7 @@ export interface Clip {
   captionStyle?: ClipCaptionStyleConfig | null;
   previewPath?: string | null;
   viralityScore?: number | null;
+  version: number;
 }
 
 export interface ExportRecord {

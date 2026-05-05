@@ -113,6 +113,11 @@ model Project {
   // V1 project context fields
   targetPlatform String?  // 'youtube_shorts', 'instagram_reels', 'tiktok', 'linkedin', 'x'
   contentGoal    String?  // 'more_reach', 'more_leads', 'faster_editing', 'repurpose_long_form', 'personal_brand'
+  status       String    @default("ready") // ready | ingesting | exporting | failed
+  // Per-project scene-cut detection threshold. NULL = use the runtime default
+  // (CV worker: env CV_SCENE_THRESHOLD or 27; FFmpeg fallback: 0.34).
+  // Useful for talking-head vs fast-cut content: lower values = more cuts.
+  sceneCutThreshold Float?
   script       Script?   @relation("ProjectScript")
   assets       Asset[]
   clips        Clip[]
@@ -122,6 +127,7 @@ model Project {
   updatedAt    DateTime  @updatedAt
 
   @@index([userId])
+  @@index([userId, status])
   @@index([userId, updatedAt])
 }
 
@@ -144,6 +150,8 @@ model Asset {
   path              String
   storagePath       String
   durationSec       Int?
+  sourceWidth       Int?
+  sourceHeight      Int?
   transcript        String?                 @db.Text
   sourceLanguage    String                  @default("en")
   clips             Clip[]                  @relation("AssetClips")
@@ -174,6 +182,7 @@ model Clip {
   viralityScore       Int?
   viralityFactors     Json?
   order               Int                  @default(0)
+  version             Int                  @default(1)
   captionTranslations CaptionTranslation[]
   createdAt           DateTime             @default(now())
   updatedAt           DateTime             @updatedAt
@@ -183,6 +192,7 @@ model Clip {
   @@index([projectId, assetId])
   @@index([projectId, viralityScore(sort: Desc)])
   @@index([projectId, order])
+  @@index([id, version])
 }
 
 model Export {

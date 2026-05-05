@@ -19,6 +19,8 @@ export interface UpdateProjectData {
   title?: string;
   topic?: string | null;
   sourceUrl?: string | null;
+  status?: 'ready' | 'ingesting' | 'exporting' | 'failed' | string;
+  sceneCutThreshold?: number | null;
   updatedAt?: string | Date;
 }
 

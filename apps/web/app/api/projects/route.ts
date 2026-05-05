@@ -25,6 +25,7 @@ export async function GET() {
       sourceUrl: true,
       targetPlatform: true,
       contentGoal: true,
+      status: true,
       createdAt: true,
       updatedAt: true,
       _count: { select: { clips: true, assets: true, exports: true } },
@@ -90,6 +91,7 @@ export async function POST(request: Request) {
       sourceUrl: parsed.data.sourceUrl,
       targetPlatform: parsed.data.targetPlatform,
       contentGoal: parsed.data.contentGoal,
+      status: 'ready',
       userId: user.id,
     },
   });

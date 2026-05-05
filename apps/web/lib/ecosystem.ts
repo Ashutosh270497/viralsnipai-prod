@@ -74,7 +74,7 @@ export function isRouteAllowedForLaunchFeatures(pathname: string): boolean {
   if (pathname.startsWith("/hooksmith") || pathname.startsWith("/niche-discovery")) {
     return isLaunchVersionEnabled("v2");
   }
-  if (pathname.startsWith("/video") || pathname.startsWith("/transcribe")) {
+  if (pathname.startsWith("/transcribe")) {
     return isLaunchVersionEnabled("v3");
   }
 

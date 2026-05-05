@@ -19,6 +19,7 @@ Hello world from clippers
       <TranscriptEditor
         clipId="clip-1"
         captionSrt={captionSrt}
+        expectedVersion={1}
         startMs={0}
         endMs={2_000}
         onSave={async () => {}}
@@ -41,6 +42,7 @@ Hello world from clippers
       <TranscriptEditor
         clipId="clip-1"
         captionSrt={captionSrt}
+        expectedVersion={1}
         startMs={0}
         endMs={2_000}
         onSave={async () => {}}

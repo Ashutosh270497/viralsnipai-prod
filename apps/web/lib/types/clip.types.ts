@@ -28,6 +28,7 @@ export interface Clip {
   thumbnail?: string | null;
   viralityScore?: number | null;
   viralityFactors?: ViralityFactors;
+  version: number;
   createdAt: string;
   updatedAt?: string;
 }

@@ -17,6 +17,43 @@ import type {
 
 @injectable()
 export class PrismaClipRepository implements IClipRepository {
+  private buildCreateData(data: CreateClipData & { projectId: string; assetId: string }) {
+    return {
+      projectId: data.projectId,
+      assetId: data.assetId,
+      startMs: data.startMs,
+      endMs: data.endMs,
+      ...(data.order !== undefined && { order: data.order }),
+      title: data.title,
+      summary: data.summary,
+      callToAction: data.callToAction,
+      ...(data.captionSrt !== undefined && { captionSrt: data.captionSrt }),
+      ...(data.captionStyle !== undefined && { captionStyle: data.captionStyle as any }),
+      ...(data.thumbnail !== undefined && { thumbnail: data.thumbnail }),
+      ...(data.previewPath !== undefined && { previewPath: data.previewPath }),
+      viralityScore: data.viralityScore,
+      viralityFactors: data.viralityFactors as any,
+    };
+  }
+
+  private buildUpdateData(data: UpdateClipData) {
+    return {
+      ...(data.startMs !== undefined && { startMs: data.startMs }),
+      ...(data.endMs !== undefined && { endMs: data.endMs }),
+      ...(data.order !== undefined && { order: data.order }),
+      ...(data.title !== undefined && { title: data.title }),
+      ...(data.summary !== undefined && { summary: data.summary }),
+      ...(data.callToAction !== undefined && { callToAction: data.callToAction }),
+      ...(data.captionSrt !== undefined && { captionSrt: data.captionSrt }),
+      ...(data.captionStyle !== undefined && { captionStyle: data.captionStyle as any }),
+      ...(data.thumbnail !== undefined && { thumbnail: data.thumbnail }),
+      ...(data.previewPath !== undefined && { previewPath: data.previewPath }),
+      ...(data.viralityScore !== undefined && { viralityScore: data.viralityScore }),
+      ...(data.viralityFactors !== undefined && { viralityFactors: data.viralityFactors as any }),
+      version: { increment: 1 },
+    };
+  }
+
   async findById(id: string): Promise<Clip | null> {
     const clip = await prisma.clip.findUnique({
       where: { id },
@@ -92,22 +129,7 @@ export class PrismaClipRepository implements IClipRepository {
 
   async create(data: CreateClipData & { projectId: string; assetId: string }): Promise<Clip> {
     const clip = await prisma.clip.create({
-      data: {
-        projectId: data.projectId,
-        assetId: data.assetId,
-        startMs: data.startMs,
-        endMs: data.endMs,
-        ...(data.order !== undefined && { order: data.order }),
-        title: data.title,
-        summary: data.summary,
-        callToAction: data.callToAction,
-        ...(data.captionSrt !== undefined && { captionSrt: data.captionSrt }),
-        ...(data.captionStyle !== undefined && { captionStyle: data.captionStyle as any }),
-        ...(data.thumbnail !== undefined && { thumbnail: data.thumbnail }),
-        ...(data.previewPath !== undefined && { previewPath: data.previewPath }),
-        viralityScore: data.viralityScore,
-        viralityFactors: data.viralityFactors as any,
-      },
+      data: this.buildCreateData(data),
     });
 
     return this.mapToClip(clip);
@@ -119,22 +141,7 @@ export class PrismaClipRepository implements IClipRepository {
     const created = await prisma.$transaction(
       clips.map((clip) =>
         prisma.clip.create({
-          data: {
-            projectId: clip.projectId,
-            assetId: clip.assetId,
-            startMs: clip.startMs,
-            endMs: clip.endMs,
-            ...(clip.order !== undefined && { order: clip.order }),
-            title: clip.title,
-            summary: clip.summary,
-            callToAction: clip.callToAction,
-            ...(clip.captionSrt !== undefined && { captionSrt: clip.captionSrt }),
-            ...(clip.captionStyle !== undefined && { captionStyle: clip.captionStyle as any }),
-            ...(clip.thumbnail !== undefined && { thumbnail: clip.thumbnail }),
-            ...(clip.previewPath !== undefined && { previewPath: clip.previewPath }),
-            viralityScore: clip.viralityScore,
-            viralityFactors: clip.viralityFactors as any,
-          },
+          data: this.buildCreateData(clip),
         })
       )
     );
@@ -142,26 +149,56 @@ export class PrismaClipRepository implements IClipRepository {
     return created.map(this.mapToClip);
   }
 
+  async splitClip(input: {
+    originalClipId: string;
+    firstClipData: CreateClipData & { projectId: string; assetId: string };
+    secondClipData: CreateClipData & { projectId: string; assetId: string };
+  }): Promise<{ firstClip: Clip; secondClip: Clip }> {
+    const [firstClip, secondClip] = await prisma.$transaction([
+      prisma.clip.create({
+        data: this.buildCreateData(input.firstClipData),
+      }),
+      prisma.clip.create({
+        data: this.buildCreateData(input.secondClipData),
+      }),
+      prisma.clip.delete({
+        where: { id: input.originalClipId },
+      }),
+    ]);
+
+    return {
+      firstClip: this.mapToClip(firstClip),
+      secondClip: this.mapToClip(secondClip),
+    };
+  }
+
   async update(id: string, data: UpdateClipData): Promise<Clip> {
     const clip = await prisma.clip.update({
       where: { id },
-      data: {
-        ...(data.startMs !== undefined && { startMs: data.startMs }),
-        ...(data.endMs !== undefined && { endMs: data.endMs }),
-        ...(data.order !== undefined && { order: data.order }),
-        ...(data.title !== undefined && { title: data.title }),
-        ...(data.summary !== undefined && { summary: data.summary }),
-        ...(data.callToAction !== undefined && { callToAction: data.callToAction }),
-        ...(data.captionSrt !== undefined && { captionSrt: data.captionSrt }),
-        ...(data.captionStyle !== undefined && { captionStyle: data.captionStyle as any }),
-        ...(data.thumbnail !== undefined && { thumbnail: data.thumbnail }),
-        ...(data.previewPath !== undefined && { previewPath: data.previewPath }),
-        ...(data.viralityScore !== undefined && { viralityScore: data.viralityScore }),
-        ...(data.viralityFactors !== undefined && { viralityFactors: data.viralityFactors as any }),
-      },
+      data: this.buildUpdateData(data),
     });
 
     return this.mapToClip(clip);
+  }
+
+  async updateWithVersion(
+    id: string,
+    expectedVersion: number,
+    data: UpdateClipData
+  ): Promise<Clip | null> {
+    const result = await (prisma.clip as any).updateMany({
+      where: {
+        id,
+        version: expectedVersion,
+      },
+      data: this.buildUpdateData(data),
+    });
+
+    if (result.count === 0) {
+      return null;
+    }
+
+    return this.findById(id);
   }
 
   async delete(id: string): Promise<void> {
@@ -203,6 +240,7 @@ export class PrismaClipRepository implements IClipRepository {
       thumbnail: prismaClip.thumbnail,
       viralityScore: prismaClip.viralityScore,
       viralityFactors: prismaClip.viralityFactors as any,
+      version: prismaClip.version ?? 1,
       createdAt: prismaClip.createdAt.toISOString(),
       updatedAt: prismaClip.updatedAt?.toISOString(),
     };

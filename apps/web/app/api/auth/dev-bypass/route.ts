@@ -1,15 +1,36 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { logger } from "@/lib/logger";
 
 /**
  * DEV ONLY: Bypass login by creating/fetching a dev user and returning a redirect
  * that triggers a demo login. Access via: http://localhost:3000/api/auth/dev-bypass
  *
- * This should NEVER be deployed to production.
+ * Two guards (must BOTH be satisfied for the route to do anything):
+ *   1. NODE_ENV must NOT be "production"
+ *   2. ENABLE_DEV_BYPASS must equal "true" (case-insensitive)
+ *
+ * Why two guards: Vercel preview deployments run with NODE_ENV="production" or
+ * "development" depending on config, so relying on NODE_ENV alone has burned
+ * teams before. Requiring an explicit env var means the bypass is opt-in per
+ * environment and cannot accidentally become live on a preview/staging URL.
  */
-export async function GET() {
-  if (process.env.NODE_ENV === "production") {
-    return NextResponse.json({ error: "Not available in production" }, { status: 403 });
+function isDevBypassEnabled(): boolean {
+  if (process.env.NODE_ENV === "production") return false;
+  return (process.env.ENABLE_DEV_BYPASS ?? "").trim().toLowerCase() === "true";
+}
+
+export async function GET(request: Request) {
+  if (!isDevBypassEnabled()) {
+    // Log every blocked attempt — this endpoint should be rare; any request
+    // here in a non-dev environment is a misconfiguration signal worth seeing.
+    logger.warn("dev-bypass: blocked attempt", {
+      nodeEnv: process.env.NODE_ENV,
+      enableFlag: process.env.ENABLE_DEV_BYPASS ?? null,
+      ip: request.headers.get("x-forwarded-for") ?? null,
+      userAgent: request.headers.get("user-agent") ?? null,
+    });
+    return NextResponse.json({ error: "Not available" }, { status: 403 });
   }
 
   try {
@@ -28,14 +49,12 @@ export async function GET() {
       update: {}
     });
 
-    // Redirect to the NextAuth demo sign-in which creates a JWT session
-    const baseUrl = process.env.NEXTAUTH_URL || "http://localhost:3000";
-    const signInUrl = new URL("/api/auth/callback/credentials", baseUrl);
+    logger.info("dev-bypass: granted", { email: user.email });
 
-    // We can't directly create a JWT, so redirect to a page that auto-triggers demo login
+    const baseUrl = process.env.NEXTAUTH_URL || "http://localhost:3000";
     return NextResponse.redirect(new URL(`/signin?dev-bypass=true`, baseUrl));
   } catch (error: any) {
-    console.error("[Dev Bypass] Error:", error?.message);
+    logger.error("dev-bypass: failed", { error: error?.message });
     return NextResponse.json({ error: error?.message }, { status: 500 });
   }
 }

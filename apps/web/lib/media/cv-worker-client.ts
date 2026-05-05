@@ -80,10 +80,70 @@ export function getCvWorkerBaseUrl() {
   return raw ? raw.replace(/\/+$/, "") : null;
 }
 
+class CvWorkerHttpError extends Error {
+  constructor(
+    message: string,
+    public status: number
+  ) {
+    super(message);
+    this.name = "CvWorkerHttpError";
+  }
+}
+
 function createTimeoutSignal(timeoutMs: number) {
   const abortController = new AbortController();
   const timer = setTimeout(() => abortController.abort(), timeoutMs);
   return { signal: abortController.signal, clear: () => clearTimeout(timer) };
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isRetryableCvWorkerError(error: unknown): boolean {
+  if (error instanceof CvWorkerHttpError) {
+    return error.status >= 500;
+  }
+
+  if (error instanceof Error) {
+    return error.name === "AbortError" || error.name === "TimeoutError";
+  }
+
+  return true;
+}
+
+function getRetryDelayMs(attemptIndex: number, backoffMs: number, jitter: number) {
+  const exponential = backoffMs * 2 ** attemptIndex;
+  const jitterRange = exponential * jitter;
+  return Math.max(0, Math.round(exponential - jitterRange + Math.random() * jitterRange * 2));
+}
+
+async function withRetry<T>(
+  fn: () => Promise<T>,
+  options?: {
+    retries?: number;
+    backoffMs?: number;
+    jitter?: number;
+  }
+): Promise<T> {
+  const retries = options?.retries ?? 2;
+  const backoffMs = options?.backoffMs ?? 800;
+  const jitter = options?.jitter ?? 0.2;
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      return await fn();
+    } catch (error) {
+      lastError = error;
+      if (attempt >= retries || !isRetryableCvWorkerError(error)) {
+        throw error;
+      }
+      await sleep(getRetryDelayMs(attempt, backoffMs, jitter));
+    }
+  }
+
+  throw lastError;
 }
 
 async function postCvWorker<TResponse>(
@@ -97,24 +157,29 @@ async function postCvWorker<TResponse>(
   const baseUrl = options?.baseUrl ?? getCvWorkerBaseUrl();
   if (!baseUrl) return null;
 
-  const timeout = createTimeoutSignal(options?.timeoutMs ?? 30_000);
-  try {
-    const response = await fetch(`${baseUrl}${path}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-      cache: "no-store",
-      signal: timeout.signal,
-    });
+  return withRetry(async () => {
+    const timeout = createTimeoutSignal(options?.timeoutMs ?? 30_000);
+    try {
+      const response = await fetch(`${baseUrl}${path}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+        cache: "no-store",
+        signal: timeout.signal,
+      });
 
-    const payload = await response.json().catch(() => null);
-    if (!response.ok || !payload) {
-      throw new Error(`CV worker ${path} returned HTTP ${response.status}`);
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new CvWorkerHttpError(`CV worker ${path} returned HTTP ${response.status}`, response.status);
+      }
+      if (!payload) {
+        throw new CvWorkerHttpError(`CV worker ${path} returned an empty response`, 502);
+      }
+      return payload as TResponse;
+    } finally {
+      timeout.clear();
     }
-    return payload as TResponse;
-  } finally {
-    timeout.clear();
-  }
+  });
 }
 
 export async function getCvWorkerHealth(options?: {

@@ -11,16 +11,14 @@ import type { IProjectRepository } from "@/lib/domain/repositories/IProjectRepos
 import { withErrorHandling } from "@/lib/utils/error-handler";
 import { ApiResponseBuilder } from "@/lib/api/response";
 import { logger } from "@/lib/logger";
-import { getLocalUploadDir } from "@/lib/storage";
 import { probeVideoGeometry } from "@/lib/ffmpeg";
+import { materializeMediaLocally } from "@/lib/media/media-path-resolver";
 import {
   generateStableSmartReframePlan,
   generateDynamicSmartReframePlan,
   buildViralityFactorsPatch,
 } from "@/lib/media/smart-reframe";
 import type { SmartReframeMode } from "@/lib/media/smart-reframe";
-import path from "path";
-import { promises as fs } from "fs";
 
 const SMART_REFRAME_MODES = [
   "smart_auto",
@@ -84,140 +82,167 @@ export const POST = withErrorHandling(
       return ApiResponseBuilder.forbidden("Access denied");
     }
 
-    // Resolve source file path
+    // Resolve source file path. For S3-stored assets this materializes a
+    // temp file we MUST clean up — the try/finally below guarantees that
+    // even if probeVideoGeometry / generateSmartReframePlan throws.
     const asset = clip.assetId ? await assetRepo.findById(clip.assetId) : null;
-    const uploadDir = getLocalUploadDir();
+    const materialized = await materializeMediaLocally([asset?.storagePath, asset?.path]);
 
-    const sourcePath = await resolveLocalPath(
-      [asset?.storagePath, asset?.path],
-      uploadDir
-    );
-
-    if (!sourcePath) {
+    if (!materialized) {
       return ApiResponseBuilder.badRequest(
-        "Source asset file not found on local storage. Upload the source video first."
+        "Source asset file not found on local storage or remote storage. Upload the source video first."
       );
     }
+    const sourcePath = materialized.localPath;
 
-    // Probe source geometry
-    let sourceWidth = 1920;
-    let sourceHeight = 1080;
     try {
-      const geometry = await probeVideoGeometry(sourcePath);
-      sourceWidth = geometry.width;
-      sourceHeight = geometry.height;
-    } catch (err) {
-      logger.warn("smart-reframe: geometry probe failed, using defaults", {
+      // Probe source geometry
+      let sourceWidth = asset?.sourceWidth ?? null;
+      let sourceHeight = asset?.sourceHeight ?? null;
+      if (!sourceWidth || !sourceHeight) {
+        try {
+          const geometry = await probeVideoGeometry(sourcePath);
+          sourceWidth = geometry.width;
+          sourceHeight = geometry.height;
+          if (asset) {
+            await assetRepo.update(asset.id, {
+              sourceWidth,
+              sourceHeight,
+            });
+          }
+        } catch (err) {
+          logger.error("smart-reframe: geometry probe failed", {
+            clipId,
+            sourcePath,
+            error: err instanceof Error ? err.message : String(err),
+          });
+          return ApiResponseBuilder.internalError(
+            "Could not inspect source video geometry. Re-upload or retranscode the source video before smart reframe analysis.",
+          );
+        }
+      }
+
+      const reframeRequest = {
+        mode,
+        trackingSmoothness,
+        subjectPosition,
+        captionSafeZoneEnabled,
+        startMs: clip.startMs,
+        endMs: clip.endMs,
+        sourceWidth,
+        sourceHeight,
+      };
+      const existingMetadata =
+        clip.viralityFactors?.metadata && typeof clip.viralityFactors.metadata === "object"
+          ? (clip.viralityFactors.metadata as Record<string, unknown>)
+          : {};
+      if (JSON.stringify(existingMetadata.smartReframeRequest ?? null) === JSON.stringify(reframeRequest)) {
+        const existingPlan = existingMetadata.smartReframe;
+        if (existingPlan && typeof existingPlan === "object") {
+          const cachedPlan = existingPlan as Record<string, unknown>;
+          logger.info("smart-reframe: reusing cached analysis", {
+            clipId,
+            mode,
+            sourceWidth,
+            sourceHeight,
+          });
+          return ApiResponseBuilder.success(
+            {
+              clipId,
+              cached: true,
+              strategy: cachedPlan.strategy,
+              mode: cachedPlan.mode,
+              confidence: cachedPlan.confidence,
+              cropPath: cachedPlan.cropPath ?? null,
+              smartReframePlan: cachedPlan,
+              sampledFrames: cachedPlan.sampledFrames,
+              faceDetections: cachedPlan.faceDetections,
+              personDetections: cachedPlan.personDetections,
+              fallbackReason: cachedPlan.fallbackReason ?? null,
+            },
+            "Smart reframe analysis reused"
+          );
+        }
+      }
+
+      logger.info("smart-reframe: starting analysis", {
         clipId,
-        error: err instanceof Error ? err.message : String(err),
+        assetId: clip.assetId,
+        mode,
+        sourcePath,
+        sourceWidth,
+        sourceHeight,
+        startMs: clip.startMs,
+        endMs: clip.endMs,
       });
-    }
 
-    logger.info("smart-reframe: starting analysis", {
-      clipId,
-      assetId: clip.assetId,
-      mode,
-      sourcePath,
-      sourceWidth,
-      sourceHeight,
-      startMs: clip.startMs,
-      endMs: clip.endMs,
-    });
+      const analyzeStart = Date.now();
 
-    const analyzeStart = Date.now();
+      // Generate the plan
+      const isDynamic = mode.startsWith("dynamic_");
+      const smartPlan = await (isDynamic ? generateDynamicSmartReframePlan : generateStableSmartReframePlan)({
+        sourcePath,
+        clipStartMs: clip.startMs,
+        clipEndMs: clip.endMs,
+        sourceWidth,
+        sourceHeight,
+        mode: mode as SmartReframeMode,
+        trackingSmoothness,
+        subjectPosition,
+        // If captionSafeZoneEnabled is false, use a zero-margin safe zone
+        captionSafeZone: captionSafeZoneEnabled ? undefined : {
+          topPct: 0,
+          bottomPct: 0,
+          leftPct: 0,
+          rightPct: 0,
+          preferredCaptionY: "lower_third" as const,
+        },
+      });
 
-    // Generate the plan
-    const isDynamic = mode.startsWith("dynamic_");
-    const smartPlan = await (isDynamic ? generateDynamicSmartReframePlan : generateStableSmartReframePlan)({
-      sourcePath,
-      clipStartMs: clip.startMs,
-      clipEndMs: clip.endMs,
-      sourceWidth,
-      sourceHeight,
-      mode: mode as SmartReframeMode,
-      trackingSmoothness,
-      subjectPosition,
-      // If captionSafeZoneEnabled is false, use a zero-margin safe zone
-      captionSafeZone: captionSafeZoneEnabled ? undefined : {
-        topPct: 0,
-        bottomPct: 0,
-        leftPct: 0,
-        rightPct: 0,
-        preferredCaptionY: "lower_third" as const,
-      },
-    });
+      // Patch viralityFactors
+      const updatedViralityFactors = buildViralityFactorsPatch(
+        clip.viralityFactors,
+        smartPlan
+      );
+      updatedViralityFactors.metadata = {
+        ...(updatedViralityFactors.metadata ?? {}),
+        smartReframeRequest: reframeRequest,
+      };
 
-    // Patch viralityFactors
-    const updatedViralityFactors = buildViralityFactorsPatch(
-      clip.viralityFactors,
-      smartPlan
-    );
+      await clipRepo.update(clipId, { viralityFactors: updatedViralityFactors });
 
-    await clipRepo.update(clipId, { viralityFactors: updatedViralityFactors });
-
-    logger.info("smart-reframe: analysis complete", {
-      clipId,
-      mode: smartPlan.mode,
-      strategy: smartPlan.strategy,
-      confidence: smartPlan.confidence,
-      sampledFrames: smartPlan.sampledFrames,
-      primaryTrackLength: smartPlan.primaryTrackLength,
-      faceDetections: smartPlan.faceDetections,
-      personDetections: smartPlan.personDetections,
-      smoothing: smartPlan.smoothing,
-      fallbackReason: smartPlan.fallbackReason,
-      cropPathLength: smartPlan.cropPath?.length ?? 0,
-      durationMs: Date.now() - analyzeStart,
-    });
-
-    return ApiResponseBuilder.success(
-      {
+      logger.info("smart-reframe: analysis complete", {
         clipId,
-        strategy: smartPlan.strategy,
         mode: smartPlan.mode,
+        strategy: smartPlan.strategy,
         confidence: smartPlan.confidence,
-        cropPath: smartPlan.cropPath ?? null,
-        smartReframePlan: smartPlan,
         sampledFrames: smartPlan.sampledFrames,
+        primaryTrackLength: smartPlan.primaryTrackLength,
         faceDetections: smartPlan.faceDetections,
         personDetections: smartPlan.personDetections,
-        fallbackReason: smartPlan.fallbackReason ?? null,
-      },
-      "Smart reframe analysis complete"
-    );
+        smoothing: smartPlan.smoothing,
+        fallbackReason: smartPlan.fallbackReason,
+        cropPathLength: smartPlan.cropPath?.length ?? 0,
+        durationMs: Date.now() - analyzeStart,
+      });
+
+      return ApiResponseBuilder.success(
+        {
+          clipId,
+          strategy: smartPlan.strategy,
+          mode: smartPlan.mode,
+          confidence: smartPlan.confidence,
+          cropPath: smartPlan.cropPath ?? null,
+          smartReframePlan: smartPlan,
+          sampledFrames: smartPlan.sampledFrames,
+          faceDetections: smartPlan.faceDetections,
+          personDetections: smartPlan.personDetections,
+          fallbackReason: smartPlan.fallbackReason ?? null,
+        },
+        "Smart reframe analysis complete"
+      );
+    } finally {
+      await materialized.cleanup();
+    }
   }
 );
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-async function resolveLocalPath(
-  candidates: Array<string | null | undefined>,
-  uploadDir: string
-): Promise<string | null> {
-  for (const raw of candidates) {
-    if (!raw) continue;
-    const candidate = raw.trim();
-
-    const attempts: string[] = [];
-    if (path.isAbsolute(candidate)) attempts.push(candidate);
-    if (candidate.startsWith("/api/uploads/")) {
-      attempts.push(path.join(uploadDir, candidate.slice("/api/uploads/".length)));
-    }
-    if (candidate.startsWith("/uploads/")) {
-      attempts.push(path.join(uploadDir, candidate.slice("/uploads/".length)));
-    }
-    if (!candidate.startsWith("http")) {
-      attempts.push(path.resolve(process.cwd(), candidate));
-    }
-
-    for (const p of attempts) {
-      try {
-        await fs.access(p);
-        return p;
-      } catch {
-        // try next
-      }
-    }
-  }
-  return null;
-}

@@ -172,7 +172,6 @@ export function WorkspaceNav({ user, ecosystem, onNavigate }: WorkspaceNavProps)
             ? [{ href: "/transcribe", label: "Transcribe", icon: Download }]
             : []),
           ...(flags.imagenEnabled ? [{ href: "/imagen", label: "Imagen", icon: ImageIcon }] : []),
-          ...(flags.soraEnabled ? [{ href: "/video", label: "Video Lab", icon: Film }] : []),
           ...(flags.youtubeVoicerEnabled ? [{ href: "/voicer", label: "Voicer", icon: Mic }] : []),
           ...(flags.veoEnabled ? [{ href: "/veo", label: "Veo", icon: Film }] : []),
         ];

@@ -1,6 +1,3 @@
-// @ts-nocheck — This file is compiled by @remotion/bundler (webpack), not tsc.
-//               Remotion v4 requires moduleResolution: "bundler" which differs
-//               from the Next.js project config. Type-check via remotion/tsconfig.json.
 /**
  * Remotion export composition — server-side equivalent of RemotionClipPreview.
  *
@@ -14,6 +11,7 @@
  */
 
 import { AbsoluteFill, Composition, OffthreadVideo, useCurrentFrame, useVideoConfig } from "remotion";
+import type React from "react";
 import type { ClipCaptionStyleConfig, HookOverlay } from "@/lib/repurpose/caption-style-config";
 import type { CaptionEntry } from "@/lib/srt-utils";
 import type { SmartReframePlan } from "@/lib/media/smart-reframe";
@@ -323,7 +321,7 @@ export function ClipExportRoot() {
   return (
     <Composition
       id={REMOTION_COMPOSITION_ID}
-      component={ClipExportComposition}
+      component={ClipExportComposition as unknown as React.FC<Record<string, unknown>>}
       durationInFrames={Math.round((DEFAULT_PROPS.durationMs / 1000) * REMOTION_FPS)}
       fps={REMOTION_FPS}
       width={REMOTION_WIDTH}

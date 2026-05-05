@@ -12,6 +12,8 @@
     "test:unit": "jest",
     "test:unit:watch": "jest --watch",
     "test:unit:coverage": "jest --coverage",
+    "remotion:typecheck": "tsc --noEmit -p tsconfig.remotion.json --pretty false",
+    "remotion:smoke": "tsx scripts/remotion-render-smoke.ts",
     "postinstall": "husky install",
     "seed": "tsx prisma/seed.ts",
     "snipradar:verify": "pnpm exec eslint \"app/api/snipradar/**/*.ts\" \"app/**/snipradar/**/*.tsx\" \"components/snipradar/**/*.tsx\" \"lib/snipradar/**/*.ts\" && pnpm exec tsc --noEmit -p tsconfig.snipradar.json --pretty false && pnpm exec prisma validate",

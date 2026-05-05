@@ -14,12 +14,16 @@ export interface CreateAssetData {
   storagePath: string;
   type: 'video' | 'audio';
   durationSec?: number | null;
+  sourceWidth?: number | null;
+  sourceHeight?: number | null;
   transcript?: string | null;
 }
 
 export interface UpdateAssetData {
   path?: string;
   durationSec?: number | null;
+  sourceWidth?: number | null;
+  sourceHeight?: number | null;
   transcript?: string | null;
 }
 

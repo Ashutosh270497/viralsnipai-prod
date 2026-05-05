@@ -9,6 +9,7 @@
 import type { Clip } from './clip.types';
 
 export type ExportStatus = 'queued' | 'processing' | 'done' | 'failed';
+export type ProjectStatus = 'ready' | 'ingesting' | 'exporting' | 'failed';
 
 /**
  * Project interface
@@ -18,6 +19,14 @@ export interface Project {
   userId: string;
   title: string;
   topic?: string | null;
+  status?: ProjectStatus | string;
+  /**
+   * Per-project scene-cut detection threshold override.
+   * NULL = use the runtime default (env CV_SCENE_THRESHOLD or 27).
+   * Lower = more aggressive cuts (good for fast-cut content);
+   * higher = fewer cuts (good for talking-head content).
+   */
+  sceneCutThreshold?: number | null;
   createdAt: string;
   updatedAt?: string;
   clips?: Clip[];
@@ -36,6 +45,8 @@ export interface Asset {
   type: 'video' | 'audio';
   durationSec?: number | null;
   durationSeconds?: number | null;  // Alias for compatibility
+  sourceWidth?: number | null;
+  sourceHeight?: number | null;
   transcript?: string | null;
   transcription?: string | null;     // Alias for compatibility
   sourceLanguage?: string;           // Language of the original transcript (ISO 639-1 code)
@@ -66,6 +77,7 @@ export interface ProjectSummary {
   id: string;
   title: string;
   topic?: string | null;
+  status?: ProjectStatus | string;
   clipCount: number;
   assetCount: number;
   createdAt: string;

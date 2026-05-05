@@ -1,4 +1,3 @@
-// @ts-nocheck — bundled by @remotion/bundler (webpack), not tsc.
 /**
  * Remotion entry point — registers all server-side render compositions.
  *

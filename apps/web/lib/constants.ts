@@ -374,8 +374,6 @@ export const FEATURES = {
   IMAGEN: process.env.NEXT_PUBLIC_IMAGEN_ENABLED === 'true',
   /** Enable Veo integration */
   VEO: process.env.NEXT_PUBLIC_VEO_ENABLED === 'true' || process.env.FORCE_VEO_ENABLED === 'true',
-  /** Enable Sora integration */
-  SORA: process.env.NEXT_PUBLIC_SORA_ENABLED === 'true',
   /** Enable Voicer (voice cloning) */
   VOICER: process.env.NEXT_PUBLIC_VOICER_ENABLED === 'true'
 } as const;

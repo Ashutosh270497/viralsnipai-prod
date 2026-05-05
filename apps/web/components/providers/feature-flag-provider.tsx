@@ -52,7 +52,6 @@ export function FeatureFlagProvider({ children }: { children: React.ReactNode })
       imagenEnabled: envFlags.imagenEnabled,
       // Veo remains controlled by the environment toggle only.
       veoEnabled: envFlags.veoEnabled,
-      soraEnabled: envFlags.soraEnabled,
       voicerEnabled: envFlags.voicerEnabled,
       // Launch-version features are env-controlled only so V2/V3 cannot leak into production UI.
       snipRadarEnabled: envFlags.snipRadarEnabled,

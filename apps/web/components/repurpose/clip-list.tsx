@@ -51,6 +51,7 @@ type ClipType = {
   thumbnail?: string | null;
   viralityScore?: number | null;
   viralityFactors?: ViralityFactors | null;
+  version: number;
 };
 
 interface ClipListProps {
@@ -71,6 +72,7 @@ interface SortableClipCardProps {
   loadingClipId?: string;
   onPreview: (clipId: string) => void;
   onEditCaptions: (clipId: string) => void;
+  onClipUpdated?: () => Promise<void> | void;
   getScoreColor: (score: number) => string;
   formatFactorName: (key: string) => string;
   dragEnabled: boolean;
@@ -96,6 +98,7 @@ function SortableClipCard({
   loadingClipId,
   onPreview,
   onEditCaptions,
+  onClipUpdated,
   getScoreColor,
   formatFactorName,
   dragEnabled
@@ -259,13 +262,16 @@ function SortableClipCard({
           defaultValue={clip.title ?? `Clip ${index + 1}`}
           onBlur={async (event) => {
             const newTitle = event.target.value;
-            await fetch(`/api/clips/${clip.id}`, {
+            const response = await fetch(`/api/clips/${clip.id}`, {
               method: "PATCH",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ title: newTitle }),
+              body: JSON.stringify({ title: newTitle, expectedVersion: clip.version }),
               cache: "no-store",
               next: { revalidate: 0 }
             });
+            if (response.ok) {
+              await onClipUpdated?.();
+            }
           }}
         />
         {clip.summary ? (
@@ -707,6 +713,7 @@ export function ClipList({ clips, onSelect, onGenerateCaptions, loadingClipId, p
                 loadingClipId={loadingClipId}
                 onPreview={setPreviewClipId}
                 onEditCaptions={setEditingCaptionClipId}
+                onClipUpdated={onExportQueued}
                 getScoreColor={getScoreColor}
                 formatFactorName={formatFactorName}
                 dragEnabled={isManualOrderMode}
@@ -762,6 +769,7 @@ export function ClipList({ clips, onSelect, onGenerateCaptions, loadingClipId, p
         clipTitle={editingClip?.title}
         previewPath={editingClip?.previewPath}
         captionSrt={editingClip?.captionSrt}
+        expectedVersion={editingClip?.version ?? 1}
         onSave={onExportQueued || (() => {})}
       />
     </div>

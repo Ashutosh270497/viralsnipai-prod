@@ -76,6 +76,7 @@ export class PrismaProjectRepository implements IProjectRepository {
       id: p.id,
       title: p.title,
       topic: p.topic,
+      status: p.status,
       clipCount: p._count.clips,
       assetCount: p._count.assets,
       createdAt: p.createdAt.toISOString(),
@@ -112,6 +113,8 @@ export class PrismaProjectRepository implements IProjectRepository {
         ...(data.title !== undefined && { title: data.title }),
         ...(data.topic !== undefined && { topic: data.topic }),
         ...(data.sourceUrl !== undefined && { sourceUrl: data.sourceUrl }),
+        ...(data.status !== undefined && { status: data.status }),
+        ...(data.sceneCutThreshold !== undefined && { sceneCutThreshold: data.sceneCutThreshold }),
         ...(data.updatedAt !== undefined && {
           updatedAt:
             data.updatedAt instanceof Date
@@ -157,6 +160,8 @@ export class PrismaProjectRepository implements IProjectRepository {
       userId: prismaProject.userId,
       title: prismaProject.title,
       topic: prismaProject.topic,
+      status: prismaProject.status,
+      sceneCutThreshold: prismaProject.sceneCutThreshold ?? null,
       createdAt: prismaProject.createdAt.toISOString(),
       updatedAt: prismaProject.updatedAt?.toISOString(),
       clips: prismaProject.clips?.map((clip: any) => ({
@@ -175,6 +180,7 @@ export class PrismaProjectRepository implements IProjectRepository {
         thumbnail: clip.thumbnail,
         viralityScore: clip.viralityScore,
         viralityFactors: clip.viralityFactors as any,
+        version: clip.version ?? 1,
         createdAt: clip.createdAt.toISOString(),
         updatedAt: clip.updatedAt?.toISOString(),
       })),
@@ -186,6 +192,8 @@ export class PrismaProjectRepository implements IProjectRepository {
         type: asset.type,
         durationSec: asset.durationSec,
         durationSeconds: asset.durationSec,
+        sourceWidth: asset.sourceWidth,
+        sourceHeight: asset.sourceHeight,
         transcript: asset.transcript,
         transcription: asset.transcript,
         sourceLanguage: asset.sourceLanguage,

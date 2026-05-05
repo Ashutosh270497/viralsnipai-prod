@@ -20,10 +20,20 @@ import {
   normalizeTranscriptEditRanges,
   type TranscriptEditRange,
 } from '@/lib/repurpose/transcript-sync';
+import { parseSRT } from '@/lib/srt-utils';
+
+export interface ClipExportSettings {
+  reframeMode?: string;
+  trackingSmoothness?: 'low' | 'medium' | 'high';
+  exportQuality?: 'balanced' | 'high' | 'standard';
+  captionsEnabled?: boolean;
+  captionSafeZoneEnabled?: boolean;
+}
 
 export interface UpdateClipInput {
   clipId: string;
   userId: string;
+  expectedVersion: number;
   updates: {
     order?: number;
     title?: string;
@@ -36,6 +46,7 @@ export interface UpdateClipInput {
     startMs?: number;
     endMs?: number;
     transcriptEditRangesMs?: TranscriptEditRange[] | null;
+    exportSettings?: ClipExportSettings;
   };
 }
 
@@ -53,9 +64,9 @@ export class UpdateClipUseCase {
   ) {}
 
   async execute(input: UpdateClipInput): Promise<UpdateClipOutput> {
-    const { clipId, userId, updates } = input;
+    const { clipId, userId, expectedVersion, updates } = input;
 
-    logger.info('Starting clip update', { clipId, userId, updates });
+    logger.info('Starting clip update', { clipId, userId, expectedVersion, updates });
 
     // Step 1: Validate clip and user permissions
     const clip = await this.clipRepo.findById(clipId);
@@ -66,6 +77,10 @@ export class UpdateClipUseCase {
     const project = await this.projectRepo.findById(clip.projectId);
     if (!project || project.userId !== userId) {
       throw AppError.forbidden('Access denied to this clip');
+    }
+
+    if (!Number.isInteger(expectedVersion) || expectedVersion < 1) {
+      throw AppError.badRequest('expectedVersion is required for clip updates');
     }
 
     // Step 2: Validate at least one field to update
@@ -86,30 +101,25 @@ export class UpdateClipUseCase {
 
     let normalizedTranscriptEditRangesMs: TranscriptEditRange[] | null | undefined = undefined;
 
-    if (updates.transcriptEditRangesMs !== undefined) {
-      const normalizedRanges = normalizeTranscriptEditRanges(
-        updates.transcriptEditRangesMs,
-        clip.startMs,
-        clip.endMs
-      );
-      normalizedTranscriptEditRangesMs = normalizedRanges.length > 1 ? normalizedRanges : null;
-      const currentViralityFactors = (clip.viralityFactors ?? {}) as Record<string, unknown>;
-      const existingMetadata =
-        currentViralityFactors.metadata && typeof currentViralityFactors.metadata === 'object'
-          ? ({ ...(currentViralityFactors.metadata as Record<string, unknown>) } as Record<string, unknown>)
-          : {};
-
-      if (normalizedRanges.length > 1) {
-        existingMetadata.transcriptEditRangesMs = normalizedRanges;
-        existingMetadata.transcriptEditVersion = 'v1';
-        existingMetadata.transcriptEditedAt = new Date().toISOString();
-      } else {
-        delete existingMetadata.transcriptEditRangesMs;
-        delete existingMetadata.transcriptEditVersion;
-        existingMetadata.transcriptEditedAt = new Date().toISOString();
+    // Build a working copy of viralityFactors.metadata that downstream blocks
+    // (transcript edits, export settings) can each contribute to. This avoids
+    // one block clobbering another's metadata patch.
+    const currentViralityFactors = (clip.viralityFactors ?? {}) as Record<string, unknown>;
+    let workingMetadata: Record<string, unknown> | null = null;
+    let viralityFactorsTouched = false;
+    const ensureWorkingMetadata = (): Record<string, unknown> => {
+      if (!workingMetadata) {
+        workingMetadata =
+          currentViralityFactors.metadata && typeof currentViralityFactors.metadata === 'object'
+            ? ({ ...(currentViralityFactors.metadata as Record<string, unknown>) } as Record<string, unknown>)
+            : {};
       }
-
-      updatesForPersistence.viralityFactors = {
+      return workingMetadata;
+    };
+    const buildViralityFactorsWithMetadata = (
+      metadata: Record<string, unknown>
+    ): Clip['viralityFactors'] =>
+      ({
         hookStrength: toNumber(currentViralityFactors.hookStrength),
         emotionalPeak: toNumber(currentViralityFactors.emotionalPeak),
         storyArc: toNumber(currentViralityFactors.storyArc),
@@ -126,8 +136,40 @@ export class UpdateClipUseCase {
           currentViralityFactors.enhancement && typeof currentViralityFactors.enhancement === 'object'
             ? (currentViralityFactors.enhancement as Record<string, unknown>)
             : undefined,
-        metadata: existingMetadata,
-      } as Clip['viralityFactors'];
+        metadata,
+      }) as Clip['viralityFactors'];
+
+    if (updates.transcriptEditRangesMs !== undefined) {
+      let normalizedRanges = normalizeTranscriptEditRanges(
+        updates.transcriptEditRangesMs,
+        clip.startMs,
+        clip.endMs
+      );
+      if (normalizedRanges.length > 0) {
+        normalizedRanges = this.filterTranscriptRangesWithCaptionContent(
+          normalizedRanges,
+          updates.captionSrt ?? clip.captionSrt ?? null,
+          clip.startMs,
+          clip.endMs
+        );
+        if (normalizedRanges.length === 0) {
+          throw AppError.badRequest('Transcript edit ranges must overlap existing caption text');
+        }
+      }
+      normalizedTranscriptEditRangesMs = normalizedRanges.length > 1 ? normalizedRanges : null;
+      const metadata = ensureWorkingMetadata();
+
+      if (normalizedRanges.length > 1) {
+        metadata.transcriptEditRangesMs = normalizedRanges;
+        metadata.transcriptEditVersion = 'v1';
+        metadata.transcriptEditedAt = new Date().toISOString();
+      } else {
+        delete metadata.transcriptEditRangesMs;
+        delete metadata.transcriptEditVersion;
+        metadata.transcriptEditedAt = new Date().toISOString();
+      }
+
+      viralityFactorsTouched = true;
 
       // Drop transport-only field before repository update.
       delete updatesForPersistence.transcriptEditRangesMs;
@@ -139,8 +181,53 @@ export class UpdateClipUseCase {
       });
     }
 
+    if (updates.exportSettings !== undefined) {
+      const metadata = ensureWorkingMetadata();
+      const existingExportSettings =
+        metadata.exportSettings && typeof metadata.exportSettings === 'object'
+          ? { ...(metadata.exportSettings as Record<string, unknown>) }
+          : {};
+      const incoming = updates.exportSettings;
+      // Only spread defined keys so callers can patch one field at a time.
+      const merged: Record<string, unknown> = { ...existingExportSettings };
+      if (incoming.reframeMode !== undefined) merged.reframeMode = incoming.reframeMode;
+      if (incoming.trackingSmoothness !== undefined) merged.trackingSmoothness = incoming.trackingSmoothness;
+      if (incoming.exportQuality !== undefined) merged.exportQuality = incoming.exportQuality;
+      if (incoming.captionsEnabled !== undefined) merged.captionsEnabled = incoming.captionsEnabled;
+      if (incoming.captionSafeZoneEnabled !== undefined) merged.captionSafeZoneEnabled = incoming.captionSafeZoneEnabled;
+
+      metadata.exportSettings = merged;
+      metadata.exportSettingsUpdatedAt = new Date().toISOString();
+
+      viralityFactorsTouched = true;
+
+      // Drop transport-only field before repository update.
+      delete updatesForPersistence.exportSettings;
+
+      logger.info('Applied export settings to clip metadata', {
+        clipId,
+        appliedFields: Object.keys(incoming).filter(
+          (k) => incoming[k as keyof ClipExportSettings] !== undefined
+        ),
+      });
+    }
+
+    if (viralityFactorsTouched && workingMetadata) {
+      updatesForPersistence.viralityFactors = buildViralityFactorsWithMetadata(workingMetadata);
+    }
+
     // Step 3: Update clip properties
-    const updatedClip = await this.clipRepo.update(clipId, updatesForPersistence);
+    const updatedClip = await this.clipRepo.updateWithVersion(
+      clipId,
+      expectedVersion,
+      updatesForPersistence
+    );
+    if (!updatedClip) {
+      throw AppError.conflict('Clip was updated elsewhere. Refresh and try again.', {
+        expectedVersion,
+        currentVersion: clip.version,
+      });
+    }
 
     logger.info('Clip updated', { clipId, fieldsUpdated });
 
@@ -156,6 +243,36 @@ export class UpdateClipUseCase {
       fieldsUpdated,
       normalizedTranscriptEditRangesMs,
     };
+  }
+
+  private filterTranscriptRangesWithCaptionContent(
+    ranges: TranscriptEditRange[],
+    captionSrt: string | null,
+    clipStartMs: number,
+    clipEndMs: number
+  ): TranscriptEditRange[] {
+    if (!captionSrt?.trim()) {
+      return ranges;
+    }
+
+    const entries = parseSRT(captionSrt)
+      .filter((entry) => entry.text.replace(/\s+/g, ' ').trim().length > 0)
+      .map((entry) => {
+        const appearsRelative = entry.endMs <= clipEndMs - clipStartMs + 1_000;
+        return {
+          startMs: appearsRelative ? clipStartMs + entry.startMs : entry.startMs,
+          endMs: appearsRelative ? clipStartMs + entry.endMs : entry.endMs,
+        };
+      })
+      .filter((entry) => entry.endMs > entry.startMs);
+
+    if (entries.length === 0) {
+      return [];
+    }
+
+    return ranges.filter((range) =>
+      entries.some((entry) => entry.endMs > range.startMs && entry.startMs < range.endMs)
+    );
   }
 }
 

@@ -1,0 +1,18 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "moduleResolution": "Bundler",
+    "jsx": "react-jsx",
+    "noEmit": true,
+    "incremental": false,
+    "types": ["node", "react", "react-dom"]
+  },
+  "include": [
+    "remotion-compositions/**/*.ts",
+    "remotion-compositions/**/*.tsx",
+    "lib/repurpose/caption-style-config.ts",
+    "lib/srt-utils.ts",
+    "lib/media/smart-reframe/**/*.ts"
+  ],
+  "exclude": ["node_modules", ".next"]
+}

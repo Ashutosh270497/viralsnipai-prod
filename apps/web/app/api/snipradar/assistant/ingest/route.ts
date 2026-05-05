@@ -16,13 +16,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { readFileSync } from "fs";
 import { join } from "path";
 import { ingestDocument } from "@/lib/snipradar/assistant-kb";
+import { timingSafeSecretEqual } from "@/lib/snipradar/request-guards";
 
 const INGEST_SECRET = process.env.INGEST_SECRET;
 
 export async function POST(req: NextRequest) {
-  // Security gate
+  // Security gate — timing-safe to prevent byte-by-byte secret discovery.
   const providedSecret = req.headers.get("x-ingest-secret");
-  if (!INGEST_SECRET || providedSecret !== INGEST_SECRET) {
+  if (!INGEST_SECRET || !timingSafeSecretEqual(providedSecret, INGEST_SECRET)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

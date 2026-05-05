@@ -75,7 +75,7 @@ export class SplitClipUseCase {
       secondClip,
     });
 
-    // Step 4: Create two new clips
+    // Step 4: Create two new clips and delete the original atomically
     const firstClipData = {
       projectId: clip.projectId,
       assetId: clip.assetId,
@@ -100,20 +100,20 @@ export class SplitClipUseCase {
       viralityFactors: clip.viralityFactors,
     };
 
-    const createdFirstClip = await this.clipRepo.create(firstClipData);
-    const createdSecondClip = await this.clipRepo.create(secondClipData);
+    const { firstClip: createdFirstClip, secondClip: createdSecondClip } =
+      await this.clipRepo.splitClip({
+        originalClipId: clipId,
+        firstClipData,
+        secondClipData,
+      });
 
-    logger.info('Two new clips created', {
+    logger.info('Clip split transaction completed', {
       firstClipId: createdFirstClip.id,
       secondClipId: createdSecondClip.id,
+      originalClipId: clipId,
     });
 
-    // Step 5: Delete original clip
-    await this.clipRepo.delete(clipId);
-
-    logger.info('Original clip deleted', { clipId });
-
-    // Step 6: Update project timestamp
+    // Step 5: Update project timestamp
     await this.projectRepo.update(clip.projectId, {
       updatedAt: new Date(),
     });
