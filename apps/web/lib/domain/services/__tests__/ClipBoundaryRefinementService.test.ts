@@ -68,4 +68,41 @@ describe("ClipBoundaryRefinementService", () => {
     expect(result.endMs).toBe(20_100);
     expect(result.boundaryReasons.join(" ")).toContain("word boundary");
   });
+
+  it("re-snaps end to a word boundary after max-duration trimming", () => {
+    const longWords = Array.from({ length: 80 }).map((_, index) => ({
+      index,
+      word: `word${index}`,
+      start: index,
+      end: index + 0.72,
+    }));
+    const longTranscript: CanonicalTranscript = {
+      ...transcript,
+      text: longWords.map((word) => word.word).join(" "),
+      segments: [{
+        id: "seg-1",
+        start: 0,
+        end: 80,
+        text: longWords.map((word) => word.word).join(" "),
+        words: longWords,
+      }],
+    };
+    const longCandidate: ClipCandidate = {
+      ...candidate,
+      startMs: 0,
+      endMs: 75_500,
+      text: longTranscript.text,
+    };
+
+    const result = new ClipBoundaryRefinementService().refine({
+      candidate: longCandidate,
+      transcript: longTranscript,
+      sceneCutsMs: [],
+      durationMs: 90_000,
+    });
+
+    expect(result.endMs - result.startMs).toBeLessThanOrEqual(58_000);
+    expect(result.endMs).toBe(57_720);
+    expect(result.boundaryReasons.join(" ")).toContain("re-snapped to a word boundary");
+  });
 });

@@ -29,7 +29,14 @@ const schema = z.object({
   model: z.string().optional().transform((val) => {
     if (!val || val.trim().length === 0) return undefined;
     const trimmed = val.trim();
-    return HIGHLIGHT_MODELS.includes(trimmed as any) ? trimmed : undefined;
+    return trimmed;
+  }).superRefine((val, ctx) => {
+    if (val && !HIGHLIGHT_MODELS.includes(val as any)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Invalid OpenRouter reasoning model "${val}".`,
+      });
+    }
   }),
   brief: z.string().optional().transform((val) => {
     if (!val || val.trim().length === 0) return undefined;

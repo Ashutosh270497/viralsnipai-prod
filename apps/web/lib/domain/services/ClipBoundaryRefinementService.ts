@@ -73,8 +73,33 @@ export class ClipBoundaryRefinementService {
     endMs = Math.max(startMs + 1, Math.min(endMs, params.durationMs));
 
     if (endMs - startMs > policy.maxMs) {
-      endMs = Math.min(params.durationMs, startMs + policy.maxMs);
-      reasons.push("Trimmed end to V1 maximum clip duration.");
+      const limitMs = Math.min(params.durationMs, startMs + policy.maxMs);
+      const snappedEnd = words.length > 0 ? snapEndToWordBeforeLimit(words, limitMs, startMs) : null;
+      endMs = snappedEnd ?? limitMs;
+      reasons.push(snappedEnd !== null
+        ? "Trimmed end to V1 maximum clip duration and re-snapped to a word boundary."
+        : "Trimmed end to V1 maximum clip duration.");
+      if (snappedEnd !== null && endMs - startMs < policy.minMs) {
+        const saferEnd = snapEndToWordBeforeLimit(words, Math.min(params.durationMs, startMs + policy.idealMs), startMs);
+        if (saferEnd !== null && saferEnd > endMs) {
+          endMs = Math.min(saferEnd, limitMs);
+          reasons.push("Used safest nearby word boundary after max-duration trimming compromise.");
+        }
+        confidence = confidence === "high" ? "medium" : confidence;
+      }
+    }
+
+    const validated = clampAndValidateBoundary({
+      startMs,
+      endMs,
+      durationMs: params.durationMs,
+      words,
+    });
+    startMs = validated.startMs;
+    endMs = validated.endMs;
+    if (validated.reason) {
+      reasons.push(validated.reason);
+      confidence = confidence === "high" ? "medium" : confidence;
     }
 
     if (endMs - startMs < policy.minMs && params.candidate.candidateType !== "fallback") {
@@ -129,4 +154,65 @@ function nearestSceneCutBefore(targetMs: number, cutsMs: number[], windowMs: num
 function nearestSceneCutAfter(targetMs: number, cutsMs: number[], windowMs: number) {
   const candidates = cutsMs.filter((cut) => cut >= targetMs && cut - targetMs <= windowMs);
   return candidates.length > 0 ? Math.min(...candidates) : null;
+}
+
+export function snapEndToWordBeforeLimit(
+  words: TranscriptWord[],
+  limitMs: number,
+  startMs: number
+): number | null {
+  const candidates = words
+    .map((word) => Math.round(word.end * 1000))
+    .filter((end) => end <= limitMs && end > startMs + 250);
+  return candidates.length > 0 ? Math.max(...candidates) : null;
+}
+
+export function snapStartToWordNearTarget(words: TranscriptWord[], targetMs: number): number | null {
+  const targetSec = targetMs / 1000;
+  const word = findNearestWordStart(words, targetSec);
+  return word ? Math.max(0, Math.round(word.start * 1000)) : null;
+}
+
+export function clampAndValidateBoundary({
+  startMs,
+  endMs,
+  durationMs,
+  words,
+}: {
+  startMs: number;
+  endMs: number;
+  durationMs: number;
+  words: TranscriptWord[];
+}): { startMs: number; endMs: number; reason?: string } {
+  let nextStart = Math.max(0, Math.min(startMs, durationMs));
+  let nextEnd = Math.max(nextStart + 1, Math.min(endMs, durationMs));
+  let reason: string | undefined;
+
+  if (words.length > 0) {
+    const cutsMidWord = words.some((word) => {
+      const wordStartMs = Math.round(word.start * 1000);
+      const wordEndMs = Math.round(word.end * 1000);
+      return nextEnd > wordStartMs && nextEnd < wordEndMs;
+    });
+    const wordEnd = cutsMidWord ? snapEndToWordBeforeLimit(words, nextEnd, nextStart) : null;
+    if (wordEnd !== null) {
+      nextEnd = wordEnd;
+      reason = "Final end boundary re-snapped to avoid a mid-word cut.";
+    }
+
+    if (nextEnd <= nextStart) {
+      const startSnap = snapStartToWordNearTarget(words, nextStart);
+      if (startSnap !== null && startSnap < nextEnd) {
+        nextStart = startSnap;
+        reason = "Final start boundary adjusted to keep a valid word-aligned clip.";
+      }
+    }
+  }
+
+  if (nextEnd <= nextStart) {
+    nextEnd = Math.min(durationMs, nextStart + 1);
+    reason = "Final boundary clamped to maintain a positive clip duration.";
+  }
+
+  return { startMs: nextStart, endMs: nextEnd, reason };
 }

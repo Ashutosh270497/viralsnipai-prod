@@ -2,11 +2,13 @@ import fs from "fs";
 import { promises as fsp } from "fs";
 import path from "path";
 import { promisify } from "util";
+import "openai/shims/node";
 import { toFile } from "openai";
+import ffmpeg from "fluent-ffmpeg";
 
-import { transcodeToMp3 } from "@/lib/ffmpeg";
+import { probeDuration, transcodeToMp3 } from "@/lib/ffmpeg";
 import { logger } from "@/lib/logger";
-import { openAIClient } from "@/lib/openai";
+import { openAITranscriptionClient } from "@/lib/ai/providers/openai-transcription-client";
 
 const stat = promisify(fs.stat);
 
@@ -15,6 +17,7 @@ const OPENAI_TRANSCRIBE_TIMEOUT_MS = Number(process.env.OPENAI_TRANSCRIBE_TIMEOU
 const OPENAI_TRANSCRIBE_MAX_RETRIES = Number(process.env.OPENAI_TRANSCRIBE_MAX_RETRIES ?? 2);
 const OPENAI_MAX_AUDIO_BYTES = 24 * 1024 * 1024;
 const DIRECT_AUDIO_BYTES = Number(process.env.TRANSCRIBE_MAX_DIRECT_BYTES ?? OPENAI_MAX_AUDIO_BYTES);
+const TRANSCRIBE_CHUNK_SECONDS = Number(process.env.OPENAI_TRANSCRIBE_CHUNK_SECONDS ?? 12 * 60);
 const AUDIO_EXTENSIONS = new Set([".mp3", ".m4a", ".aac", ".wav", ".webm", ".ogg", ".oga", ".flac"]);
 
 export type TranscriptPrecision = "word" | "segment" | "diarized_segment" | "approximate" | "none";
@@ -49,34 +52,116 @@ export type CanonicalTranscript = {
 };
 
 export async function transcribeWithOpenAI(filePath: string): Promise<CanonicalTranscript> {
-  if (!openAIClient) {
+  if (!openAITranscriptionClient) {
     throw new Error("OPENAI_API_KEY is required for precision transcription.");
   }
 
   const prepared = await prepareTranscriptionSource(filePath);
   try {
-    let lastError: unknown = null;
-    const attempts = Math.max(1, OPENAI_TRANSCRIBE_MAX_RETRIES + 1);
-
-    for (let attempt = 0; attempt < attempts; attempt += 1) {
+    if (await shouldChunkAudio(prepared.path)) {
+      const chunks = await splitAudioForTranscription(prepared.path);
       try {
-        const response = await callOpenAITranscription(prepared.path);
-        const transcript = normalizeOpenAITranscript(response, OPENAI_TRANSCRIBE_MODEL);
-        validateTranscriptTimestamps(transcript);
-        return transcript;
-      } catch (error) {
-        lastError = error;
-        if (attempt >= attempts - 1 || !isRetryableTranscriptionError(error)) {
-          break;
+        logger.info("OpenAI transcription chunking enabled", {
+          sourcePath: prepared.path,
+          chunkCount: chunks.length,
+          chunkDurationsSec: chunks.map((chunk) => Number((chunk.durationSec).toFixed(2))),
+        });
+        const transcripts: Array<{ transcript: CanonicalTranscript; offsetSec: number }> = [];
+        for (const chunk of chunks) {
+          const transcript = await transcribeAudioChunk(chunk.path);
+          transcripts.push({ transcript, offsetSec: chunk.startSec });
         }
-        await sleep(600 * 2 ** attempt);
+        const merged = mergeChunkTranscripts(transcripts, OPENAI_TRANSCRIBE_MODEL);
+        validateTranscriptTimestamps(merged);
+        logger.info("OpenAI chunk transcripts merged", {
+          chunkCount: chunks.length,
+          segmentCount: merged.segments.length,
+          precision: merged.precision,
+          durationSec: merged.durationSec,
+        });
+        return merged;
+      } finally {
+        await Promise.allSettled(chunks.map((chunk) => fsp.unlink(chunk.path)));
       }
     }
 
-    throw lastError instanceof Error ? lastError : new Error("OpenAI transcription failed.");
+    return await transcribeAudioChunk(prepared.path);
   } finally {
     await prepared.cleanup();
   }
+}
+
+export async function shouldChunkAudio(filePath: string): Promise<boolean> {
+  const stats = await stat(filePath);
+  return stats.size > OPENAI_MAX_AUDIO_BYTES;
+}
+
+export type AudioTranscriptionChunk = {
+  path: string;
+  startSec: number;
+  durationSec: number;
+};
+
+export async function splitAudioForTranscription(filePath: string): Promise<AudioTranscriptionChunk[]> {
+  const durationSec = await probeDuration(filePath);
+  if (!durationSec || !Number.isFinite(durationSec) || durationSec <= 0) {
+    throw new Error("Unable to probe audio duration for transcription chunking.");
+  }
+
+  const chunkDurationSec = Math.max(60, Math.min(15 * 60, TRANSCRIBE_CHUNK_SECONDS));
+  const chunkCount = Math.ceil(durationSec / chunkDurationSec);
+  const ext = path.extname(filePath).toLowerCase() || ".mp3";
+  const dir = path.dirname(filePath);
+  const base = path.basename(filePath, ext);
+  const chunks: AudioTranscriptionChunk[] = [];
+
+  try {
+    for (let index = 0; index < chunkCount; index += 1) {
+      const startSec = index * chunkDurationSec;
+      const thisDurationSec = Math.min(chunkDurationSec, durationSec - startSec);
+      const outputPath = path.join(dir, `${base}-chunk-${index + 1}-${Date.now()}.mp3`);
+      await extractAudioChunk({
+        inputPath: filePath,
+        outputPath,
+        startSec,
+        durationSec: thisDurationSec,
+      });
+      const stats = await stat(outputPath);
+      if (stats.size > OPENAI_MAX_AUDIO_BYTES) {
+        throw new Error(
+          `Transcription chunk ${index + 1} is ${(stats.size / (1024 * 1024)).toFixed(1)} MB; ` +
+          "reduce OPENAI_TRANSCRIBE_CHUNK_SECONDS or audio bitrate."
+        );
+      }
+      chunks.push({ path: outputPath, startSec, durationSec: thisDurationSec });
+    }
+    return chunks;
+  } catch (error) {
+    await Promise.allSettled(chunks.map((chunk) => fsp.unlink(chunk.path)));
+    throw error;
+  }
+}
+
+export async function transcribeAudioChunk(filePath: string): Promise<CanonicalTranscript> {
+  let lastError: unknown = null;
+  const attempts = Math.max(1, OPENAI_TRANSCRIBE_MAX_RETRIES + 1);
+
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      const response = await callOpenAITranscription(filePath);
+      const transcript = normalizeOpenAITranscript(response, OPENAI_TRANSCRIBE_MODEL);
+      validateTranscriptTimestamps(transcript);
+      return transcript;
+    } catch (error) {
+      lastError = error;
+      if (attempt >= attempts - 1 || !isRetryableTranscriptionError(error)) {
+        break;
+      }
+      await sleep(600 * 2 ** attempt);
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error("OpenAI transcription failed.");
 }
 
 export function hasWordLevelTimestamps(transcript: Pick<CanonicalTranscript, "segments">): boolean {
@@ -216,6 +301,88 @@ export function validateTranscriptTimestamps(transcript: CanonicalTranscript): v
   }
 }
 
+export function offsetTranscriptTimestamps(
+  transcript: CanonicalTranscript,
+  offsetSec: number,
+  segmentIdPrefix = "chunk"
+): CanonicalTranscript {
+  const segments = transcript.segments.map((segment, segmentIndex) => ({
+    ...segment,
+    id: `${segmentIdPrefix}-${segmentIndex + 1}-${segment.id}`,
+    start: roundSec(segment.start + offsetSec),
+    end: roundSec(segment.end + offsetSec),
+    words: segment.words?.map((word) => ({
+      ...word,
+      start: roundSec(word.start + offsetSec),
+      end: roundSec(word.end + offsetSec),
+    })),
+  }));
+
+  return {
+    ...transcript,
+    durationSec: transcript.durationSec !== null && transcript.durationSec !== undefined
+      ? roundSec(transcript.durationSec + offsetSec)
+      : null,
+    segments,
+    precision: getTranscriptPrecision({ segments }),
+    warnings: [...transcript.warnings],
+  };
+}
+
+export function mergeChunkTranscripts(
+  chunks: Array<{ transcript: CanonicalTranscript; offsetSec: number }>,
+  model: string
+): CanonicalTranscript {
+  if (chunks.length === 0) {
+    throw new Error("Cannot merge zero OpenAI transcription chunks.");
+  }
+
+  const shifted = chunks.map((chunk, index) =>
+    offsetTranscriptTimestamps(chunk.transcript, chunk.offsetSec, `chunk-${index + 1}`)
+  );
+  const segments = shifted
+    .flatMap((transcript) => transcript.segments)
+    .sort((a, b) => a.start - b.start || a.end - b.end)
+    .map((segment, segmentIndex) => ({
+      ...segment,
+      id: `seg-${segmentIndex + 1}`,
+      words: segment.words?.map((word, wordIndex) => ({
+        ...word,
+        index: wordIndex,
+      })),
+    }));
+
+  let globalWordIndex = 0;
+  const reindexedSegments = segments.map((segment) => ({
+    ...segment,
+    words: segment.words?.map((word) => ({
+      ...word,
+      index: globalWordIndex++,
+    })),
+  }));
+
+  const durationSec = reindexedSegments.length > 0
+    ? reindexedSegments[reindexedSegments.length - 1].end
+    : null;
+  const warnings = shifted.flatMap((transcript) => transcript.warnings);
+  const precision = getTranscriptPrecision({ segments: reindexedSegments });
+  if (precision !== "word") {
+    warnings.push("Merged OpenAI transcript does not contain word-level timestamps for every chunk.");
+  }
+
+  return {
+    text: reindexedSegments.map((segment) => segment.text).join(" ").replace(/\s+/g, " ").trim(),
+    language: shifted.find((transcript) => transcript.language)?.language ?? null,
+    durationSec,
+    segments: reindexedSegments,
+    precision,
+    provider: "openai",
+    model,
+    warnings,
+    createdAt: new Date().toISOString(),
+  };
+}
+
 async function callOpenAITranscription(filePath: string): Promise<unknown> {
   const fileBuffer = await fsp.readFile(filePath);
   const fileObject = await toFile(fileBuffer, path.basename(filePath), {
@@ -229,7 +396,7 @@ async function callOpenAITranscription(filePath: string): Promise<unknown> {
     timestamp_granularities: ["segment", "word"],
   };
 
-  return openAIClient!.audio.transcriptions.create(params as any, {
+  return openAITranscriptionClient!.audio.transcriptions.create(params as any, {
     timeout: Number.isFinite(OPENAI_TRANSCRIBE_TIMEOUT_MS) ? OPENAI_TRANSCRIBE_TIMEOUT_MS : 180_000,
   });
 }
@@ -250,21 +417,36 @@ async function prepareTranscriptionSource(originalPath: string): Promise<{ path:
 
   await transcodeToMp3({ inputPath: originalPath, outputPath: targetPath });
 
-  const transcodedStats = await stat(targetPath);
-  if (transcodedStats.size > OPENAI_MAX_AUDIO_BYTES) {
-    await fsp.unlink(targetPath).catch(() => null);
-    throw new Error(
-      `Prepared audio is ${(transcodedStats.size / (1024 * 1024)).toFixed(1)} MB; ` +
-      "exceeds OpenAI transcription upload limit. Shorten or chunk the source before transcription."
-    );
-  }
-
   return {
     path: targetPath,
     cleanup: async () => {
       await fsp.unlink(targetPath).catch(() => null);
     },
   };
+}
+
+async function extractAudioChunk({
+  inputPath,
+  outputPath,
+  startSec,
+  durationSec,
+}: {
+  inputPath: string;
+  outputPath: string;
+  startSec: number;
+  durationSec: number;
+}) {
+  await fsp.mkdir(path.dirname(outputPath), { recursive: true });
+  await new Promise<void>((resolve, reject) => {
+    ffmpeg(inputPath)
+      .seekInput(startSec)
+      .duration(durationSec)
+      .outputOptions(["-vn", "-ac", "1", "-ar", "16000", "-b:a", "64k"])
+      .format("mp3")
+      .on("end", () => resolve())
+      .on("error", (error) => reject(error))
+      .save(outputPath);
+  });
 }
 
 function normalizeWords(words: Array<{ word?: string; start?: number; end?: number; confidence?: number | null }>): TranscriptWord[] {
@@ -287,6 +469,10 @@ function normalizeWords(words: Array<{ word?: string; start?: number; end?: numb
 
 function finiteNumber(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function roundSec(value: number) {
+  return Math.round(value * 1000) / 1000;
 }
 
 function mimeForPath(filePath: string) {

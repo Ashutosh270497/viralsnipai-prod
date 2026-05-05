@@ -2,24 +2,30 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Check, ChevronLeft, ChevronRight, Download, Upload, Sparkles } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight, Download, Scissors, Upload, Sparkles } from "lucide-react";
 
-import { cn } from "@/lib/utils";
+import { cn, formatDuration } from "@/lib/utils";
 import type { ProjectSummary } from "./types";
 import { RepurposeProvider, useRepurpose } from "./repurpose-context";
+import {
+  ProviderBadge,
+  TranscriptPrecisionBadge,
+  getClipMetadata,
+} from "@/components/repurpose/quality-indicators";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const STEPS = [
-  { number: 1, label: "Ingest & Detect",    icon: Upload,   href: "/repurpose" },
-  { number: 2, label: "Edit & Enhance",     icon: Sparkles, href: "/repurpose/editor" },
-  { number: 3, label: "Export & Translate", icon: Download, href: "/repurpose/export" },
+  { number: 1, label: "Ingest", icon: Upload, href: "/repurpose", description: "Source" },
+  { number: 2, label: "AI Clips", icon: Sparkles, href: "/repurpose", description: "Rank" },
+  { number: 3, label: "Edit", icon: Scissors, href: "/repurpose/editor", description: "Polish" },
+  { number: 4, label: "Export", icon: Download, href: "/repurpose/export", description: "Publish" },
 ] as const;
 
 const STEP_MAP: Record<string, number> = {
   "/repurpose": 1,
-  "/repurpose/editor": 2,
-  "/repurpose/export": 3,
+  "/repurpose/editor": 3,
+  "/repurpose/export": 4,
 };
 
 // ─── Step Nav Bar (Top strip) ─────────────────────────────────────────────────
@@ -34,7 +40,7 @@ function StepNavBar({
   clipCount: number;
 }) {
   const pathname = usePathname();
-  const currentStep = STEP_MAP[pathname] ?? 1;
+  const currentStep = pathname === "/repurpose" && clipCount > 0 ? 2 : STEP_MAP[pathname] ?? 1;
 
   const prevStep = STEPS.find((s) => s.number === currentStep - 1);
   const nextStep = STEPS.find((s) => s.number === currentStep + 1);
@@ -43,6 +49,7 @@ function StepNavBar({
     if (!projectId) return true;
     if (step === 2) return !hasAsset;
     if (step === 3) return clipCount === 0;
+    if (step === 4) return clipCount === 0;
     return false;
   }
 
@@ -57,7 +64,7 @@ function StepNavBar({
           <span className="text-[11px] font-bold leading-none">{currentStep}</span>
         </div>
         <span className="text-sm font-medium text-muted-foreground">
-          Step <span className="font-semibold text-foreground">{currentStep}</span> of 3
+          Step <span className="font-semibold text-foreground">{currentStep}</span> of 4
         </span>
       </div>
 
@@ -112,11 +119,12 @@ function StepIndicator({
   clipCount: number;
 }) {
   const pathname = usePathname();
-  const currentStep = STEP_MAP[pathname] ?? 1;
+  const currentStep = pathname === "/repurpose" && clipCount > 0 ? 2 : STEP_MAP[pathname] ?? 1;
 
   function isComplete(step: number) {
     if (step === 1) return hasAsset;
     if (step === 2) return clipCount > 0;
+    if (step === 3) return clipCount > 0;
     return false;
   }
 
@@ -125,11 +133,12 @@ function StepIndicator({
     if (step === 1) return false;
     if (step === 2) return !hasAsset;
     if (step === 3) return clipCount === 0;
+    if (step === 4) return clipCount === 0;
     return true;
   }
 
   return (
-    <div className="flex items-center justify-center gap-2 border-b border-border/40 bg-background/40 px-6 py-4">
+    <div className="flex items-center justify-start gap-2 overflow-x-auto border-b border-border/40 bg-background/40 px-6 py-4 xl:justify-center">
       {STEPS.map((step, index) => {
         const active   = currentStep === step.number;
         const complete = isComplete(step.number);
@@ -179,7 +188,7 @@ function StepIndicator({
                     active ? "text-primary/70" : "text-muted-foreground/50"
                   )}
                 >
-                  Step {step.number}
+                  {step.description}
                 </div>
                 <div
                   className={cn(
@@ -221,9 +230,65 @@ function RepurposeLayoutInner({ children }: { children: React.ReactNode }) {
 
   const clipCount = project?.clips?.length ?? 0;
   const hasAsset  = !!primaryAsset;
+  const firstClipMetadata = getClipMetadata(project?.clips?.[0]);
+  const transcriptPrecision = firstClipMetadata.boundaryPrecision ?? inferTranscriptPrecision(primaryAsset?.transcript);
+  const needsReview = project?.clips?.some((clip) => getClipMetadata(clip).boundaryConfidence !== "high") ?? false;
+  const exportCount = project?.exports?.length ?? 0;
+  const projectStatus =
+    project?.status === "failed"
+      ? "Failed"
+      : !projectId
+        ? "No project"
+        : !hasAsset
+          ? "Needs source"
+          : needsReview
+            ? "Needs review"
+            : clipCount > 0
+              ? "Ready"
+              : "Ready to process";
 
   return (
-    <div className="-mx-4 -mt-4 min-h-screen w-full min-w-0 flex-1 lg:-mx-6 lg:-mt-6">
+    <div className="-mx-4 -mt-4 min-h-screen w-full min-w-0 flex-1 bg-[radial-gradient(circle_at_top_left,rgba(16,185,129,0.12),transparent_30%),radial-gradient(circle_at_top_right,rgba(56,189,248,0.10),transparent_32%)] lg:-mx-6 lg:-mt-6">
+      <div className="border-b border-white/10 bg-slate-950/85 px-4 py-4 text-white backdrop-blur-xl lg:px-6">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+          <div className="min-w-0">
+            <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-emerald-300/75">
+              ViralSnipAI RepurposeOS
+            </p>
+            <div className="mt-1 flex flex-wrap items-center gap-3">
+              <h1 className="truncate text-2xl font-semibold tracking-tight">
+                {project?.title ?? "Select a project"}
+              </h1>
+              <span
+                className={cn(
+                  "rounded-full border px-2.5 py-1 text-[11px] font-semibold",
+                  projectStatus === "Ready"
+                    ? "border-emerald-400/25 bg-emerald-400/10 text-emerald-200"
+                    : projectStatus === "Needs review"
+                      ? "border-amber-400/25 bg-amber-400/10 text-amber-200"
+                      : projectStatus === "Failed"
+                        ? "border-red-400/25 bg-red-400/10 text-red-200"
+                        : "border-white/15 bg-white/8 text-white/65"
+                )}
+              >
+                {projectStatus}
+              </span>
+            </div>
+            <div className="mt-3 flex flex-wrap gap-2 text-xs text-white/60">
+              <span>{primaryAsset?.durationSec ? formatDuration(primaryAsset.durationSec * 1000) : "No source duration"}</span>
+              <span className="text-white/25">·</span>
+              <span>{clipCount} clip{clipCount === 1 ? "" : "s"}</span>
+              <span className="text-white/25">·</span>
+              <span>{exportCount} export{exportCount === 1 ? "" : "s"}</span>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <TranscriptPrecisionBadge precision={transcriptPrecision} />
+            <ProviderBadge provider="openai" label="OpenAI Timing" />
+            <ProviderBadge provider="openrouter" label="OpenRouter Ranking" />
+          </div>
+        </div>
+      </div>
       {/* Step nav bar */}
       <StepNavBar projectId={projectId} hasAsset={hasAsset} clipCount={clipCount} />
 
@@ -236,6 +301,16 @@ function RepurposeLayoutInner({ children }: { children: React.ReactNode }) {
       </div>
     </div>
   );
+}
+
+function inferTranscriptPrecision(transcript?: string | null) {
+  if (!transcript) return "none";
+  try {
+    const parsed = JSON.parse(transcript);
+    return typeof parsed?.precision === "string" ? parsed.precision : "segment";
+  } catch {
+    return "none";
+  }
 }
 
 export function RepurposeLayoutClient({

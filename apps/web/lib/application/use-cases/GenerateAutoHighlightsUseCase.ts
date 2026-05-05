@@ -107,6 +107,12 @@ export interface GenerateAutoHighlightsOutput {
     transcriptPrecision?: TranscriptPrecision;
     candidatesGenerated?: number;
     candidatesReranked?: number;
+    boundaryConfidenceCounts?: {
+      high: number;
+      medium: number;
+      low: number;
+    };
+    averageClipDurationSec?: number | null;
     lowPrecisionWarning?: string | null;
   };
 }
@@ -152,6 +158,25 @@ function getLowPrecisionWarning(transcript: CanonicalTranscript): string | null 
     return "Transcript has segment-level timing only; clip boundaries use lower-confidence segment snapping.";
   }
   return "Transcript timing precision is low; clips may need manual review.";
+}
+
+function countBoundaryConfidence(
+  clips: Array<{ boundary?: { confidence: "high" | "medium" | "low" } }>
+) {
+  return clips.reduce(
+    (counts, clip) => {
+      const confidence = clip.boundary?.confidence;
+      if (confidence) counts[confidence] += 1;
+      return counts;
+    },
+    { high: 0, medium: 0, low: 0 }
+  );
+}
+
+function averageClipDurationSec(clips: Array<{ startMs: number; endMs: number }>): number | null {
+  if (clips.length === 0) return null;
+  const totalMs = clips.reduce((sum, clip) => sum + Math.max(0, clip.endMs - clip.startMs), 0);
+  return Math.round((totalMs / clips.length / 1000) * 10) / 10;
 }
 
 @injectable()
@@ -494,6 +519,8 @@ export class GenerateAutoHighlightsUseCase {
             transcriptPrecision: canonicalTranscript.precision,
             candidatesGenerated: generatedCandidates.length,
             candidatesReranked: selectedCandidatePairs.length,
+            boundaryConfidenceCounts: countBoundaryConfidence(extractedClips),
+            averageClipDurationSec: averageClipDurationSec(extractedClips),
             lowPrecisionWarning: getLowPrecisionWarning(canonicalTranscript),
           },
         };
@@ -794,6 +821,8 @@ export class GenerateAutoHighlightsUseCase {
     // existingClipsPreserved counts pre-existing clips left intact in non-replace modes.
     // In replace mode all existing clips were deleted, so 0.
     const existingClipsPreserved = mode === 'replace' ? 0 : existingClipsBefore.length;
+    const boundaryConfidenceCounts = countBoundaryConfidence(clipsToCreate);
+    const avgClipDurationSec = averageClipDurationSec(createdClips);
 
     // Cleanup the materialized tempfile (no-op for local-driver assets).
     await materialized?.cleanup();
@@ -821,6 +850,8 @@ export class GenerateAutoHighlightsUseCase {
         transcriptPrecision: canonicalTranscript.precision,
         candidatesGenerated: generatedCandidates.length,
         candidatesReranked: selectedCandidatePairs.length,
+        boundaryConfidenceCounts,
+        averageClipDurationSec: avgClipDurationSec,
         lowPrecisionWarning: getLowPrecisionWarning(canonicalTranscript) ?? rerankWarnings[0] ?? null,
       },
     };

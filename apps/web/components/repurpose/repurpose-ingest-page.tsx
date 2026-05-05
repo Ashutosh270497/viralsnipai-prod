@@ -11,6 +11,7 @@ import {
   Eye,
   FileText,
   Flame,
+  Info,
   Link as LinkIcon,
   Loader2,
   Music,
@@ -38,6 +39,13 @@ import {
 import { useToast } from "@/components/ui/use-toast";
 import { HIGHLIGHT_MODEL_OPTIONS } from "@/lib/constants/repurpose";
 import { V1UsageLimitsCard } from "@/components/repurpose/v1-usage-limits-card";
+import {
+  ProviderBadge,
+  ProcessingStepTimeline,
+  QualityDiagnosticsPanel,
+  TranscriptPrecisionBadge,
+  getClipMetadata,
+} from "@/components/repurpose/quality-indicators";
 
 export function RepurposeIngestPage() {
   const { toast } = useToast();
@@ -69,6 +77,11 @@ export function RepurposeIngestPage() {
     setHighlightTone,
     highlightCallToAction,
     setHighlightCallToAction,
+    targetClipCount,
+    setTargetClipCount,
+    clipLengthPreset,
+    setClipLengthPreset,
+    lastHighlightAnalytics,
     handleIngestYouTube,
     handleAutoHighlights,
   } = useRepurposeIngest({
@@ -78,6 +91,7 @@ export function RepurposeIngestPage() {
   });
 
   const clipCount = project?.clips?.length ?? 0;
+  const transcriptPrecision = lastHighlightAnalytics?.transcriptPrecision ?? getClipMetadata(project?.clips?.[0]).boundaryPrecision ?? inferTranscriptPrecision(primaryAsset?.transcript);
   const activeStep = clipCount > 0 ? 1 : primaryAsset ? 0 : 0;
   const appliedSeedRef = useRef<string | null>(null);
   const seededIdea = useMemo(() => {
@@ -140,8 +154,8 @@ export function RepurposeIngestPage() {
     <div className="w-full space-y-6 pb-10 animate-enter">
       <PageHeader
         eyebrow="Create Clip"
-        title="Upload, detect, edit, export"
-        description="A guided V1 workspace for turning long-form recordings into branded short clips."
+        title="Turn long videos into viral-ready clips"
+        description="Upload a podcast, webinar, tutorial, interview, or YouTube video. ViralSnipAI finds timestamped moments, ranks them, and prepares social-ready clips."
         icon={Sparkles}
         actions={
           <div className="min-w-[240px]">
@@ -168,6 +182,60 @@ export function RepurposeIngestPage() {
           </div>
         }
       />
+
+      <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-slate-950 p-6 text-white shadow-2xl shadow-black/20">
+        <div className="absolute inset-x-20 top-0 h-32 rounded-full bg-gradient-to-r from-emerald-400/20 via-cyan-400/15 to-violet-400/15 blur-3xl" />
+        <div className="relative grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px] lg:items-center">
+          <div>
+            <div className="mb-4 flex flex-wrap gap-2">
+              <ProviderBadge provider="openai" label="OpenAI word timing" />
+              <ProviderBadge provider="openrouter" label="OpenRouter ranking" />
+              <TranscriptPrecisionBadge precision={transcriptPrecision} />
+            </div>
+            <h2 className="max-w-3xl text-3xl font-semibold tracking-tight md:text-4xl">
+              Upload once. Review precise AI clips in minutes.
+            </h2>
+            <p className="mt-3 max-w-2xl text-sm leading-6 text-white/65">
+              The V1 pipeline keeps timestamps deterministic: OpenAI handles timing, OpenRouter ranks creative potential, and local boundary refinement keeps clips aligned to real speech and scene cuts.
+            </p>
+            <div className="mt-5 flex flex-wrap gap-3">
+              <a href="#source-input" className="rounded-full bg-white px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-white/90">
+                Upload video
+              </a>
+              <a href="#source-input" className="rounded-full border border-white/15 bg-white/10 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/15">
+                Paste YouTube link
+              </a>
+              <button
+                type="button"
+                onClick={handleAutoHighlightsWithProgress}
+                disabled={!primaryAsset || highlightProgress.isActive}
+                className="rounded-full bg-gradient-to-r from-emerald-500 to-cyan-500 px-4 py-2 text-sm font-semibold text-white transition hover:opacity-95 disabled:opacity-45"
+              >
+                Start AI clipping
+              </button>
+            </div>
+          </div>
+          <div className="rounded-2xl border border-white/10 bg-white/[0.055] p-4">
+            <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-white/45">Project status</p>
+            <div className="mt-4 grid grid-cols-3 gap-3">
+              {[
+                ["Source", primaryAsset ? "Ready" : "Missing"],
+                ["Clips", clipCount],
+                ["Selected", selectedClipIds.length],
+              ].map(([label, value]) => (
+                <div key={label} className="rounded-xl border border-white/10 bg-black/20 p-3">
+                  <p className="text-[10px] uppercase tracking-widest text-white/40">{label}</p>
+                  <p className="mt-2 text-lg font-semibold">{value}</p>
+                </div>
+              ))}
+            </div>
+            <p className="mt-4 flex gap-2 rounded-xl border border-amber-400/20 bg-amber-400/10 p-3 text-xs leading-5 text-amber-100/85">
+              <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              Very long videos are automatically chunked for transcription. Upload high-quality source files for best clip boundaries.
+            </p>
+          </div>
+        </div>
+      </div>
 
       <Stepper
         activeIndex={activeStep}
@@ -233,7 +301,7 @@ export function RepurposeIngestPage() {
           <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_360px] lg:items-start">
 
             {/* ── LEFT: Source panel ─────────────────────────────────────────── */}
-            <AppCard className="space-y-5 p-6">
+            <AppCard id="source-input" className="space-y-5 p-6">
               <div>
                 <div className="flex items-center gap-2 mb-0.5">
                   <Youtube className="h-4 w-4 text-red-400" />
@@ -282,7 +350,7 @@ export function RepurposeIngestPage() {
               <div className="grid gap-3 text-xs text-muted-foreground sm:grid-cols-3">
                 <div className="rounded-2xl border border-border/70 bg-muted/30 p-3">Formats: MP4, MOV, WebM</div>
                 <div className="rounded-2xl border border-border/70 bg-muted/30 p-3">Max size: configured by plan</div>
-                <div className="rounded-2xl border border-border/70 bg-muted/30 p-3">Typical processing: 2-5 min</div>
+                <div className="rounded-2xl border border-border/70 bg-muted/30 p-3">Long videos: chunked safely</div>
               </div>
 
               {/* Upload dropzone */}
@@ -366,7 +434,7 @@ export function RepurposeIngestPage() {
               {/* Model selector */}
               <div className="space-y-1.5">
                 <label className="block text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/50">
-                  Detection Model
+                  OpenRouter reasoning model
                 </label>
                 <Select value={highlightModel} onValueChange={setHighlightModel}>
                   <SelectTrigger className="h-9 rounded-lg border-border/50 bg-background/60 text-sm">
@@ -378,6 +446,42 @@ export function RepurposeIngestPage() {
                     ))}
                   </SelectContent>
                 </Select>
+                <p className="text-[11px] text-muted-foreground/45">
+                  Transcription and timing use OpenAI automatically.
+                </p>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="space-y-1.5">
+                  <label className="block text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/50">
+                    Target clips
+                  </label>
+                  <Select value={String(targetClipCount)} onValueChange={(value) => setTargetClipCount(Number(value))}>
+                    <SelectTrigger className="h-9 rounded-lg border-border/50 bg-background/60 text-sm">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {[3, 4, 5, 6, 7, 8].map((count) => (
+                        <SelectItem key={count} value={String(count)}>{count} clips</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <label className="block text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/50">
+                    Clip length
+                  </label>
+                  <Select value={clipLengthPreset} onValueChange={(value) => setClipLengthPreset(value as typeof clipLengthPreset)}>
+                    <SelectTrigger className="h-9 rounded-lg border-border/50 bg-background/60 text-sm">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="short">Short · 18-30s</SelectItem>
+                      <SelectItem value="balanced">Balanced · 30-45s</SelectItem>
+                      <SelectItem value="detailed">Detailed · 45-58s</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
 
               {/* Highlight brief */}
@@ -437,6 +541,9 @@ export function RepurposeIngestPage() {
             <V1UsageLimitsCard />
             </div>
           </div>
+
+          <ProcessingStepTimeline active={highlightProgress.isActive} complete={Boolean(lastHighlightAnalytics || clipCount > 0)} />
+          <QualityDiagnosticsPanel analytics={lastHighlightAnalytics} />
 
           {/* ── Detected Highlights grid ─────────────────────────────────────── */}
           {clipCount > 0 && project && (
@@ -718,6 +825,16 @@ function scoreExplanation(viralityFactors: unknown) {
 
 function isExportComplete(status: string) {
   return status === "done" || status === "completed";
+}
+
+function inferTranscriptPrecision(transcript?: string | null) {
+  if (!transcript) return "none";
+  try {
+    const parsed = JSON.parse(transcript);
+    return typeof parsed?.precision === "string" ? parsed.precision : "segment";
+  } catch {
+    return "none";
+  }
 }
 
 // ─── Detection Progress Card ───────────────────────────────────────────────────

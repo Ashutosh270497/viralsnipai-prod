@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useToast } from "@/components/ui/use-toast";
 import { useProgress } from "@/hooks/use-progress";
 import { HIGHLIGHT_MODEL_OPTIONS } from "@/lib/constants/repurpose";
+import type { AutoHighlightsAnalytics } from "@/components/repurpose/quality-indicators";
 
 type UseRepurposeIngestArgs = {
   projectId: string;
@@ -37,6 +38,9 @@ export function useRepurposeIngest({
   const [highlightCallToAction, setHighlightCallToAction] = useState<string>(
     "Drive viewers to subscribe or click through"
   );
+  const [targetClipCount, setTargetClipCount] = useState<number>(5);
+  const [clipLengthPreset, setClipLengthPreset] = useState<"short" | "balanced" | "detailed">("balanced");
+  const [lastHighlightAnalytics, setLastHighlightAnalytics] = useState<AutoHighlightsAnalytics | null>(null);
 
   const pollTimerRef = useRef<NodeJS.Timeout | null>(null);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -85,6 +89,7 @@ export function useRepurposeIngest({
           audience: highlightAudience,
           tone: highlightTone,
           callToAction: highlightCallToAction,
+          target: targetClipCount,
         }),
         cache: "no-store",
         next: { revalidate: 0 },
@@ -92,6 +97,8 @@ export function useRepurposeIngest({
       if (!response.ok) {
         throw new Error("Failed to generate highlights");
       }
+      const payload = await response.json().catch(() => null);
+      setLastHighlightAnalytics(payload?.data?.analytics ?? null);
       toast({ title: "Highlights detected", description: "Review clips in Editor." });
       await onProjectRefresh();
       highlightProgress.complete();
@@ -109,6 +116,7 @@ export function useRepurposeIngest({
     highlightTone,
     onProjectRefresh,
     primaryAssetId,
+    targetClipCount,
     toast,
   ]);
 
@@ -272,6 +280,11 @@ export function useRepurposeIngest({
     setHighlightTone,
     highlightCallToAction,
     setHighlightCallToAction,
+    targetClipCount,
+    setTargetClipCount,
+    clipLengthPreset,
+    setClipLengthPreset,
+    lastHighlightAnalytics,
     handleIngestYouTube,
     handleAutoHighlights,
   };

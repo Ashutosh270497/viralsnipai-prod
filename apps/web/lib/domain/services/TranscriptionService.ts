@@ -136,12 +136,13 @@ export class TranscriptionService {
       const parsed = this.parseTranscript(existingTranscript);
       const needsPrecision =
         options?.forceRetranscribeOnUntimed &&
-        (!this.hasTimedSegments(parsed) || parsed.precision === 'none' || parsed.precision === 'approximate');
+        parsed.precision !== 'word';
 
       if (needsPrecision) {
-        logger.warn('Existing transcript has insufficient timing data, re-transcribing source with OpenAI', {
+        logger.warn('Existing transcript is below V1 word-level precision, re-transcribing source with OpenAI', {
           filePath,
-          precision: parsed.precision ?? 'unknown',
+          oldPrecision: parsed.precision ?? 'unknown',
+          reason: 'V1 clip generation requires word-level transcript timestamps when forceRetranscribeOnUntimed is enabled.',
         });
         return await this.transcribe(filePath, options);
       }

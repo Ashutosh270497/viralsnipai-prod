@@ -13,6 +13,14 @@ import { TranslationsList } from "@/components/repurpose/translations-list";
 import { VoiceTranslationsList } from "@/components/repurpose/voice-translations-list";
 import { cn } from "@/lib/utils";
 import { EXPORT_PRESETS } from "@clippers/types";
+import {
+  BoundaryConfidenceBadge,
+  ClipTypeBadge,
+  EmptyStateCard,
+  PlatformFitChips,
+  ViralityScoreBadge,
+  getClipMetadata,
+} from "@/components/repurpose/quality-indicators";
 
 /** Compute a human-readable ratio string from pixel dimensions (e.g. 1080×1920 → "9:16") */
 function ratioLabel(w: number, h: number): string {
@@ -134,6 +142,11 @@ export default function RepurposeExportPage() {
   const sourceLang =
     normalizedLang && /^[a-z]{2}(-[a-z]{2})?$/.test(normalizedLang) ? normalizedLang : "en";
   const doneExports = project.exports.filter((e) => e.status === "done");
+  const selectedClips = project.clips.filter((clip) => selectedClipIds.includes(clip.id));
+  const exportReadyClips = selectedClips.length > 0 ? selectedClips : project.clips;
+  const estimatedDurationSec = Math.round(
+    exportReadyClips.reduce((sum, clip) => sum + Math.max(0, clip.endMs - clip.startMs), 0) / 1000
+  );
   const selectedClipsHaveHookOverlays = selectedClipIds.some((clipId) => {
     const clip = project.clips.find((entry) => entry.id === clipId);
     return Boolean(clip?.captionStyle?.hookOverlays?.length);
@@ -144,8 +157,8 @@ export default function RepurposeExportPage() {
     <div className="w-full space-y-5 pb-10">
       <PageHeader
         eyebrow="Export"
-        title="Export queue"
-        description="Choose formats, monitor rendering status, and download completed short-form MP4s."
+        title="Publish center"
+        description="Choose platform presets, batch render approved clips, monitor failures, and download social-ready assets."
         icon={Download}
         actions={
           <div className="flex items-center gap-2">
@@ -169,6 +182,32 @@ export default function RepurposeExportPage() {
           </div>
         }
       />
+
+      <div className="grid gap-4 lg:grid-cols-4">
+        {[
+          ["Export-ready clips", exportReadyClips.length],
+          ["Selected clips", selectedClipIds.length],
+          ["Total duration", `${estimatedDurationSec}s`],
+          ["Ready downloads", doneExports.length],
+        ].map(([label, value]) => (
+          <div key={label} className="rounded-2xl border border-border/60 bg-card/60 p-4">
+            <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/50">{label}</p>
+            <p className="mt-2 text-2xl font-semibold">{value}</p>
+          </div>
+        ))}
+      </div>
+
+      {project.clips.length === 0 ? (
+        <EmptyStateCard
+          title="No export-ready clips yet"
+          description="Run AI clipping first, then approve clips in the editor before rendering MP4s."
+          action={
+            <Link href={`/repurpose?projectId=${project.id}`} className="inline-flex rounded-full bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground">
+              Start AI clipping
+            </Link>
+          }
+        />
+      ) : null}
 
       {/* ── Main grid ────────────────────────────────────────────────────────── */}
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_400px] lg:items-start">
@@ -224,6 +263,45 @@ export default function RepurposeExportPage() {
               clipTitle={previewClip?.title}
               captionAnimationType={selectedCaptionAnimationType}
             />
+          </AppCard>
+
+          <AppCard className="p-6">
+            <div className="mb-4 flex items-center justify-between">
+              <div>
+                <h2 className="text-base font-semibold">Export-ready queue</h2>
+                <p className="mt-1 text-sm text-muted-foreground/65">
+                  Review selected clips before batch rendering.
+                </p>
+              </div>
+              <span className="rounded-full border border-border/60 bg-muted/30 px-2.5 py-1 text-[11px] font-semibold text-muted-foreground">
+                {exportReadyClips.length} clips
+              </span>
+            </div>
+            <div className="space-y-2">
+              {exportReadyClips.slice(0, 6).map((clip, index) => {
+                const metadata = getClipMetadata(clip);
+                return (
+                  <div key={clip.id} className="rounded-xl border border-border/60 bg-muted/20 p-3">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold">{clip.title || `Clip ${index + 1}`}</p>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          {Math.round((clip.endMs - clip.startMs) / 1000)}s · {clip.summary || "Social-ready clip"}
+                        </p>
+                      </div>
+                      <div className="flex shrink-0 flex-wrap gap-1.5">
+                        <ViralityScoreBadge score={clip.viralityScore} />
+                        <BoundaryConfidenceBadge confidence={metadata.boundaryConfidence} />
+                        <ClipTypeBadge type={metadata.candidateType} />
+                      </div>
+                    </div>
+                    <div className="mt-3">
+                      <PlatformFitChips platformFit={metadata.platformFit} />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </AppCard>
 
           {/* Translation card */}

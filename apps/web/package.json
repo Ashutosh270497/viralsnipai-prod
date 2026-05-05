@@ -20,6 +20,7 @@
     "snipradar:load": "k6 run scripts/load/snipradar-api.k6.js",
     "snipradar:load:node": "node scripts/load/snipradar-api-load.js",
     "snipradar:smoke": "node scripts/snipradar-smoke.js",
+    "repurpose:boundary-check": "tsx scripts/repurpose-provider-boundary-check.ts",
     "repurpose:smoke": "node scripts/repurpose-smoke.js",
     "repurpose:test": "playwright test tests/flow.spec.ts --workers=1",
     "clean": "rm -rf .next .swc test-results coverage",

@@ -56,6 +56,106 @@ const CaptionCleanupSchema = z.object({
   warnings: z.array(z.string()).default([]),
 });
 
+const RerankJsonSchema = {
+  name: "clip_candidate_rerank",
+  strict: true,
+  schema: {
+    type: "object",
+    additionalProperties: false,
+    required: ["selected", "overallWarnings"],
+    properties: {
+      selected: {
+        type: "array",
+        items: {
+          type: "object",
+          additionalProperties: true,
+          required: ["candidateId", "rank", "title", "hook", "llmScore", "viralReason", "platformFit"],
+          properties: {
+            candidateId: { type: "string" },
+            rank: { type: "integer", minimum: 1 },
+            title: { type: "string" },
+            hook: { type: "string" },
+            callToAction: { type: ["string", "null"] },
+            llmScore: { type: "number", minimum: 0, maximum: 100 },
+            viralReason: { type: "string" },
+            editingNotes: { type: "array", items: { type: "string" } },
+            platformFit: {
+              type: "object",
+              additionalProperties: false,
+              required: ["youtubeShorts", "instagramReels", "tiktok", "x"],
+              properties: {
+                youtubeShorts: { type: "number", minimum: 0, maximum: 100 },
+                instagramReels: { type: "number", minimum: 0, maximum: 100 },
+                tiktok: { type: "number", minimum: 0, maximum: 100 },
+                x: { type: "number", minimum: 0, maximum: 100 },
+              },
+            },
+          },
+        },
+      },
+      overallWarnings: { type: "array", items: { type: "string" } },
+    },
+  },
+} as const;
+
+const ViralityJsonSchema = {
+  name: "clip_virality_score",
+  strict: true,
+  schema: {
+    type: "object",
+    additionalProperties: false,
+    required: ["score", "factors", "reasoning", "improvements"],
+    properties: {
+      score: { type: "number", minimum: 0, maximum: 100 },
+      factors: {
+        type: "object",
+        additionalProperties: false,
+        required: ["hookStrength", "emotionalPeak", "storyArc", "pacing", "transcriptQuality", "shareability"],
+        properties: {
+          hookStrength: { type: "number", minimum: 0, maximum: 100 },
+          emotionalPeak: { type: "number", minimum: 0, maximum: 100 },
+          storyArc: { type: "number", minimum: 0, maximum: 100 },
+          pacing: { type: "number", minimum: 0, maximum: 100 },
+          transcriptQuality: { type: "number", minimum: 0, maximum: 100 },
+          shareability: { type: "number", minimum: 0, maximum: 100 },
+        },
+      },
+      reasoning: { type: "string" },
+      improvements: { type: "array", items: { type: "string" } },
+    },
+  },
+} as const;
+
+const MetadataJsonSchema = {
+  name: "clip_metadata",
+  strict: true,
+  schema: {
+    type: "object",
+    additionalProperties: false,
+    required: ["title", "hook", "callToAction", "summary"],
+    properties: {
+      title: { type: "string" },
+      hook: { type: "string" },
+      callToAction: { type: ["string", "null"] },
+      summary: { type: "string" },
+    },
+  },
+} as const;
+
+const CaptionCleanupJsonSchema = {
+  name: "caption_cleanup",
+  strict: true,
+  schema: {
+    type: "object",
+    additionalProperties: false,
+    required: ["text", "warnings"],
+    properties: {
+      text: { type: "string" },
+      warnings: { type: "array", items: { type: "string" } },
+    },
+  },
+} as const;
+
 export type ClipRerankSelection = z.infer<typeof RerankResponseSchema>["selected"][number] & {
   finalScore: number;
 };
@@ -76,6 +176,8 @@ export async function openRouterJson<T>(
     system: string;
     user: unknown;
     schema: z.ZodType<T>;
+    jsonSchema?: Record<string, unknown>;
+    structuredMode?: "json_schema" | "json_object" | "auto";
     temperature?: number;
     maxTokens?: number;
   }
@@ -87,63 +189,77 @@ export async function openRouterJson<T>(
 
   let lastError: unknown = null;
   const attempts = Math.max(1, OPENROUTER_MAX_RETRIES + 1);
+  const modes = getStructuredModes(params.structuredMode ?? "auto", params.jsonSchema);
 
   for (let attempt = 0; attempt < attempts; attempt += 1) {
-    const startedAt = Date.now();
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), OPENROUTER_TIMEOUT_MS);
-    try {
-      const response = await fetch(`${OPENROUTER_BASE_URL}/chat/completions`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          "Content-Type": "application/json",
-          "HTTP-Referer": OPENROUTER_SITE_URL,
-          "X-OpenRouter-Title": OPENROUTER_APP_NAME,
-        },
-        body: JSON.stringify({
+    for (const mode of modes) {
+      const startedAt = Date.now();
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), OPENROUTER_TIMEOUT_MS);
+      try {
+        const response = await fetch(`${OPENROUTER_BASE_URL}/chat/completions`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            "Content-Type": "application/json",
+            "HTTP-Referer": OPENROUTER_SITE_URL,
+            "X-OpenRouter-Title": OPENROUTER_APP_NAME,
+          },
+          body: JSON.stringify({
+            model: params.model,
+            messages: [
+              { role: "system", content: params.system },
+              { role: "user", content: typeof params.user === "string" ? params.user : JSON.stringify(params.user) },
+            ],
+            response_format: buildResponseFormat(mode, params.jsonSchema),
+            temperature: params.temperature ?? 0.2,
+            max_tokens: params.maxTokens ?? 4000,
+            stream: false,
+          }),
+          signal: controller.signal,
+        });
+
+        const payload = await response.json().catch(() => null);
+        if (!response.ok) {
+          const message = payload?.error?.message ?? response.statusText;
+          const error = new OpenRouterReasoningError(message, response.status, mode);
+          if (mode === "json_schema" && isJsonSchemaUnsupported(error) && modes.includes("json_object")) {
+            logger.warn("OpenRouter JSON schema mode unsupported; falling back to json_object", {
+              model: params.model,
+              status: response.status,
+              error: message,
+            });
+            continue;
+          }
+          throw error;
+        }
+
+        const raw = extractMessageContent(payload);
+        const parsed = parseJsonObject(raw);
+        const data = params.schema.parse(parsed);
+        const latencyMs = Date.now() - startedAt;
+        logger.info("OpenRouter reasoning completed", {
           model: params.model,
-          messages: [
-            { role: "system", content: params.system },
-            { role: "user", content: typeof params.user === "string" ? params.user : JSON.stringify(params.user) },
-          ],
-          response_format: { type: "json_object" },
-          temperature: params.temperature ?? 0.2,
-          max_tokens: params.maxTokens ?? 4000,
-          stream: false,
-        }),
-        signal: controller.signal,
-      });
-
-      const payload = await response.json().catch(() => null);
-      if (!response.ok) {
-        const message = payload?.error?.message ?? response.statusText;
-        throw new OpenRouterReasoningError(message, response.status);
+          structuredMode: mode,
+          latencyMs,
+        });
+        return { data, model: params.model, latencyMs };
+      } catch (error) {
+        lastError = error;
+        const retryable = isRetryableOpenRouterError(error);
+        logger.warn("OpenRouter reasoning attempt failed", {
+          model: params.model,
+          structuredMode: mode,
+          attempt: attempt + 1,
+          retryable,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        if (!retryable || attempt >= attempts - 1) break;
+      } finally {
+        clearTimeout(timeout);
       }
-
-      const raw = extractMessageContent(payload);
-      const parsed = parseJsonObject(raw);
-      const data = params.schema.parse(parsed);
-      const latencyMs = Date.now() - startedAt;
-      logger.info("OpenRouter reasoning completed", {
-        model: params.model,
-        latencyMs,
-      });
-      return { data, model: params.model, latencyMs };
-    } catch (error) {
-      lastError = error;
-      const retryable = isRetryableOpenRouterError(error);
-      logger.warn("OpenRouter reasoning attempt failed", {
-        model: params.model,
-        attempt: attempt + 1,
-        retryable,
-        error: error instanceof Error ? error.message : String(error),
-      });
-      if (!retryable || attempt >= attempts - 1) break;
-      await sleep(650 * 2 ** attempt);
-    } finally {
-      clearTimeout(timeout);
     }
+    if (attempt < attempts - 1) await sleep(650 * 2 ** attempt);
   }
 
   throw lastError instanceof Error ? lastError : new Error("OpenRouter reasoning failed.");
@@ -168,6 +284,7 @@ export async function rerankClipCandidates(params: {
   const result = await openRouterJson({
     model,
     schema: RerankResponseSchema,
+    jsonSchema: RerankJsonSchema,
     system: [
       "You rerank precomputed short-video clip candidates.",
       "You may only select candidate IDs from the provided list.",
@@ -253,6 +370,7 @@ export async function scoreClipVirality(params: {
   const result = await openRouterJson({
     model,
     schema: ViralitySchema,
+    jsonSchema: ViralityJsonSchema,
     system: [
       "You score short-form clip virality from provided transcript text and quality signals.",
       "Do not create, infer, modify, or discuss clip timestamps.",
@@ -282,6 +400,7 @@ export async function generateClipMetadata(params: {
   const result = await openRouterJson({
     model,
     schema: MetadataSchema,
+    jsonSchema: MetadataJsonSchema,
     system: "Generate short-video metadata. Never output timestamps.",
     user: params,
     maxTokens: 1200,
@@ -296,6 +415,7 @@ export async function cleanupCaptionText(params: { text: string; model?: string 
   const result = await openRouterJson({
     model,
     schema: CaptionCleanupSchema,
+    jsonSchema: CaptionCleanupJsonSchema,
     system: "Clean caption text for readability without changing meaning. Never output timestamps.",
     user: params,
     maxTokens: 1200,
@@ -312,10 +432,26 @@ export function normalizeOpenRouterModel(model: string): string {
 }
 
 class OpenRouterReasoningError extends Error {
-  constructor(message: string, readonly status?: number) {
+  constructor(message: string, readonly status?: number, readonly structuredMode?: string) {
     super(message);
     this.name = "OpenRouterReasoningError";
   }
+}
+
+function getStructuredModes(mode: "json_schema" | "json_object" | "auto", jsonSchema?: Record<string, unknown>) {
+  if (mode === "json_schema") return jsonSchema ? ["json_schema" as const] : ["json_object" as const];
+  if (mode === "json_object") return ["json_object" as const];
+  return jsonSchema ? ["json_schema" as const, "json_object" as const] : ["json_object" as const];
+}
+
+function buildResponseFormat(mode: "json_schema" | "json_object", jsonSchema?: Record<string, unknown>) {
+  if (mode === "json_schema" && jsonSchema) {
+    return {
+      type: "json_schema",
+      json_schema: jsonSchema,
+    };
+  }
+  return { type: "json_object" };
 }
 
 function extractMessageContent(body: unknown): string {
@@ -334,9 +470,30 @@ function parseJsonObject(raw: string): unknown {
   } catch {
     const start = stripped.indexOf("{");
     const end = stripped.lastIndexOf("}");
-    if (start >= 0 && end > start) return JSON.parse(stripped.slice(start, end + 1));
+    if (start >= 0 && end > start) return JSON.parse(repairJson(stripped.slice(start, end + 1)));
+    try {
+      return JSON.parse(repairJson(stripped));
+    } catch {
+      // Throw the clearer domain-specific error below.
+    }
     throw new Error("OpenRouter response did not contain valid JSON.");
   }
+}
+
+function repairJson(value: string) {
+  return value
+    .replace(/,\s*([}\]])/g, "$1")
+    .replace(/[\u0000-\u001F]+/g, " ");
+}
+
+function isJsonSchemaUnsupported(error: OpenRouterReasoningError) {
+  const message = error.message.toLowerCase();
+  return error.status === 400 && (
+    message.includes("response_format") ||
+    message.includes("json_schema") ||
+    message.includes("schema") ||
+    message.includes("unsupported")
+  );
 }
 
 function isRetryableOpenRouterError(error: unknown): boolean {
