@@ -233,6 +233,7 @@ export async function openRouterJson<T>(params: {
   structuredMode?: "json_schema" | "json_object" | "auto";
   temperature?: number;
   maxTokens?: number;
+  timeoutMs?: number;
 }): Promise<{ data: T; model: string; latencyMs: number }> {
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) {
@@ -247,7 +248,11 @@ export async function openRouterJson<T>(params: {
     for (const mode of modes) {
       const startedAt = Date.now();
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), OPENROUTER_TIMEOUT_MS);
+      const requestTimeoutMs =
+        typeof params.timeoutMs === "number" && Number.isFinite(params.timeoutMs)
+          ? params.timeoutMs
+          : OPENROUTER_TIMEOUT_MS;
+      const timeout = setTimeout(() => controller.abort(), requestTimeoutMs);
       try {
         const response = await fetch(`${OPENROUTER_BASE_URL}/chat/completions`, {
           method: "POST",

@@ -49,6 +49,7 @@ const DEFAULT_MODELS = {
   virality: process.env.OPENROUTER_VIRALITY_MODEL ?? "google/gemini-3.1-flash-lite-preview",
   metadata: process.env.OPENROUTER_METADATA_MODEL ?? "google/gemini-3.1-flash-lite-preview",
   caption: process.env.OPENROUTER_CAPTION_MODEL ?? "google/gemini-3.1-flash-lite-preview",
+  promptGenerator: process.env.OPENROUTER_PROMPT_GENERATOR_MODEL ?? "openai/gpt-5.2",
 };
 
 const BEST_QUALITY_FALLBACK_MODELS = [
@@ -56,6 +57,8 @@ const BEST_QUALITY_FALLBACK_MODELS = [
   "google/gemini-3.1-pro-preview",
   "qwen/qwen3.6-plus",
 ];
+
+const PROMPT_GENERATOR_TIMEOUT_MS = Number(process.env.OPENROUTER_PROMPT_GENERATOR_TIMEOUT_MS ?? 90_000);
 
 export function resolveModelPolicy(input: ResolveModelPolicyInput): ModelPolicy {
   const isDev = input.isDev ?? process.env.NODE_ENV !== "production";
@@ -122,7 +125,29 @@ export function resolveModelPolicy(input: ResolveModelPolicyInput): ModelPolicy 
     });
   }
 
-  if (input.task === "clip_metadata" || input.task === "prompt_clip_intent") {
+  if (input.task === "prompt_clip_intent") {
+    const fallbackModels = promptGeneratorFallbackModels(effectiveQuality);
+    return buildPolicy({
+      task: input.task,
+      qualityMode: effectiveQuality,
+      userPlan,
+      primaryModel: effectiveQuality === "best"
+        ? DEFAULT_MODELS.best
+        : effectiveQuality === "fast"
+          ? DEFAULT_MODELS.fast
+          : DEFAULT_MODELS.promptGenerator,
+      fallbackModels,
+      maxTokens: 1600,
+      temperature: 0.3,
+      timeoutMs: Number.isFinite(PROMPT_GENERATOR_TIMEOUT_MS)
+        ? PROMPT_GENERATOR_TIMEOUT_MS
+        : 90_000,
+      costTier: effectiveQuality === "best" ? "high" : effectiveQuality === "balanced" ? "medium" : "low",
+      reason: `${reasonParts.join(" ")} Prompt generation uses task-specific routing and timeout.`,
+    });
+  }
+
+  if (input.task === "clip_metadata") {
     return buildPolicy({
       task: input.task,
       qualityMode: effectiveQuality,
@@ -153,6 +178,28 @@ export function resolveModelPolicy(input: ResolveModelPolicyInput): ModelPolicy 
     costTier: "low",
     reason: reasonParts.join(" "),
   });
+}
+
+function splitModelList(value?: string | null): string[] {
+  return (value ?? "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function promptGeneratorFallbackModels(qualityMode: QualityMode) {
+  const envFallbacks = splitModelList(process.env.OPENROUTER_PROMPT_GENERATOR_FALLBACK_MODELS);
+  if (envFallbacks.length > 0) return envFallbacks;
+
+  if (qualityMode === "best") {
+    return ["openai/gpt-5.2", DEFAULT_MODELS.fast, "qwen/qwen3.6-plus"];
+  }
+
+  if (qualityMode === "balanced") {
+    return [DEFAULT_MODELS.fast, "qwen/qwen3.6-plus"];
+  }
+
+  return ["qwen/qwen3.6-plus"];
 }
 
 export function canUseModelDebug(params?: {

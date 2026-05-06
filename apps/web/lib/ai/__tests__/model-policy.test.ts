@@ -30,6 +30,29 @@ describe("model policy", () => {
     expect(metadata.primaryModel).toBe("anthropic/claude-sonnet-4.6");
   });
 
+  it("routes prompt generation through prompt_clip_intent with task-specific timeout", () => {
+    const balanced = resolveModelPolicy({
+      task: "prompt_clip_intent",
+      qualityMode: "balanced",
+      userPlan: "pro",
+    });
+    expect(balanced.primaryModel).toBe("openai/gpt-5.2");
+    expect(balanced.timeoutMs).toBe(90_000);
+    expect(balanced.provider).toBe("openrouter");
+
+    const best = resolveModelPolicy({
+      task: "prompt_clip_intent",
+      qualityMode: "best",
+      userPlan: "pro",
+    });
+    expect(best.primaryModel).toBe("anthropic/claude-sonnet-4.6");
+    expect(best.fallbackModels).toEqual([
+      "openai/gpt-5.2",
+      "google/gemini-3-flash-preview",
+      "qwen/qwen3.6-plus",
+    ]);
+  });
+
   it("caps best quality for free users", () => {
     const policy = resolveModelPolicy({ task: "highlight_rerank", qualityMode: "best", userPlan: "free" });
     expect(policy.qualityMode).toBe("balanced");

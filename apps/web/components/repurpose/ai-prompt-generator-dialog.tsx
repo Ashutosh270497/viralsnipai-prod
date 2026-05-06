@@ -33,6 +33,10 @@ interface AIPromptGeneratorDialogProps {
   onPromptsGenerated: (prompts: Omit<GeneratedPrompts, "reasoning">) => void;
   transcript?: string | null;
   videoTitle?: string;
+  qualityMode?: "fast" | "balanced" | "best";
+  clipIntent?: string;
+  transcriptPrecision?: string;
+  videoDurationSec?: number | null;
 }
 
 const PLATFORMS = [
@@ -46,6 +50,10 @@ export function AIPromptGeneratorDialog({
   onPromptsGenerated,
   transcript,
   videoTitle,
+  qualityMode,
+  clipIntent,
+  transcriptPrecision,
+  videoDurationSec,
 }: AIPromptGeneratorDialogProps) {
   const { toast } = useToast();
   const [open, setOpen] = useState(false);
@@ -76,31 +84,47 @@ export function AIPromptGeneratorDialog({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          transcript: transcript!.slice(0, 12000),
+          transcript: transcript!,
           videoTitle: videoTitle || undefined,
           platform,
           customInstructions: customInstructions || undefined,
+          qualityMode,
+          clipIntent,
+          transcriptPrecision: normalizeTranscriptPrecision(transcriptPrecision),
+          videoDurationSec,
         }),
       });
 
       if (!response.ok) {
-        throw new Error("Failed to generate prompts");
+        const data = await response.json().catch(() => null);
+        throw new Error(data?.error ?? "AI prompt generation is temporarily unavailable. You can still generate clips manually.");
       }
 
       const data = await response.json();
       setGeneratedPrompts(data.prompts);
 
-      toast({
-        title: "Prompts generated from video analysis",
-        description:
-          "Review the prompts below — they're tailored to your video content.",
-      });
+      if (data.source === "local_fallback") {
+        toast({
+          title: "Fallback prompts prepared",
+          description:
+            data.warning ?? "AI generation was unavailable, so we created editable prompts from your transcript.",
+        });
+      } else {
+        toast({
+          title: "Clip goals suggested",
+          description:
+            "Review the suggestions below — they're tailored to your video content.",
+        });
+      }
     } catch (error) {
       console.error(error);
       toast({
         variant: "destructive",
-        title: "Generation failed",
-        description: "Could not generate prompts. Please try again.",
+        title: "Prompt helper unavailable",
+        description:
+          error instanceof Error
+            ? error.message
+            : "AI prompt generation is temporarily unavailable. You can still generate clips manually.",
       });
     } finally {
       setLoading(false);
@@ -137,17 +161,17 @@ export function AIPromptGeneratorDialog({
           disabled={!hasTranscript}
         >
           <Sparkles className="mr-2 h-4 w-4" />
-          AI Generate Prompts
+          Auto-fill goals
         </Button>
       </DialogTrigger>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Wand2 className="h-5 w-5 text-violet-600" />
-            AI Prompt Generator
+            Suggest clip goals from this video
           </DialogTitle>
           <DialogDescription>
-            Analyzes your video transcript to create optimized detection prompts.
+            Optional helper that analyzes the transcript and fills in editable goals for clipping.
           </DialogDescription>
         </DialogHeader>
 
@@ -219,7 +243,7 @@ export function AIPromptGeneratorDialog({
             ) : (
               <>
                 <Sparkles className="mr-2 h-4 w-4" />
-                Analyze Video & Generate Prompts
+                Analyze transcript
               </>
             )}
           </Button>
@@ -229,14 +253,14 @@ export function AIPromptGeneratorDialog({
             <div className="space-y-4 rounded-xl border-2 border-violet-200 bg-gradient-to-br from-violet-50/80 to-purple-50/60 p-5 dark:border-violet-800 dark:from-violet-950/50 dark:to-purple-950/40">
               <div className="flex items-start justify-between">
                 <h3 className="text-sm font-semibold text-violet-900 dark:text-violet-100">
-                  Generated Prompts
+                  Suggested clip goals
                 </h3>
                 <Button
                   onClick={handleApply}
                   size="sm"
                   className="h-8 rounded-lg bg-violet-600 hover:bg-violet-700"
                 >
-                  Apply All
+                  Apply suggestions
                 </Button>
               </div>
 
@@ -274,4 +298,14 @@ export function AIPromptGeneratorDialog({
       </DialogContent>
     </Dialog>
   );
+}
+
+function normalizeTranscriptPrecision(value?: string) {
+  return value === "word" ||
+    value === "segment" ||
+    value === "diarized_segment" ||
+    value === "approximate" ||
+    value === "none"
+    ? value
+    : undefined;
 }

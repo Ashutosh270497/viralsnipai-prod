@@ -323,6 +323,8 @@ export function RepurposeIngestPage() {
               highlightCallToAction={highlightCallToAction}
               setHighlightCallToAction={setHighlightCallToAction}
               primaryAssetTranscript={primaryAsset?.transcript}
+              primaryAssetDurationSec={primaryAsset?.durationSec ?? null}
+              transcriptPrecision={transcriptPrecision}
               projectTitle={project?.title}
               onPromptsGenerated={(prompts: GeneratedPromptSet) => {
                 setHighlightBrief(prompts.brief);
@@ -654,6 +656,8 @@ function GoalsStage({
   highlightCallToAction,
   setHighlightCallToAction,
   primaryAssetTranscript,
+  primaryAssetDurationSec,
+  transcriptPrecision,
   projectTitle,
   onPromptsGenerated,
   onBack,
@@ -747,6 +751,10 @@ function GoalsStage({
               <AIPromptGeneratorDialog
                 transcript={primaryAssetTranscript}
                 videoTitle={projectTitle}
+                qualityMode={qualityMode}
+                clipIntent={clipIntent}
+                transcriptPrecision={transcriptPrecision}
+                videoDurationSec={primaryAssetDurationSec}
                 onPromptsGenerated={onPromptsGenerated}
               />
             </div>
