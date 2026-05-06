@@ -25,6 +25,7 @@ import {
 import { UploadDropzone } from "@/components/upload/upload-dropzone";
 import { AIPromptGeneratorDialog } from "@/components/repurpose/ai-prompt-generator-dialog";
 import { useRepurpose } from "@/components/repurpose/repurpose-context";
+import { SafeThumbnailImage } from "@/components/repurpose/safe-thumbnail-image";
 import { Button } from "@/components/ui/button";
 import { AppCard, EmptyState, PageHeader, Stepper } from "@/components/product-ui/primitives";
 import { cn, formatDuration } from "@/lib/utils";
@@ -611,8 +612,11 @@ export function RepurposeIngestPage() {
                               preload="metadata"
                             />
                           ) : clip.thumbnail ? (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img src={clip.thumbnail} alt="" className="h-full w-full object-cover" />
+                            <SafeThumbnailImage
+                              src={clip.thumbnail}
+                              alt={clip.title || `Clip ${index + 1} thumbnail`}
+                              className="absolute inset-0 aspect-auto"
+                            />
                           ) : (
                             <div className="flex h-full items-center justify-center">
                               <Sparkles className="h-7 w-7 text-white/15" />

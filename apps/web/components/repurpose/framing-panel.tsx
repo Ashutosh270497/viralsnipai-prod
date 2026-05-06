@@ -16,6 +16,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/components/ui/use-toast";
+import { SafeThumbnailImage, normalizeThumbnailSrc } from "@/components/repurpose/safe-thumbnail-image";
 import { cn } from "@/lib/utils";
 import type { SmartReframeMode, SmartReframePlan, CropKeyframe } from "@/lib/media/smart-reframe";
 import {
@@ -128,36 +129,41 @@ function LayoutCropPreview({
   const sourceAspectRatio = getSourceAspectRatio(sourceWidth, sourceHeight);
   const crop = normalizeCropBox(layout.cropBox, buildCenteredCropBox(layout.aspectRatio, sourceAspectRatio));
   const previewRatio = ASPECT_RATIO_PRESETS[layout.aspectRatio].ratio ?? sourceAspectRatio;
+  const safeThumbnail = normalizeThumbnailSrc(thumbnail);
 
   return (
     <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_96px]">
       <div className="relative overflow-hidden rounded-lg bg-zinc-950" style={{ aspectRatio: `${sourceAspectRatio}` }}>
-        {thumbnail ? (
-          <Image src={thumbnail} alt="Manual crop preview" fill className="object-cover opacity-70" unoptimized />
-        ) : (
-          <div className="absolute inset-0 bg-zinc-800" />
-        )}
-        <div className="absolute inset-0 bg-black/45" />
-        <div
-          className="absolute border-2 border-cyan-400 bg-cyan-400/10 shadow-[0_0_0_9999px_rgba(0,0,0,0.52)]"
-          style={{
-            left: `${crop.x * 100}%`,
-            top: `${crop.y * 100}%`,
-            width: `${crop.width * 100}%`,
-            height: `${crop.height * 100}%`,
-          }}
+        <SafeThumbnailImage
+          src={thumbnail}
+          alt="Manual crop preview"
+          className="absolute inset-0 aspect-auto bg-zinc-950"
+          imageClassName="opacity-70"
+          fallbackIcon={<div className="absolute inset-0 bg-zinc-800" />}
         >
-          <div className="absolute inset-x-0 bottom-[20%] border-t border-red-400/70 border-dashed" />
-          <div className="absolute inset-x-0 top-[10%] border-t border-amber-300/60 border-dashed" />
+          <div className="absolute inset-0 bg-black/45" />
+          <div
+            className="absolute border-2 border-cyan-400 bg-cyan-400/10 shadow-[0_0_0_9999px_rgba(0,0,0,0.52)]"
+            style={{
+              left: `${crop.x * 100}%`,
+              top: `${crop.y * 100}%`,
+              width: `${crop.width * 100}%`,
+              height: `${crop.height * 100}%`,
+            }}
+          >
+            <div className="absolute inset-x-0 bottom-[20%] border-t border-red-400/70 border-dashed" />
+            <div className="absolute inset-x-0 top-[10%] border-t border-amber-300/60 border-dashed" />
+          </div>
+        </SafeThumbnailImage>
         </div>
-      </div>
       <div className="relative mx-auto h-40 overflow-hidden rounded-xl border border-border/50 bg-zinc-950" style={{ aspectRatio: `${previewRatio}` }}>
-        {thumbnail ? (
+        {safeThumbnail ? (
           <Image
-            src={thumbnail}
+            src={safeThumbnail}
             alt="Output frame"
-            fill
-            className="object-cover"
+            width={sourceWidth ?? 1600}
+            height={sourceHeight ?? 900}
+            className="absolute max-w-none object-cover"
             style={{
               width: `${100 / crop.width}%`,
               height: `${100 / crop.height}%`,
@@ -205,22 +211,15 @@ function CropWindowPreview({
 
   return (
     <div className="space-y-1.5">
-      <div
-        className="relative overflow-hidden rounded-lg bg-zinc-950"
-        style={{ aspectRatio: `${vbW}/${vbH}` }}
-      >
+      <div className="relative overflow-hidden rounded-lg bg-zinc-950" style={{ aspectRatio: `${vbW}/${vbH}` }}>
         {/* Thumbnail background */}
-        {thumbnail ? (
-          <Image
-            src={thumbnail}
-            alt="Clip frame"
-            fill
-            className={cn("object-cover", showTrackingOverlay || showSafeZoneOverlay ? "opacity-55" : "opacity-80")}
-            unoptimized
-          />
-        ) : (
-          <div className="absolute inset-0 bg-zinc-800" />
-        )}
+        <SafeThumbnailImage
+          src={thumbnail}
+          alt="Clip frame"
+          className="absolute inset-0 aspect-auto bg-zinc-950"
+          imageClassName={cn("object-cover", showTrackingOverlay || showSafeZoneOverlay ? "opacity-55" : "opacity-80")}
+          fallbackIcon={<div className="absolute inset-0 bg-zinc-800" />}
+        />
 
         {/* SVG overlay */}
         {(showTrackingOverlay || showSafeZoneOverlay) && (

@@ -12,7 +12,7 @@ import { cn } from "@/lib/utils";
 
 const NAV_LINKS = [
   { href: "#features", label: "Features" },
-  { href: "#how-it-works", label: "How it works" },
+  { href: "#how-it-works", label: "Workflow" },
   { href: "#pricing", label: "Pricing" },
   { href: "#faq", label: "FAQ" }
 ];
@@ -43,30 +43,35 @@ export function MarketingHeader() {
 
   return (
     <header
-      className={`sticky top-0 z-40 border-b px-6 transition-all backdrop-blur-xl ${
+      className={`sticky top-0 z-40 px-4 py-3 text-white transition-all ${
         elevated
-          ? "border-slate-200/80 bg-white/[0.82] shadow-lg shadow-slate-950/5 dark:border-white/10 dark:bg-[#081111]/[0.82]"
-          : "border-slate-200/60 bg-white/[0.68] dark:border-white/10 dark:bg-[#081111]/[0.68]"
+          ? "bg-[#030611]/70"
+          : "bg-transparent"
       }`}
     >
-      <div className="mx-auto flex w-full max-w-6xl items-center justify-between gap-4 py-4">
+      <div
+        className={cn(
+          "mx-auto flex w-full max-w-7xl items-center justify-between gap-4 rounded-full border border-white/10 bg-[#05070d]/78 px-4 py-3 shadow-2xl shadow-black/20 backdrop-blur-xl transition-all sm:px-5",
+          elevated && "border-cyan-300/15 bg-[#05070d]/88 shadow-cyan-950/15"
+        )}
+      >
         <Link href="/" className="flex items-center gap-2 text-base font-semibold">
-          <Logo className="h-6 w-6" />
+          <Logo className="h-6 w-6 text-cyan-300" />
           ViralSnipAI
         </Link>
-        <nav className="hidden items-center gap-7 text-sm font-medium text-slate-600 dark:text-slate-300 md:flex" aria-label="Primary">
+        <nav className="hidden items-center gap-7 text-sm font-medium text-slate-300 md:flex" aria-label="Primary">
           {NAV_LINKS.map((link) => (
             <NavLink key={link.href} {...link} onNavigate={() => setIsMenuOpen(false)} />
           ))}
         </nav>
         <div className="hidden items-center gap-3 md:flex">
           <ThemeToggle />
-          <Button variant="ghost" asChild className="rounded-full">
+          <Button variant="ghost" asChild className="rounded-full text-slate-200 hover:bg-white/10 hover:text-white">
             <Link href="/signin">Sign in</Link>
           </Button>
           <Button
             asChild
-            className="rounded-full bg-gradient-to-r from-emerald-500 to-cyan-500 px-5 font-semibold text-white shadow-lg shadow-emerald-900/15 hover:from-emerald-400 hover:to-cyan-400"
+            className="rounded-full bg-gradient-to-r from-blue-500 via-cyan-400 to-violet-500 px-5 font-semibold text-white shadow-lg shadow-cyan-500/20 hover:brightness-110"
             onClick={() => trackEvent({ name: "cta_try_free", payload: { source: "header" } })}
           >
             <Link href="/signup">Start free</Link>
@@ -88,25 +93,26 @@ export function MarketingHeader() {
       </div>
       <div
         id="mobile-nav"
-        className={`${
-          isMenuOpen ? "max-h-[360px] border-t border-border/60" : "max-h-0"
-        } overflow-hidden transition-[max-height] duration-300 md:hidden`}
+        className={cn(
+          "mx-auto mt-3 max-w-7xl overflow-hidden rounded-[1.75rem] border border-white/10 bg-[#05070d]/92 shadow-2xl shadow-black/25 backdrop-blur-xl transition-[max-height,opacity] duration-300 md:hidden",
+          isMenuOpen ? "max-h-[360px] opacity-100" : "max-h-0 opacity-0"
+        )}
       >
-        <div className="space-y-4 px-6 py-4">
+        <div className="space-y-4 px-5 py-5">
           <nav className="space-y-3" aria-label="Mobile Primary">
             {NAV_LINKS.map((link) => (
-              <NavLink key={link.href} {...link} onNavigate={() => setIsMenuOpen(false)} className="block text-base font-medium text-foreground" />
+              <NavLink key={link.href} {...link} onNavigate={() => setIsMenuOpen(false)} className="block text-base font-medium text-white" />
             ))}
           </nav>
           <div className="flex flex-col gap-3">
-            <Button variant="ghost" asChild className="justify-start rounded-full">
+            <Button variant="ghost" asChild className="justify-start rounded-full text-slate-200 hover:bg-white/10 hover:text-white">
               <Link href="/signin" onClick={() => setIsMenuOpen(false)}>
                 Sign in
               </Link>
             </Button>
             <Button
               asChild
-              className="rounded-full bg-gradient-to-r from-emerald-500 to-cyan-500 text-white"
+              className="rounded-full bg-gradient-to-r from-blue-500 via-cyan-400 to-violet-500 text-white"
               onClick={() => trackEvent({ name: "cta_try_free", payload: { source: "header_mobile" } })}
             >
               <Link href="/signup" onClick={() => setIsMenuOpen(false)}>
@@ -145,7 +151,7 @@ function NavLink({ href, label, comingSoon, className, onNavigate }: NavLinkProp
     return (
       <a
         href={href}
-        className={cn("transition hover:text-slate-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 dark:hover:text-white", className)}
+        className={cn("transition hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300", className)}
         onClick={onNavigate}
       >
         {label}
@@ -154,7 +160,7 @@ function NavLink({ href, label, comingSoon, className, onNavigate }: NavLinkProp
   }
 
   return (
-    <Link href={href} className={cn("transition hover:text-slate-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 dark:hover:text-white", className)} onClick={onNavigate}>
+    <Link href={href} className={cn("transition hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300", className)} onClick={onNavigate}>
       {label}
     </Link>
   );

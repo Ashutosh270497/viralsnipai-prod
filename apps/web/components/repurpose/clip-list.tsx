@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CheckSquare, Loader2, Play, Flame, Info, Download, ChevronDown, GripVertical, Filter, ArrowUpDown } from "lucide-react";
-import Image from "next/image";
 import { DndContext, closestCenter, DragEndEvent } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy, useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
@@ -22,6 +21,7 @@ import { Progress } from "@/components/ui/progress";
 import { useToast } from "@/components/ui/use-toast";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { CaptionEditorDialog } from "@/components/repurpose/caption-editor-dialog";
+import { SafeThumbnailImage } from "@/components/repurpose/safe-thumbnail-image";
 import type { ViralityFactors } from "@/lib/types";
 import { cn, formatDuration } from "@/lib/utils";
 
@@ -247,17 +247,11 @@ function SortableClipCard({
         </Button>
       </CardHeader>
       <CardContent className="space-y-3">
-        {clip.thumbnail && (
-          <div className="relative aspect-video w-full overflow-hidden rounded-lg bg-muted">
-            <Image
-              src={clip.thumbnail}
-              alt={clip.title || `Clip ${index + 1} thumbnail`}
-              fill
-              className="object-cover"
-              unoptimized
-            />
-          </div>
-        )}
+        <SafeThumbnailImage
+          src={clip.thumbnail}
+          alt={clip.title || `Clip ${index + 1} thumbnail`}
+          className="rounded-lg bg-muted"
+        />
         <Input
           defaultValue={clip.title ?? `Clip ${index + 1}`}
           onBlur={async (event) => {

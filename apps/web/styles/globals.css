@@ -221,3 +221,104 @@ body {
   background-size: 200% 100%;
   animation: shimmer 1.6s infinite linear;
 }
+
+/* ViralSnipAI premium landing motion */
+@keyframes landingFloat {
+  0%, 100% { transform: translate3d(0, 0, 0); }
+  50%      { transform: translate3d(0, -10px, 0); }
+}
+
+@keyframes landingFloatSoft {
+  0%, 100% { transform: translate3d(0, 0, 0) rotate(0deg); }
+  50%      { transform: translate3d(0, -6px, 0) rotate(0.4deg); }
+}
+
+@keyframes landingMarquee {
+  0%   { transform: translate3d(0, 0, 0); }
+  100% { transform: translate3d(-50%, 0, 0); }
+}
+
+@keyframes landingSweep {
+  0%   { transform: translateX(-120%); opacity: 0; }
+  20%  { opacity: 0.7; }
+  100% { transform: translateX(120%); opacity: 0; }
+}
+
+@keyframes landingGlowPulse {
+  0%, 100% { opacity: 0.7; transform: scale(1); }
+  50%      { opacity: 1; transform: scale(1.03); }
+}
+
+@keyframes landingWave {
+  0%, 100% { filter: brightness(0.88); transform: translateY(0); }
+  50%      { filter: brightness(1.18); transform: translateY(-2px); }
+}
+
+@keyframes landingOrbit {
+  0%   { transform: translate(-50%, -50%) rotate(0deg); }
+  100% { transform: translate(-50%, -50%) rotate(360deg); }
+}
+
+.landing-float {
+  animation: landingFloat 6s ease-in-out infinite;
+}
+
+.landing-float-soft {
+  animation: landingFloatSoft 8s ease-in-out infinite;
+}
+
+.landing-marquee-track {
+  animation: landingMarquee 34s linear infinite;
+  will-change: transform;
+}
+
+.landing-marquee-track:hover {
+  animation-play-state: paused;
+}
+
+.landing-sweep::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.16), transparent);
+  transform: translateX(-120%);
+  animation: landingSweep 4.8s ease-in-out infinite;
+  pointer-events: none;
+}
+
+.landing-glow-pulse {
+  animation: landingGlowPulse 7s ease-in-out infinite;
+}
+
+.landing-wave span {
+  animation: landingWave 2.4s ease-in-out infinite;
+}
+
+.landing-wave span:nth-child(2n) {
+  animation-delay: 160ms;
+}
+
+.landing-wave span:nth-child(3n) {
+  animation-delay: 320ms;
+}
+
+.landing-orbit {
+  animation: landingOrbit 24s linear infinite;
+}
+
+.landing-orbit-slow {
+  animation: landingOrbit 38s linear infinite reverse;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .landing-float,
+  .landing-float-soft,
+  .landing-marquee-track,
+  .landing-sweep::after,
+  .landing-glow-pulse,
+  .landing-wave span,
+  .landing-orbit,
+  .landing-orbit-slow {
+    animation: none !important;
+  }
+}

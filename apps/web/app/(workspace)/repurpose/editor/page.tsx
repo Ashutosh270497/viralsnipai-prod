@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import { useCallback, useState, useMemo } from "react";
 import {
@@ -27,6 +26,7 @@ import { TranscriptEditor } from "@/components/repurpose/transcript-editor";
 import { FramingPanel } from "@/components/repurpose/framing-panel";
 import { CreativeEnhancementsPanel } from "@/components/repurpose/creative-enhancements-panel";
 import { BrandTemplateApplyPanel } from "@/components/repurpose/brand-template-apply-panel";
+import { SafeThumbnailImage } from "@/components/repurpose/safe-thumbnail-image";
 import { useRepurpose } from "@/components/repurpose/repurpose-context";
 import {
   AlertDialog,
@@ -693,20 +693,11 @@ export default function RepurposeEditorPage() {
                     )}
                   >
                     {/* ── Thumbnail ─────────────────────────────────────────── */}
-                    <div className="relative aspect-video w-full overflow-hidden bg-black/40">
-                      {clip.thumbnail ? (
-                        <Image
-                          src={clip.thumbnail}
-                          alt={clip.title || `Clip ${index + 1}`}
-                          fill
-                          className="object-cover"
-                          unoptimized
-                        />
-                      ) : (
-                        <div className="flex h-full items-center justify-center">
-                          <Film className="h-8 w-8 text-muted-foreground/20" />
-                        </div>
-                      )}
+                    <SafeThumbnailImage
+                      src={clip.thumbnail}
+                      alt={clip.title || `Clip ${index + 1}`}
+                      fallbackIcon={<Film className="h-8 w-8 text-muted-foreground/20" />}
+                    >
 
                       {/* Active glow overlay */}
                       {isActive && (
@@ -743,7 +734,7 @@ export default function RepurposeEditorPage() {
                           <CheckSquare className="h-3 w-3" />
                         )}
                       </button>
-                    </div>
+                    </SafeThumbnailImage>
 
                     {/* ── Card body ─────────────────────────────────────────── */}
                     <div
