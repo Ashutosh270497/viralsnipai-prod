@@ -10,8 +10,16 @@ import { canUseModelDebug } from "@/lib/ai/model-policy";
 import { CLIP_INTENT_VALUES, QUALITY_MODE_VALUES } from "@/lib/ai/model-routing-options";
 import { prisma } from "@/lib/prisma";
 
+const MAX_PROMPT_TRANSCRIPT_CHARS = 1_500_000;
+
 const schema = z.object({
-  transcript: z.string().min(20).max(200000),
+  transcript: z
+    .string()
+    .min(20, "Transcript must be at least 20 characters.")
+    .max(
+      MAX_PROMPT_TRANSCRIPT_CHARS,
+      "Transcript is too large for the prompt helper. You can still fill in goals manually and generate clips.",
+    ),
   videoTitle: z.string().max(300).optional(),
   platform: z.enum(["YouTube Shorts", "TikTok", "Instagram Reels", "All Platforms"]).optional(),
   customInstructions: z.string().max(500).optional(),
@@ -19,8 +27,16 @@ const schema = z.object({
   clipIntent: z.enum(CLIP_INTENT_VALUES).optional().default("auto"),
   transcriptPrecision: z
     .enum(["word", "segment", "diarized_segment", "approximate", "none"])
+    .nullable()
+    .transform((value) => value ?? undefined)
     .optional(),
-  videoDurationSec: z.number().positive().max(24 * 60 * 60).optional(),
+  videoDurationSec: z
+    .number()
+    .positive()
+    .max(24 * 60 * 60)
+    .nullable()
+    .transform((value) => value ?? undefined)
+    .optional(),
   debugModelOverride: z.string().trim().min(1).optional(),
 });
 

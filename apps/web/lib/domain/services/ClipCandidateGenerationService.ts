@@ -41,6 +41,7 @@ export type ClipCandidateGenerationInput = {
   durationMs: number;
   sceneCutsMs: number[];
   policy?: ClipPolicy;
+  targetClipCount?: number;
   audience?: string;
   tone?: string;
   brief?: string;
@@ -60,9 +61,11 @@ export class ClipCandidateGenerationService {
         ? this.generateWordCandidates(words, input, policy)
         : this.generateSegmentCandidates(input.transcript.segments, input, policy);
 
-    return dedupeByOverlap(candidates)
+    const targetCandidateCount = getTargetCandidatePool(policy, input.targetClipCount);
+
+    return dedupeByOverlap(candidates, targetCandidateCount)
       .sort((a, b) => b.deterministicScore - a.deterministicScore)
-      .slice(0, policy.targetCandidateCount)
+      .slice(0, targetCandidateCount)
       .map((candidate, index) => ({
         ...candidate,
         id: `cand-${String(index + 1).padStart(3, "0")}`,
@@ -77,7 +80,7 @@ export class ClipCandidateGenerationService {
     const candidates: ClipCandidate[] = [];
     const minWords = Math.max(12, policy.minWords);
     const maxWords = Math.max(minWords, policy.maxWords);
-    const step = Math.max(8, Math.floor(minWords / 2));
+    const step = Math.max(6, Math.floor(minWords / 3));
 
     for (let startIndex = 0; startIndex < words.length; startIndex += step) {
       for (const targetWords of [minWords, Math.round((minWords + maxWords) / 2), maxWords]) {
@@ -283,11 +286,29 @@ function buildReasons(text: string, type: CandidateType, quality: ClipQualitySig
   return reasons;
 }
 
-function dedupeByOverlap(candidates: ClipCandidate[]): ClipCandidate[] {
+function getTargetCandidatePool(policy: ClipPolicy, targetClipCount?: number) {
+  const requested = Math.max(1, targetClipCount ?? policy.defaultTargetClips);
+  const minimum = Math.max(policy.minCandidatePool, requested * policy.minCandidateMultiplier);
+  return Math.min(policy.targetCandidateCount, policy.maxCandidatePool, minimum);
+}
+
+function dedupeByOverlap(candidates: ClipCandidate[], minDesired = 0): ClipCandidate[] {
   const kept: ClipCandidate[] = [];
   for (const candidate of candidates.sort((a, b) => b.deterministicScore - a.deterministicScore)) {
     const duplicate = kept.some((existing) => overlapRatio(candidate, existing) > 0.55);
     if (!duplicate) kept.push(candidate);
+  }
+  if (kept.length >= minDesired) return kept;
+
+  const keptIds = new Set(kept.map((candidate) => candidate.id));
+  for (const candidate of candidates) {
+    if (kept.length >= minDesired) break;
+    if (keptIds.has(candidate.id)) continue;
+    const duplicate = kept.some((existing) => overlapRatio(candidate, existing) > 0.82);
+    if (!duplicate) {
+      kept.push(candidate);
+      keptIds.add(candidate.id);
+    }
   }
   return kept;
 }

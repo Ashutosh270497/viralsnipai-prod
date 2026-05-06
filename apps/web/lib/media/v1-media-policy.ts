@@ -36,7 +36,7 @@ const DEFAULT_EXPORT_LIMITS: Record<PlanTier, number> = {
 };
 
 export function getMaxUploadBytes() {
-  return readPositiveInt("MAX_UPLOAD_MB", 4096) * 1024 * 1024;
+  return readPositiveInt("MAX_UPLOAD_MB", 500) * 1024 * 1024;
 }
 
 export function getMaxVideoDurationSeconds() {

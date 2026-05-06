@@ -44,7 +44,7 @@ export type ResolveModelPolicyInput = {
 
 const DEFAULT_MODELS = {
   fast: process.env.OPENROUTER_FAST_MODEL ?? "google/gemini-3-flash-preview",
-  balanced: process.env.OPENROUTER_HIGHLIGHT_RERANK_MODEL ?? "google/gemini-2.5-pro",
+  balanced: process.env.OPENROUTER_HIGHLIGHT_RERANK_MODEL ?? "google/gemini-3-flash-preview",
   best: process.env.OPENROUTER_BEST_RERANK_MODEL ?? process.env.OPENROUTER_BEST_MODEL ?? "anthropic/claude-sonnet-4.6",
   virality: process.env.OPENROUTER_VIRALITY_MODEL ?? "google/gemini-3.1-flash-lite-preview",
   metadata: process.env.OPENROUTER_METADATA_MODEL ?? "google/gemini-3.1-flash-lite-preview",
@@ -53,8 +53,12 @@ const DEFAULT_MODELS = {
 };
 
 const BEST_QUALITY_FALLBACK_MODELS = [
-  "openai/gpt-5.2",
-  "google/gemini-3.1-pro-preview",
+  "google/gemini-3-flash-preview",
+  "qwen/qwen3.6-plus",
+];
+
+const HIGHLIGHT_RERANK_BALANCED_FALLBACK_MODELS = [
+  "anthropic/claude-sonnet-4.6",
   "qwen/qwen3.6-plus",
 ];
 
@@ -93,9 +97,7 @@ export function resolveModelPolicy(input: ResolveModelPolicyInput): ModelPolicy 
   ].filter(Boolean);
 
   if (input.task === "highlight_rerank") {
-    const primaryModel = longVideo && effectiveQuality !== "fast"
-      ? DEFAULT_MODELS.balanced
-      : modelForQuality(effectiveQuality);
+    const primaryModel = modelForQuality(effectiveQuality);
     return buildPolicy({
       task: input.task,
       qualityMode: effectiveQuality,
@@ -191,14 +193,6 @@ function promptGeneratorFallbackModels(qualityMode: QualityMode) {
   const envFallbacks = splitModelList(process.env.OPENROUTER_PROMPT_GENERATOR_FALLBACK_MODELS);
   if (envFallbacks.length > 0) return envFallbacks;
 
-  if (qualityMode === "best") {
-    return ["openai/gpt-5.2", DEFAULT_MODELS.fast, "qwen/qwen3.6-plus"];
-  }
-
-  if (qualityMode === "balanced") {
-    return [DEFAULT_MODELS.fast, "qwen/qwen3.6-plus"];
-  }
-
   return ["qwen/qwen3.6-plus"];
 }
 
@@ -264,8 +258,8 @@ function fallbackModelsFor(task: AIModelTask, qualityMode: QualityMode, primary?
     task === "highlight_rerank" && qualityMode === "best"
       ? BEST_QUALITY_FALLBACK_MODELS
       : task === "highlight_rerank" && qualityMode === "balanced"
-        ? ["openai/gpt-5.2", "google/gemini-3.1-pro-preview", DEFAULT_MODELS.fast, "qwen/qwen3.6-plus"]
-        : [DEFAULT_MODELS.fast, "qwen/qwen3.6-plus", "openai/gpt-4o"];
+        ? HIGHLIGHT_RERANK_BALANCED_FALLBACK_MODELS
+        : ["qwen/qwen3.6-plus"];
   return Array.from(new Set(models.map((model) => normalizePolicyOpenRouterModel(model))))
     .filter((model) => model !== primary);
 }

@@ -13,6 +13,10 @@ import {
   getQualityOptions,
   validateExportOptions,
 } from "@/lib/media/video-quality-policy";
+import {
+  analyzeSourceForReframeQuality,
+  type SourceReframeQualityAnalysis,
+} from "@/lib/media/source-quality-analysis";
 
 const ffmpegCandidates = [
   process.env.FFMPEG_PATH,
@@ -416,13 +420,19 @@ export function buildPresetVideoFilter({
   preset,
   reframePlan,
   durationSeconds,
+  qualityAnalysis,
 }: {
   preset: keyof typeof PRESETS;
   reframePlan?: ClipReframePlan | null;
   durationSeconds?: number;
+  qualityAnalysis?: SourceReframeQualityAnalysis | null;
 }) {
   const { width, height } = getPresetDimensions(preset);
   const targetRatio = width / height;
+
+  if (qualityAnalysis?.recommendedRenderMode === "fit_with_blur_background") {
+    return buildBlurBackgroundFitFilter({ width, height });
+  }
 
   if (!reframePlan || reframePlan.mode === "letterbox") {
     return `scale=${width}:${height}:force_original_aspect_ratio=decrease:flags=lanczos,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1`;
@@ -470,6 +480,15 @@ export function buildPresetVideoFilter({
   const cropYExpr = escapeFilterExpression(cropYRaw);
 
   return `crop=${cropWidthExpr}:${cropHeightExpr}:${cropXExpr}:${cropYExpr},scale=${width}:${height}:flags=lanczos,setsar=1`;
+}
+
+function buildBlurBackgroundFitFilter({ width, height }: { width: number; height: number }) {
+  return [
+    "split=2[bg][fg]",
+    `[bg]scale=${width}:${height}:force_original_aspect_ratio=increase:flags=lanczos,crop=${width}:${height},gblur=sigma=28,eq=brightness=-0.08:saturation=0.85[bgout]`,
+    `[fg]scale=${width}:${height}:force_original_aspect_ratio=decrease:flags=lanczos[fgout]`,
+    "[bgout][fgout]overlay=(W-w)/2:(H-h)/2,setsar=1",
+  ].join(";");
 }
 
 export async function probeDuration(filePath: string): Promise<number> {
@@ -624,6 +643,24 @@ export async function extractClip({
   const durationSeconds = Math.max((endMs - startMs) / 1000, 0.12);
 
   await fs.mkdir(path.dirname(outputPath), { recursive: true });
+  const sourceMeta = await probeSourceMetadata(inputPath).catch(() => null);
+  const qualityAnalysis = preset
+    ? analyzeSourceForReframeQuality({
+        inputPath,
+        source: sourceMeta,
+        preset,
+        presetDimensions: getPresetDimensions(preset),
+        reframePlan,
+      })
+    : null;
+
+  if (qualityAnalysis) {
+    logger.info("render:quality_analysis", {
+      ...qualityAnalysis,
+      outputPath,
+      quality: "preview",
+    });
+  }
 
   return new Promise<void>((resolve, reject) => {
     let commandLine: string | undefined;
@@ -634,7 +671,34 @@ export async function extractClip({
       .on("start", (cmd) => {
         commandLine = cmd;
       })
-      .on("end", () => resolve())
+      .on("end", async () => {
+        let fileSizeBytes: number | null = null;
+        try { fileSizeBytes = (await fs.stat(outputPath)).size; } catch { /* ignore */ }
+        logger.info("render:preview_clip", {
+          inputPath,
+          outputPath,
+          preset,
+          crf: 16,
+          encoderPreset: "slow",
+          audioBitrate: "256k",
+          renderMode: qualityAnalysis?.recommendedRenderMode ?? "source_aspect_preview",
+          qualityRisk: qualityAnalysis?.qualityRisk ?? null,
+          qualityWarning: qualityAnalysis?.warning ?? null,
+          targetWidth: qualityAnalysis?.targetWidth ?? null,
+          targetHeight: qualityAnalysis?.targetHeight ?? null,
+          sourceWidth: qualityAnalysis?.sourceWidth ?? sourceMeta?.width ?? null,
+          sourceHeight: qualityAnalysis?.sourceHeight ?? sourceMeta?.height ?? null,
+          sourceBitrate: qualityAnalysis?.sourceBitrate ?? sourceMeta?.videoBitrateKbps ?? null,
+          sourceFps: qualityAnalysis?.sourceFps ?? sourceMeta?.fps ?? null,
+          upscaleFactorX: qualityAnalysis?.upscaleFactorX ?? null,
+          upscaleFactorY: qualityAnalysis?.upscaleFactorY ?? null,
+          inputPathType: inputPath.replace(/\\/g, "/").includes("/previews/")
+            ? "preview"
+            : "original",
+          fileSizeBytes,
+        });
+        resolve();
+      })
       .on("error", (error, _stdout, stderr) =>
         reject(
           buildFfmpegError("extractClip", error, {
@@ -650,7 +714,7 @@ export async function extractClip({
     if (preset) {
       outputOptions.unshift(
         "-vf",
-        buildPresetVideoFilter({ preset, reframePlan, durationSeconds })
+        buildPresetVideoFilter({ preset, reframePlan, durationSeconds, qualityAnalysis })
       );
     }
 
@@ -1302,15 +1366,17 @@ function buildSinglePassVideoFilter({
   durationSeconds,
   srtPath,
   captionStyle,
+  qualityAnalysis,
 }: {
   preset: keyof typeof PRESETS;
   reframePlan?: ClipReframePlan | null;
   durationSeconds?: number;
   srtPath?: string | null;
   captionStyle?: ClipCaptionStyleConfig | null;
+  qualityAnalysis?: SourceReframeQualityAnalysis | null;
 }): string {
   // Step 1 — reframe + scale (already includes :flags=lanczos in buildPresetVideoFilter)
-  const filters: string[] = [buildPresetVideoFilter({ preset, reframePlan, durationSeconds })];
+  const filters: string[] = [buildPresetVideoFilter({ preset, reframePlan, durationSeconds, qualityAnalysis })];
 
   // Step 2 — subtitle burn (post-scale so absolute font sizes are correct on the target canvas)
   if (srtPath && captionStyle) {
@@ -1375,14 +1441,26 @@ export async function extractAndRenderSegment({
 
   await fs.mkdir(path.dirname(outputPath), { recursive: true });
 
-  const videoFilter = buildSinglePassVideoFilter({
-    preset, reframePlan, durationSeconds, srtPath, captionStyle,
-  });
   const qualityOpts = quality === "preview" ? [...previewPlaybackOptions] : [...playbackOptions];
   const renderStart = Date.now();
 
   // Log source metadata for diagnostics (non-blocking — runs concurrently with encode setup)
   const sourceMeta = await probeSourceMetadata(inputPath).catch(() => null);
+  const qualityAnalysis = analyzeSourceForReframeQuality({
+    inputPath,
+    source: sourceMeta,
+    preset,
+    presetDimensions: getPresetDimensions(preset),
+    reframePlan,
+  });
+  const videoFilter = buildSinglePassVideoFilter({
+    preset,
+    reframePlan,
+    durationSeconds,
+    srtPath,
+    captionStyle,
+    qualityAnalysis,
+  });
 
   return new Promise<void>((resolve, reject) => {
     let commandLine: string | undefined;
@@ -1405,6 +1483,18 @@ export async function extractAndRenderSegment({
           codec: "libx264",
           audioBitrate: quality === "preview" ? "128k" : "256k",
           reframeMode: reframePlan?.mode ?? "none",
+          renderMode: qualityAnalysis.recommendedRenderMode,
+          qualityRisk: qualityAnalysis.qualityRisk,
+          qualityWarning: qualityAnalysis.warning,
+          targetWidth: qualityAnalysis.targetWidth,
+          targetHeight: qualityAnalysis.targetHeight,
+          estimatedCropWidth: qualityAnalysis.estimatedCropWidth,
+          estimatedCropHeight: qualityAnalysis.estimatedCropHeight,
+          upscaleFactorX: qualityAnalysis.upscaleFactorX,
+          upscaleFactorY: qualityAnalysis.upscaleFactorY,
+          inputPathType: inputPath.replace(/\\/g, "/").includes("/previews/")
+            ? "preview"
+            : "original",
           hasCaptions: Boolean(srtPath),
           hasHookOverlays: Boolean(captionStyle?.hookOverlays?.length),
           streamCopy: false,

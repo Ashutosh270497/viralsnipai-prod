@@ -8,6 +8,9 @@ export const V1_CLIP_POLICY = {
   minWords: 35,
   maxWords: 160,
   targetCandidateCount: 120,
+  minCandidateMultiplier: 5,
+  minCandidatePool: 15,
+  maxCandidatePool: 60,
   defaultTargetClips: 5,
   maxTargetClips: 8,
 };

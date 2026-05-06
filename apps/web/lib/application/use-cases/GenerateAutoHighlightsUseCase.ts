@@ -130,6 +130,8 @@ export interface GenerateAutoHighlightsOutput {
     transcriptPrecision?: TranscriptPrecision;
     candidatesGenerated?: number;
     candidatesReranked?: number;
+    rerankStructuredMode?: string | null;
+    deterministicFallbackUsed?: boolean;
     boundaryConfidenceCounts?: {
       high: number;
       medium: number;
@@ -454,6 +456,7 @@ export class GenerateAutoHighlightsUseCase {
         durationMs: sourceDurationMs,
         sceneCutsMs,
         policy: clipPolicy,
+        targetClipCount: targetCount,
         audience: options.audience,
         tone: options.tone,
         brief: routingBrief,
@@ -465,6 +468,8 @@ export class GenerateAutoHighlightsUseCase {
 
       let rerankModel = rerankPolicy.primaryModel;
       let rerankWarnings: string[] = [];
+      let rerankStructuredMode: string | null = null;
+      let deterministicFallbackUsed = false;
       let selectedCandidatePairs: Array<{
         candidate: ClipCandidate;
         title: string;
@@ -496,6 +501,8 @@ export class GenerateAutoHighlightsUseCase {
         });
         rerankModel = reranked.model;
         rerankWarnings = reranked.overallWarnings;
+        rerankStructuredMode = reranked.structuredMode ?? null;
+        deterministicFallbackUsed = Boolean(reranked.deterministicFallbackUsed);
         selectedCandidatePairs = reranked.selected
           .map((selection) => {
             const candidate = generatedCandidates.find((item) => item.id === selection.candidateId);
@@ -524,6 +531,7 @@ export class GenerateAutoHighlightsUseCase {
         rerankWarnings = [
           "OpenRouter reranking unavailable; used deterministic candidate ranking.",
         ];
+        deterministicFallbackUsed = true;
         selectedCandidatePairs = generatedCandidates.slice(0, targetCount).map((candidate) => ({
           candidate,
           title: buildFallbackTitle(candidate),
@@ -649,6 +657,8 @@ export class GenerateAutoHighlightsUseCase {
               transcriptPrecision: canonicalTranscript.precision,
               candidatesGenerated: generatedCandidates.length,
               candidatesReranked: selectedCandidatePairs.length,
+              rerankStructuredMode,
+              deterministicFallbackUsed,
               boundaryConfidenceCounts: countBoundaryConfidence(extractedClips),
               averageClipDurationSec: averageClipDurationSec(extractedClips),
               lowPrecisionWarning: getLowPrecisionWarning(canonicalTranscript),
@@ -1014,6 +1024,8 @@ export class GenerateAutoHighlightsUseCase {
           transcriptPrecision: canonicalTranscript.precision,
           candidatesGenerated: generatedCandidates.length,
           candidatesReranked: selectedCandidatePairs.length,
+          rerankStructuredMode,
+          deterministicFallbackUsed,
           boundaryConfidenceCounts,
           averageClipDurationSec: avgClipDurationSec,
           lowPrecisionWarning:

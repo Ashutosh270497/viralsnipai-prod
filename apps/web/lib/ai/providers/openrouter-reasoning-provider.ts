@@ -218,6 +218,8 @@ export type ClipRerankResult = {
   selected: ClipRerankSelection[];
   overallWarnings: string[];
   model: string;
+  structuredMode?: "json_schema" | "json_object";
+  deterministicFallbackUsed?: boolean;
 };
 
 export type ViralityReasoningResult = z.infer<typeof ViralitySchema> & {
@@ -234,14 +236,15 @@ export async function openRouterJson<T>(params: {
   temperature?: number;
   maxTokens?: number;
   timeoutMs?: number;
-}): Promise<{ data: T; model: string; latencyMs: number }> {
+  maxAttempts?: number;
+}): Promise<{ data: T; model: string; latencyMs: number; structuredMode: "json_schema" | "json_object" }> {
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) {
     throw new Error("OPENROUTER_API_KEY is required for reasoning tasks.");
   }
 
   let lastError: unknown = null;
-  const attempts = Math.max(1, OPENROUTER_MAX_RETRIES + 1);
+  const attempts = Math.max(1, params.maxAttempts ?? OPENROUTER_MAX_RETRIES + 1);
   const modes = getStructuredModes(params.structuredMode ?? "auto", params.jsonSchema);
 
   for (let attempt = 0; attempt < attempts; attempt += 1) {
@@ -308,7 +311,7 @@ export async function openRouterJson<T>(params: {
           structuredMode: mode,
           latencyMs,
         });
-        return { data, model: params.model, latencyMs };
+        return { data, model: params.model, latencyMs, structuredMode: mode };
       } catch (error) {
         lastError = error;
         const retryable = isRetryableOpenRouterError(error);
@@ -345,9 +348,11 @@ export async function rerankClipCandidates(params: {
     maxMs: number;
   };
   model?: string;
+  structuredMode?: "json_schema" | "json_object" | "auto";
+  maxAttempts?: number;
 }): Promise<ClipRerankResult> {
   const model = normalizeOpenRouterModel(
-    params.model ?? process.env.OPENROUTER_HIGHLIGHT_RERANK_MODEL ?? "google/gemini-2.5-pro",
+    params.model ?? process.env.OPENROUTER_HIGHLIGHT_RERANK_MODEL ?? "google/gemini-3-flash-preview",
   );
   const candidateIds = new Set(params.candidates.map((candidate) => candidate.id));
 
@@ -386,6 +391,8 @@ export async function rerankClipCandidates(params: {
       })),
     },
     maxTokens: 5000,
+    structuredMode: params.structuredMode ?? "auto",
+    maxAttempts: params.maxAttempts,
   });
 
   const selected = result.data.selected
@@ -421,6 +428,7 @@ export async function rerankClipCandidates(params: {
     selected,
     overallWarnings: result.data.overallWarnings ?? [],
     model: result.model,
+    structuredMode: result.structuredMode,
   };
 }
 

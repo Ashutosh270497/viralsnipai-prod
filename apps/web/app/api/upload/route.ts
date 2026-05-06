@@ -88,6 +88,9 @@ export async function POST(request: Request) {
       );
     }
 
+    // Current upload path buffers the full file in memory. Keep MAX_UPLOAD_MB
+    // conservative; true 4 GB support needs streaming upload to disk/S3 before
+    // this route can safely accept production-scale files.
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
     if (!looksLikeSupportedMedia(buffer, extension)) {

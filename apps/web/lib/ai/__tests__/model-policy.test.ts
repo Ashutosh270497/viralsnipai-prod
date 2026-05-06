@@ -16,11 +16,25 @@ describe("model policy", () => {
   it("uses Claude Sonnet 4.6 for best quality highlight reranking", () => {
     const policy = resolveModelPolicy({ task: "highlight_rerank", qualityMode: "best", userPlan: "pro" });
     expect(policy.primaryModel).toBe("anthropic/claude-sonnet-4.6");
-    expect(policy.fallbackModels).toEqual([
-      "openai/gpt-5.2",
-      "google/gemini-3.1-pro-preview",
-      "qwen/qwen3.6-plus",
-    ]);
+    expect(policy.fallbackModels).toEqual(["google/gemini-3-flash-preview", "qwen/qwen3.6-plus"]);
+  });
+
+  it("uses the final fast, balanced, and best highlight rerank defaults", () => {
+    expect(resolveModelPolicy({
+      task: "highlight_rerank",
+      qualityMode: "fast",
+      userPlan: "pro",
+    }).primaryModel).toBe("google/gemini-3-flash-preview");
+    expect(resolveModelPolicy({
+      task: "highlight_rerank",
+      qualityMode: "balanced",
+      userPlan: "pro",
+    }).primaryModel).toBe("google/gemini-3-flash-preview");
+    expect(resolveModelPolicy({
+      task: "highlight_rerank",
+      qualityMode: "best",
+      userPlan: "pro",
+    }).primaryModel).toBe("anthropic/claude-sonnet-4.6");
   });
 
   it("uses Claude Sonnet 4.6 for best quality virality and metadata reasoning", () => {
@@ -46,11 +60,29 @@ describe("model policy", () => {
       userPlan: "pro",
     });
     expect(best.primaryModel).toBe("anthropic/claude-sonnet-4.6");
-    expect(best.fallbackModels).toEqual([
-      "openai/gpt-5.2",
-      "google/gemini-3-flash-preview",
-      "qwen/qwen3.6-plus",
-    ]);
+    expect(best.fallbackModels).toEqual(["qwen/qwen3.6-plus"]);
+  });
+
+  it("does not downgrade highlight reranking for long videos", () => {
+    const videoDurationSec = 2_400;
+    expect(resolveModelPolicy({
+      task: "highlight_rerank",
+      qualityMode: "fast",
+      userPlan: "pro",
+      videoDurationSec,
+    }).primaryModel).toBe("google/gemini-3-flash-preview");
+    expect(resolveModelPolicy({
+      task: "highlight_rerank",
+      qualityMode: "balanced",
+      userPlan: "pro",
+      videoDurationSec,
+    }).primaryModel).toBe("google/gemini-3-flash-preview");
+    expect(resolveModelPolicy({
+      task: "highlight_rerank",
+      qualityMode: "best",
+      userPlan: "pro",
+      videoDurationSec,
+    }).primaryModel).toBe("anthropic/claude-sonnet-4.6");
   });
 
   it("caps best quality for free users", () => {

@@ -80,24 +80,29 @@ export function AIPromptGeneratorDialog({
 
     setLoading(true);
     try {
+      const normalizedPrecision = normalizeTranscriptPrecision(transcriptPrecision);
+      const payload: Record<string, unknown> = {
+        transcript: transcript!,
+        videoTitle: videoTitle || undefined,
+        platform,
+        customInstructions: customInstructions || undefined,
+        qualityMode,
+        clipIntent,
+      };
+      if (normalizedPrecision) payload.transcriptPrecision = normalizedPrecision;
+      if (typeof videoDurationSec === "number" && Number.isFinite(videoDurationSec)) {
+        payload.videoDurationSec = videoDurationSec;
+      }
+
       const response = await fetch("/api/repurpose/generate-prompts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          transcript: transcript!,
-          videoTitle: videoTitle || undefined,
-          platform,
-          customInstructions: customInstructions || undefined,
-          qualityMode,
-          clipIntent,
-          transcriptPrecision: normalizeTranscriptPrecision(transcriptPrecision),
-          videoDurationSec,
-        }),
+        body: JSON.stringify(payload),
       });
 
       if (!response.ok) {
         const data = await response.json().catch(() => null);
-        throw new Error(data?.error ?? "AI prompt generation is temporarily unavailable. You can still generate clips manually.");
+        throw new Error(getApiErrorMessage(data));
       }
 
       const data = await response.json();
@@ -298,6 +303,31 @@ export function AIPromptGeneratorDialog({
       </DialogContent>
     </Dialog>
   );
+}
+
+function getApiErrorMessage(data: unknown) {
+  if (data && typeof data === "object") {
+    const payload = data as {
+      error?: unknown;
+      message?: unknown;
+      details?: { fieldErrors?: Record<string, string[]>; formErrors?: string[] };
+    };
+    if (typeof payload.error === "string") return payload.error;
+    if (typeof payload.message === "string") return payload.message;
+
+    const fieldErrors = payload.details?.fieldErrors;
+    if (fieldErrors) {
+      for (const [field, messages] of Object.entries(fieldErrors)) {
+        const first = messages.find(Boolean);
+        if (first) return `${field}: ${first}`;
+      }
+    }
+
+    const firstFormError = payload.details?.formErrors?.find(Boolean);
+    if (firstFormError) return firstFormError;
+  }
+
+  return "AI prompt generation is temporarily unavailable. You can still generate clips manually.";
 }
 
 function normalizeTranscriptPrecision(value?: string) {

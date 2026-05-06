@@ -31,6 +31,7 @@ describe("PromptGeneratorService", () => {
       },
       model: "openai/gpt-5.2",
       latencyMs: 1200,
+      structuredMode: "json_schema",
     });
 
     const result = await new PromptGeneratorService().generateFromTranscript({

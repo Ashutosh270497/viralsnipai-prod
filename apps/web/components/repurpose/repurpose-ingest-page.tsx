@@ -193,9 +193,9 @@ export function RepurposeIngestPage() {
   }
 
   async function uploadSource(file: File) {
-    const maxBytes = 4 * 1024 * 1024 * 1024;
+    const maxBytes = 500 * 1024 * 1024;
     if (file.size > maxBytes) {
-      throw new Error("File exceeds 4 GB upload limit.");
+      throw new Error("File exceeds 500 MB upload limit.");
     }
 
     const formData = new FormData();
@@ -576,15 +576,15 @@ function SourceStage({
             <h3 className="text-sm font-semibold">Upload file</h3>
           </div>
           <p className="mt-2 text-xs leading-5 text-muted-foreground/60">
-            Drop a video or audio file up to 4 GB.
+            Upload videos up to 500 MB. Up to 60 minutes recommended.
           </p>
           <div className="mt-4">
             <UploadDropzone
               projectId={projectId}
               onUpload={uploadSource}
-              maxSizeMb={4096}
-              recommendedDurationMinutes={180}
-              description="Drop a video or audio file up to 4 GB"
+              maxSizeMb={500}
+              recommendedDurationMinutes={60}
+              description="Upload videos up to 500 MB"
               formatHints={["MP4", "MOV", "WebM", "MP3", "WAV", "M4A"]}
             />
           </div>
