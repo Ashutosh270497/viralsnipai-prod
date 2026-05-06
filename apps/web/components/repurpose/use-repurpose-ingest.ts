@@ -25,6 +25,7 @@ export function useRepurposeIngest({
   const highlightProgress = useProgress(800);
   const [qualityMode, setQualityMode] = useState<QualityMode>("balanced");
   const [clipIntent, setClipIntent] = useState<ClipIntent>("auto");
+  const [targetPlatform, setTargetPlatform] = useState<string>("auto");
   const [debugModelOverride, setDebugModelOverride] = useState<string>("");
   const [highlightBrief, setHighlightBrief] = useState<string>("");
   const [highlightAudience, setHighlightAudience] = useState<string>("Growth-focused creators");
@@ -67,7 +68,7 @@ export function useRepurposeIngest({
         title: "Upload an asset",
         description: "Add a long-form video before detecting highlights.",
       });
-      return;
+      return false;
     }
 
     // Highlight detection typically takes 30-90s
@@ -83,6 +84,7 @@ export function useRepurposeIngest({
           mode: "merge",
           qualityMode,
           clipIntent,
+          targetPlatform,
           ...(debugModelOverride.trim()
             ? { debugModelOverride: debugModelOverride.trim() }
             : {}),
@@ -104,10 +106,12 @@ export function useRepurposeIngest({
       toast({ title: "Highlights detected", description: "Review clips in Editor." });
       await onProjectRefresh();
       highlightProgress.complete();
+      return true;
     } catch (error) {
       console.error(error);
       toast({ variant: "destructive", title: "Could not detect highlights" });
       highlightProgress.reset();
+      return false;
     }
   }, [
     highlightAudience,
@@ -115,6 +119,7 @@ export function useRepurposeIngest({
     highlightCallToAction,
     qualityMode,
     clipIntent,
+    targetPlatform,
     debugModelOverride,
     highlightProgress,
     highlightTone,
@@ -290,6 +295,8 @@ export function useRepurposeIngest({
     setQualityMode,
     clipIntent,
     setClipIntent,
+    targetPlatform,
+    setTargetPlatform,
     debugModelOverride,
     setDebugModelOverride,
     highlightBrief,

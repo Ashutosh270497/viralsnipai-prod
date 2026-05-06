@@ -10,6 +10,10 @@ export const autoHighlightsRequestSchema = z.object({
   clipLengthPreset: z.enum(["short", "balanced", "detailed"]).optional().default("balanced"),
   qualityMode: z.enum(QUALITY_MODE_VALUES).optional().default("balanced"),
   clipIntent: z.enum(CLIP_INTENT_VALUES).optional().default("auto"),
+  targetPlatform: z
+    .enum(["auto", "youtube_shorts", "instagram_reels", "tiktok", "x", "linkedin"])
+    .optional()
+    .default("auto"),
   /**
    * How to reconcile new highlights with existing clips on the project:
    *   "merge" (default)   — keep existing clips; skip new ones that overlap existing within 5s

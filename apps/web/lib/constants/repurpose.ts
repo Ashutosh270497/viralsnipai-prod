@@ -1,7 +1,8 @@
 export const HIGHLIGHT_MODEL_VALUES = [
   "google/gemini-2.5-pro",
-  "anthropic/claude-sonnet-4.5",
-  "openai/gpt-4o",
+  "anthropic/claude-sonnet-4.6",
+  "openai/gpt-5.2",
+  "google/gemini-3.1-pro-preview",
   "qwen/qwen3.6-plus",
   "google/gemini-3-flash-preview",
 ] as const;
@@ -12,9 +13,10 @@ export const HIGHLIGHT_MODEL_OPTIONS: Array<{
   value: HighlightModel;
   label: string;
 }> = [
-  { value: "google/gemini-2.5-pro", label: "google/gemini-2.5-pro" },
-  { value: "anthropic/claude-sonnet-4.5", label: "anthropic/claude-sonnet-4.5" },
-  { value: "openai/gpt-4o", label: "openai/gpt-4o" },
-  { value: "qwen/qwen3.6-plus", label: "qwen/qwen3.6-plus" },
-  { value: "google/gemini-3-flash-preview", label: "google/gemini-3-flash-preview" },
+  { value: "google/gemini-2.5-pro", label: "Gemini 2.5 Pro — Balanced" },
+  { value: "anthropic/claude-sonnet-4.6", label: "Claude Sonnet 4.6 — Best Quality" },
+  { value: "openai/gpt-5.2", label: "GPT-5.2 — Fallback" },
+  { value: "google/gemini-3.1-pro-preview", label: "Gemini 3.1 Pro Preview — Fallback" },
+  { value: "qwen/qwen3.6-plus", label: "Qwen 3.6 Plus — Fallback" },
+  { value: "google/gemini-3-flash-preview", label: "Gemini 3 Flash — Fast" },
 ];

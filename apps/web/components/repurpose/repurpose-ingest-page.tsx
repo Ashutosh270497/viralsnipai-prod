@@ -5,31 +5,34 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import {
   ArrowRight,
+  Check,
   CheckCircle2,
+  ChevronLeft,
   Clock3,
   Download,
   Eye,
   FileText,
-  Flame,
   Info,
   Link as LinkIcon,
   Loader2,
-  Music,
   Pencil,
+  Play,
+  Search,
   Sparkles,
-  Upload as UploadIcon,
+  UploadCloud,
+  X,
   Youtube,
-  Zap,
 } from "lucide-react";
 
-import { UploadDropzone } from "@/components/upload/upload-dropzone";
 import { AIPromptGeneratorDialog } from "@/components/repurpose/ai-prompt-generator-dialog";
-import { useRepurpose } from "@/components/repurpose/repurpose-context";
 import { SafeThumbnailImage } from "@/components/repurpose/safe-thumbnail-image";
+import { useRepurpose } from "@/components/repurpose/repurpose-context";
+import { V1UsageLimitsCard } from "@/components/repurpose/v1-usage-limits-card";
+import type { AutoHighlightsAnalytics } from "@/components/repurpose/quality-indicators";
+import { getClipMetadata, QualityDiagnosticsPanel } from "@/components/repurpose/quality-indicators";
+import { UploadDropzone } from "@/components/upload/upload-dropzone";
 import { Button } from "@/components/ui/button";
-import { AppCard, EmptyState, PageHeader, Stepper } from "@/components/product-ui/primitives";
-import { cn, formatDuration } from "@/lib/utils";
-import { useRepurposeIngest } from "@/components/repurpose/use-repurpose-ingest";
+import { EmptyState } from "@/components/product-ui/primitives";
 import {
   Select,
   SelectContent,
@@ -38,16 +41,35 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useToast } from "@/components/ui/use-toast";
-import { HIGHLIGHT_MODEL_OPTIONS } from "@/lib/constants/repurpose";
+import { useRepurposeIngest } from "@/components/repurpose/use-repurpose-ingest";
 import { CLIP_INTENT_OPTIONS, QUALITY_MODE_OPTIONS } from "@/lib/ai/model-routing-options";
-import { V1UsageLimitsCard } from "@/components/repurpose/v1-usage-limits-card";
-import {
-  ProviderBadge,
-  ProcessingStepTimeline,
-  QualityDiagnosticsPanel,
-  TranscriptPrecisionBadge,
-  getClipMetadata,
-} from "@/components/repurpose/quality-indicators";
+import { HIGHLIGHT_MODEL_OPTIONS } from "@/lib/constants/repurpose";
+import { cn, formatDuration } from "@/lib/utils";
+
+type WizardStage = "source" | "goals" | "generate" | "review" | "export";
+type GeneratedPromptSet = {
+  brief: string;
+  audience: string;
+  tone: string;
+  callToAction: string;
+};
+
+const STAGES: Array<{ id: WizardStage; label: string; helper: string }> = [
+  { id: "source", label: "Source", helper: "Add media" },
+  { id: "goals", label: "Goals", helper: "Set outcome" },
+  { id: "generate", label: "Generate", helper: "Create clips" },
+  { id: "review", label: "Review", helper: "Choose winners" },
+  { id: "export", label: "Export", helper: "Ship clips" },
+];
+
+const TARGET_PLATFORM_OPTIONS = [
+  { value: "auto", label: "Auto" },
+  { value: "youtube_shorts", label: "YouTube Shorts" },
+  { value: "instagram_reels", label: "Instagram Reels" },
+  { value: "tiktok", label: "TikTok" },
+  { value: "x", label: "X" },
+  { value: "linkedin", label: "LinkedIn" },
+] as const;
 
 export function RepurposeIngestPage() {
   const { toast } = useToast();
@@ -64,6 +86,12 @@ export function RepurposeIngestPage() {
     setSelectedClipIds,
   } = useRepurpose();
 
+  const ingest = useRepurposeIngest({
+    projectId,
+    primaryAssetId: primaryAsset?.id,
+    onProjectRefresh: invalidate,
+  });
+
   const {
     sourceUrl,
     setSourceUrl,
@@ -73,6 +101,8 @@ export function RepurposeIngestPage() {
     setQualityMode,
     clipIntent,
     setClipIntent,
+    targetPlatform,
+    setTargetPlatform,
     debugModelOverride,
     setDebugModelOverride,
     highlightBrief,
@@ -90,26 +120,32 @@ export function RepurposeIngestPage() {
     lastHighlightAnalytics,
     handleIngestYouTube,
     handleAutoHighlights,
-  } = useRepurposeIngest({
-    projectId,
-    primaryAssetId: primaryAsset?.id,
-    onProjectRefresh: invalidate,
-  });
+  } = ingest;
 
+  const [stage, setStage] = useState<WizardStage>("source");
+  const [reviewFilter, setReviewFilter] = useState("all");
+  const [reviewSort, setReviewSort] = useState("best");
   const clipCount = project?.clips?.length ?? 0;
-  const transcriptPreview = useMemo(() => parseTranscriptPreview(primaryAsset?.transcript), [primaryAsset?.transcript]);
-  const transcriptPrecision = lastHighlightAnalytics?.transcriptPrecision ?? getClipMetadata(project?.clips?.[0]).boundaryPrecision ?? transcriptPreview.precision;
+  const approvedCount = project?.clips?.filter((clip) =>
+    clip.reviewStatus === "approved" || clip.reviewStatus === "export_ready"
+  ).length ?? 0;
+  const transcriptPreview = useMemo(
+    () => parseTranscriptPreview(primaryAsset?.transcript),
+    [primaryAsset?.transcript],
+  );
+  const transcriptPrecision =
+    lastHighlightAnalytics?.transcriptPrecision ??
+    getClipMetadata(project?.clips?.[0]).boundaryPrecision ??
+    transcriptPreview.precision;
   const modelDebugEnabled =
     process.env.NODE_ENV !== "production" ||
     process.env.NEXT_PUBLIC_ENABLE_MODEL_DEBUG === "true";
-  const activeStep = clipCount > 0 ? 1 : primaryAsset ? 0 : 0;
+
   const appliedSeedRef = useRef<string | null>(null);
   const seededIdea = useMemo(() => {
     const ideaId = searchParams.get("ideaId");
     if (!ideaId) return null;
-
     return {
-      source: searchParams.get("source"),
       ideaId,
       title: searchParams.get("ideaTitle") ?? "",
       niche: searchParams.get("ideaNiche") ?? "",
@@ -121,25 +157,15 @@ export function RepurposeIngestPage() {
     };
   }, [searchParams]);
 
-  // ── Detection progress state ───────────────────────────────────────────────
-  const [detectionPhase, setDetectionPhase] = useState(0);
-
   useEffect(() => {
-    if (!seededIdea || !projectId) {
-      return;
-    }
-
+    if (!seededIdea || !projectId) return;
     const seedKey = `${projectId}:${seededIdea.ideaId}`;
-    if (appliedSeedRef.current === seedKey) {
-      return;
-    }
-
+    if (appliedSeedRef.current === seedKey) return;
     const briefParts = [
       seededIdea.title ? `Turn "${seededIdea.title}" into short-form clips.` : null,
-      seededIdea.description ? seededIdea.description : null,
+      seededIdea.description || null,
       seededIdea.keywords.length ? `Lean into ${seededIdea.keywords.slice(0, 4).join(", ")}.` : null,
     ].filter(Boolean);
-
     setHighlightBrief(briefParts.join(" "));
     setHighlightAudience(seededIdea.niche || "Growth-focused creators");
     setHighlightTone("Insight-led, scroll-stopping, fast payoff");
@@ -154,792 +180,1184 @@ export function RepurposeIngestPage() {
     setHighlightTone,
   ]);
 
-  async function handleAutoHighlightsWithProgress() {
-    setDetectionPhase(0);
-    await handleAutoHighlights();
-    setDetectionPhase(0);
+  useEffect(() => {
+    if (highlightProgress.isActive) {
+      setStage("generate");
+    }
+  }, [highlightProgress.isActive]);
+
+  async function generateClips() {
+    setStage("generate");
+    const ok = await handleAutoHighlights();
+    if (ok) setStage("review");
+  }
+
+  async function uploadSource(file: File) {
+    const maxBytes = 4 * 1024 * 1024 * 1024;
+    if (file.size > maxBytes) {
+      throw new Error("File exceeds 4 GB upload limit.");
+    }
+
+    const formData = new FormData();
+    formData.append("projectId", projectId);
+    formData.append("file", file);
+    const res = await fetch("/api/upload", {
+      method: "POST",
+      body: formData,
+      cache: "no-store",
+    });
+    if (!res.ok) {
+      const payload = await res.json().catch(() => null);
+      throw new Error(payload?.error?.message ?? payload?.message ?? "Upload failed");
+    }
+    const data = await res.json();
+    toast({
+      title: "Source ready",
+      description: `${data.asset?.type ?? "Asset"} uploaded and ready for clipping.`,
+    });
+    await invalidate();
+  }
+
+  async function updateReviewStatus(clipId: string, reviewStatus: string) {
+    const response = await fetch(`/api/clips/${clipId}/review-status`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reviewStatus }),
+    });
+    if (!response.ok) {
+      toast({ variant: "destructive", title: "Could not update clip status" });
+      return;
+    }
+    await invalidate();
+  }
+
+  if (!isProjectSelected) {
+    return (
+      <EmptyState
+        icon={Sparkles}
+        title="Start by selecting a project"
+        description="Choose a project first. ViralSnipAI keeps your source video, generated clips, edits, captions, and exports together."
+        primary={{ label: "View projects", href: "/projects" }}
+      />
+    );
   }
 
   return (
-    <div className="w-full space-y-6 pb-10 animate-enter">
-      <PageHeader
-        eyebrow="Create Clip"
-        title="Turn long videos into viral-ready clips"
-        description="Upload a podcast, webinar, tutorial, interview, or YouTube video. ViralSnipAI finds timestamped moments, ranks them, and prepares social-ready clips."
-        icon={Sparkles}
-        actions={
-          <div className="min-w-[240px]">
-          <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/50 mb-1.5">
-            Active Project
-          </p>
-          {projects.length > 0 ? (
-            <Select value={projectId || undefined} onValueChange={setProjectId}>
-              <SelectTrigger className="h-9 rounded-lg border-border/50 text-sm">
-                <SelectValue placeholder="Select project" />
-              </SelectTrigger>
-              <SelectContent>
-                {projects.map((p) => (
-                  <SelectItem key={p.id} value={p.id}>{p.title}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          ) : (
-            <p className="text-sm text-muted-foreground/60 py-2">
-              No projects yet —{" "}
-              <Link href="/dashboard" className="text-primary hover:underline">create one</Link>
-            </p>
-          )}
-          </div>
-        }
+    <div className="mx-auto w-full max-w-7xl space-y-5 pb-10">
+      <CreateClipHeader
+        projects={projects}
+        projectId={projectId}
+        setProjectId={setProjectId}
+        projectTitle={project?.title ?? "Untitled project"}
+        status={resolveUserStatus({
+          hasSource: Boolean(primaryAsset),
+          generating: highlightProgress.isActive,
+          clipCount,
+          approvedCount,
+        })}
       />
 
-      <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-slate-950 p-6 text-white shadow-2xl shadow-black/20">
-        <div className="absolute inset-x-20 top-0 h-32 rounded-full bg-gradient-to-r from-emerald-400/20 via-cyan-400/15 to-violet-400/15 blur-3xl" />
-        <div className="relative grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px] lg:items-center">
-          <div>
-            <div className="mb-4 flex flex-wrap gap-2">
-              <ProviderBadge provider="openai" label="OpenAI word timing" />
-              <ProviderBadge provider="openrouter" label="OpenRouter ranking" />
-              <TranscriptPrecisionBadge precision={transcriptPrecision} />
-            </div>
-            <h2 className="max-w-3xl text-3xl font-semibold tracking-tight md:text-4xl">
-              Upload once. Review precise AI clips in minutes.
-            </h2>
-            <p className="mt-3 max-w-2xl text-sm leading-6 text-white/65">
-              The V1 pipeline keeps timestamps deterministic: OpenAI handles timing, OpenRouter ranks creative potential, and local boundary refinement keeps clips aligned to real speech and scene cuts.
-            </p>
-            <div className="mt-5 flex flex-wrap gap-3">
-              <a href="#source-input" className="rounded-full bg-white px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-white/90">
-                Upload video
-              </a>
-              <a href="#source-input" className="rounded-full border border-white/15 bg-white/10 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/15">
-                Paste YouTube link
-              </a>
-              <button
-                type="button"
-                onClick={handleAutoHighlightsWithProgress}
-                disabled={!primaryAsset || highlightProgress.isActive}
-                className="rounded-full bg-gradient-to-r from-emerald-500 to-cyan-500 px-4 py-2 text-sm font-semibold text-white transition hover:opacity-95 disabled:opacity-45"
-              >
-                Start AI clipping
-              </button>
-            </div>
-          </div>
-          <div className="rounded-2xl border border-white/10 bg-white/[0.055] p-4">
-            <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-white/45">Project status</p>
-            <div className="mt-4 grid grid-cols-3 gap-3">
-              {[
-                ["Source", primaryAsset ? "Ready" : "Missing"],
-                ["Clips", clipCount],
-                ["Selected", selectedClipIds.length],
-              ].map(([label, value]) => (
-                <div key={label} className="rounded-xl border border-white/10 bg-black/20 p-3">
-                  <p className="text-[10px] uppercase tracking-widest text-white/40">{label}</p>
-                  <p className="mt-2 text-lg font-semibold">{value}</p>
-                </div>
-              ))}
-            </div>
-            <p className="mt-4 flex gap-2 rounded-xl border border-amber-400/20 bg-amber-400/10 p-3 text-xs leading-5 text-amber-100/85">
-              <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-              Very long videos are automatically chunked for transcription. Upload high-quality source files for best clip boundaries.
-            </p>
-          </div>
-        </div>
-      </div>
-
-      <Stepper
-        activeIndex={activeStep}
-        steps={[
-          { label: "Upload & Detect", icon: UploadIcon },
-          { label: "Edit & Enhance", icon: Pencil },
-          { label: "Export", icon: Download },
-        ]}
+      <ClipCreationStageNav
+        stage={stage}
+        setStage={setStage}
+        hasSource={Boolean(primaryAsset)}
+        hasClips={clipCount > 0}
+        hasApproved={approvedCount > 0}
       />
 
-      {/* ── Seeded idea banner ────────────────────────────────────────────────── */}
       {seededIdea ? (
-        <div className="rounded-xl border border-primary/20 bg-primary/[0.06] p-4">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-            <div className="space-y-2">
-              <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-primary/80">
+        <div className="rounded-2xl border border-primary/15 bg-primary/[0.04] p-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-primary/70">
                 Seeded from Content Calendar
               </p>
-              <div className="space-y-1">
-                <p className="text-sm font-semibold text-foreground">
-                  {seededIdea.title || "Repurpose-ready idea"}
-                </p>
-                <p className="max-w-3xl text-sm text-muted-foreground/70">
-                  Upload or fetch the source video next. RepurposeOS will use the seeded idea context to guide
-                  highlight detection and clip selection.
-                </p>
-              </div>
-              <div className="flex flex-wrap gap-2 text-xs text-muted-foreground/60">
-                {seededIdea.niche ? (
-                  <span className="rounded-full border border-border/50 bg-muted/50 px-2.5 py-1">
-                    Audience: {seededIdea.niche}
-                  </span>
-                ) : null}
-                {seededIdea.keywords.slice(0, 3).map((keyword) => (
-                  <span key={keyword} className="rounded-full border border-border/50 bg-muted/50 px-2.5 py-1">
-                    {keyword}
-                  </span>
-                ))}
-              </div>
+              <p className="mt-1 text-sm font-semibold">{seededIdea.title || "Repurpose-ready idea"}</p>
+              <p className="mt-1 max-w-2xl text-xs leading-5 text-muted-foreground/70">
+                This context has been applied to your clip goals. You can edit it in the Goals stage.
+              </p>
             </div>
-            <Link
-              href={`/dashboard/content-calendar?ideaId=${seededIdea.ideaId}`}
-              className="text-sm font-medium text-primary/70 transition-colors hover:text-primary"
-            >
-              ← Back to idea
+            <Link href={`/dashboard/content-calendar?ideaId=${seededIdea.ideaId}`} className="text-sm font-medium text-primary">
+              Back to idea
             </Link>
           </div>
         </div>
       ) : null}
 
-      {/* ── No project selected ─────────────────────────────────────────────── */}
-      {!isProjectSelected ? (
-        <EmptyState
-          icon={Sparkles}
-          title="Start by creating or selecting a project"
-          description="Choose an existing project from the selector above, or create a fresh project to upload a source video and generate clips."
-          primary={{ label: "Create project", href: "/projects" }}
-          secondary={{ label: "Select existing project", href: "/projects" }}
-        />
-      ) : (
-        <div className="space-y-6">
-          {/* ── Main 2-column grid ──────────────────────────────────────────── */}
-          <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_360px] lg:items-start">
+      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_340px] lg:items-start">
+        <div className="min-w-0">
+          {stage === "source" ? (
+            <SourceStage
+              sourceUrl={sourceUrl}
+              setSourceUrl={setSourceUrl}
+              handleIngestYouTube={handleIngestYouTube}
+              youtubeProgress={youtubeProgress}
+              projectId={projectId}
+              uploadSource={uploadSource}
+              primaryAsset={primaryAsset}
+              transcriptPreview={transcriptPreview}
+              transcriptPrecision={transcriptPrecision}
+              onNext={() => setStage("goals")}
+              toast={toast}
+            />
+          ) : null}
 
-            {/* ── LEFT: Source panel ─────────────────────────────────────────── */}
-            <AppCard id="source-input" className="space-y-5 p-6">
-              <div>
-                <div className="flex items-center gap-2 mb-0.5">
-                  <Youtube className="h-4 w-4 text-red-400" />
-                  <h2 className="text-sm font-semibold">Source Video</h2>
-                </div>
-                <p className="text-xs text-muted-foreground/50">
-                  Paste a YouTube link or upload a local file
-                </p>
-              </div>
+          {stage === "goals" ? (
+            <GoalsStage
+              qualityMode={qualityMode}
+              setQualityMode={setQualityMode}
+              clipIntent={clipIntent}
+              setClipIntent={setClipIntent}
+              targetPlatform={targetPlatform}
+              setTargetPlatform={setTargetPlatform}
+              targetClipCount={targetClipCount}
+              setTargetClipCount={setTargetClipCount}
+              clipLengthPreset={clipLengthPreset}
+              setClipLengthPreset={setClipLengthPreset}
+              highlightBrief={highlightBrief}
+              setHighlightBrief={setHighlightBrief}
+              highlightAudience={highlightAudience}
+              setHighlightAudience={setHighlightAudience}
+              highlightTone={highlightTone}
+              setHighlightTone={setHighlightTone}
+              highlightCallToAction={highlightCallToAction}
+              setHighlightCallToAction={setHighlightCallToAction}
+              primaryAssetTranscript={primaryAsset?.transcript}
+              projectTitle={project?.title}
+              onPromptsGenerated={(prompts: GeneratedPromptSet) => {
+                setHighlightBrief(prompts.brief);
+                setHighlightAudience(prompts.audience);
+                setHighlightTone(prompts.tone);
+                setHighlightCallToAction(prompts.callToAction);
+              }}
+              onBack={() => setStage("source")}
+              onNext={() => setStage("generate")}
+            />
+          ) : null}
 
-              {/* YouTube URL + Fetch inline */}
-              <div className="flex gap-2">
-                <div className="relative flex-1">
-                  <Youtube className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/30 pointer-events-none" />
-                  <input
-                    type="text"
-                    value={sourceUrl}
-                    onChange={(e) => setSourceUrl(e.target.value)}
-                    placeholder="https://youtube.com/watch?v=..."
-                    className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-border/50 bg-background/60 text-foreground placeholder:text-muted-foreground/30 focus:outline-none focus:border-primary/50 transition-colors text-sm"
-                  />
-                </div>
-                <Button
-                  variant="glow"
-                  size="sm"
-                  onClick={handleIngestYouTube}
-                  disabled={youtubeProgress.isActive || !sourceUrl.trim()}
-                  className="shrink-0 h-[42px] px-4"
-                >
-                  {youtubeProgress.isActive
-                    ? <Loader2 className="h-4 w-4 animate-spin" />
-                    : <LinkIcon className="h-4 w-4" />}
-                  <span className="ml-1.5">
-                    {youtubeProgress.isActive ? (youtubeProgress.phase ?? "Fetching…") : "Fetch"}
-                  </span>
-                </Button>
-              </div>
+          {stage === "generate" ? (
+            <GenerateStage
+              canGenerate={Boolean(primaryAsset)}
+              isGenerating={highlightProgress.isActive}
+              progress={highlightProgress.progress}
+              generateClips={generateClips}
+              onBack={() => setStage("goals")}
+              onReview={() => setStage("review")}
+              clipCount={clipCount}
+            />
+          ) : null}
 
-              {/* Divider */}
-              <div className="flex items-center gap-3">
-                <div className="flex-1 h-px bg-border/40" />
-                <span className="text-[11px] text-muted-foreground/40 font-medium">or upload a file</span>
-                <div className="flex-1 h-px bg-border/40" />
-              </div>
+          {stage === "review" && project ? (
+            <ReviewStage
+              clips={project.clips}
+              projectId={projectId}
+              selectedClipIds={selectedClipIds}
+              setSelectedClipIds={setSelectedClipIds}
+              reviewFilter={reviewFilter}
+              setReviewFilter={setReviewFilter}
+              reviewSort={reviewSort}
+              setReviewSort={setReviewSort}
+              updateReviewStatus={updateReviewStatus}
+              onBack={() => setStage("generate")}
+              onExport={() => setStage("export")}
+            />
+          ) : null}
 
-              <div className="grid gap-3 text-xs text-muted-foreground sm:grid-cols-3">
-                <div className="rounded-2xl border border-border/70 bg-muted/30 p-3">Formats: MP4, MOV, WebM</div>
-                <div className="rounded-2xl border border-border/70 bg-muted/30 p-3">Max size: configured by plan</div>
-                <div className="rounded-2xl border border-border/70 bg-muted/30 p-3">Long videos: chunked safely</div>
-              </div>
-
-              {/* Upload dropzone */}
-              <UploadDropzone
-                projectId={projectId}
-                onUpload={async (file) => {
-                  const formData = new FormData();
-                  formData.append("projectId", projectId);
-                  formData.append("file", file);
-                  const res = await fetch("/api/upload", {
-                    method: "POST",
-                    body: formData,
-                    cache: "no-store",
-                  });
-                  if (!res.ok) throw new Error("Upload failed");
-                  const data = await res.json();
-                  toast({
-                    title: "Upload complete",
-                    description: `${data.asset?.type ?? "Asset"} ready for repurposing.`,
-                  });
-                  await invalidate();
-                }}
-                description="Drop high-quality video or audio files"
-              />
-
-              {/* Asset status */}
-              {primaryAsset ? (
-                <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/[0.04] p-4">
-                  <div className="flex items-center gap-2 mb-3">
-                    <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />
-                    <span className="text-sm font-semibold text-emerald-400 capitalize">
-                      {primaryAsset.type}
-                    </span>
-                    <span className="text-xs text-muted-foreground/50">
-                      · {formatDuration((primaryAsset.durationSec ?? 0) * 1000)}
-                    </span>
-                  </div>
-                  {primaryAsset.transcript ? (
-                    <div className="h-28 overflow-y-auto rounded-lg bg-muted/60 px-3 py-2 text-xs text-muted-foreground/60 leading-relaxed">
-                      <div className="mb-2 flex flex-wrap items-center gap-2">
-                        <TranscriptPrecisionBadge precision={transcriptPreview.precision} />
-                        {transcriptPreview.language && (
-                          <span className="rounded-full border border-border/40 px-2 py-0.5 text-[10px] uppercase tracking-widest text-muted-foreground/50">
-                            {transcriptPreview.language}
-                          </span>
-                        )}
-                        {transcriptPreview.durationSec ? (
-                          <span className="rounded-full border border-border/40 px-2 py-0.5 text-[10px] text-muted-foreground/50">
-                            {formatDuration(transcriptPreview.durationSec * 1000)}
-                          </span>
-                        ) : null}
-                      </div>
-                      {transcriptPreview.text}
-                    </div>
-                  ) : (
-                    <p className="text-xs text-muted-foreground/40">
-                      No transcript yet — will generate during detection.
-                    </p>
-                  )}
-                </div>
-              ) : (
-                <div className="flex h-28 items-center justify-center rounded-xl border border-dashed border-border/30 text-xs text-muted-foreground/30">
-                  No asset loaded yet
-                </div>
-              )}
-            </AppCard>
-
-            {/* ── RIGHT: AI Detection config + usage ─────────────────────────── */}
-            <div className="space-y-5">
-            <AppCard className="flex flex-col gap-5 p-6">
-              {/* Header */}
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <div className="flex items-center gap-2 mb-0.5">
-                    <Sparkles className="h-4 w-4 text-primary/70" />
-                    <h2 className="text-sm font-semibold">AI Detection</h2>
-                  </div>
-                  <p className="text-xs text-muted-foreground/50">
-                    Guide the AI to find the best moments
-                  </p>
-                </div>
-                <AIPromptGeneratorDialog
-                  transcript={primaryAsset?.transcript}
-                  videoTitle={project?.title}
-                  onPromptsGenerated={(prompts) => {
-                    setHighlightBrief(prompts.brief);
-                    setHighlightAudience(prompts.audience);
-                    setHighlightTone(prompts.tone);
-                    setHighlightCallToAction(prompts.callToAction);
-                  }}
-                />
-              </div>
-
-              <div className="space-y-3">
-                <div>
-                  <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/50">
-                    AI Clipping Settings
-                  </p>
-                  <p className="mt-1 text-[11px] leading-5 text-muted-foreground/50">
-                    ViralSnipAI automatically chooses the best AI model based on quality mode,
-                    video length, transcript precision, and your plan.
-                  </p>
-                </div>
-
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <div className="space-y-1.5">
-                    <label className="block text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/50">
-                      Clipping Quality
-                    </label>
-                    <Select value={qualityMode} onValueChange={(value) => setQualityMode(value as typeof qualityMode)}>
-                      <SelectTrigger className="h-9 rounded-lg border-border/50 bg-background/60 text-sm">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {QUALITY_MODE_OPTIONS.map((option) => (
-                          <SelectItem key={option.value} value={option.value}>
-                            {option.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <p className="text-[11px] text-muted-foreground/45">
-                      {QUALITY_MODE_OPTIONS.find((option) => option.value === qualityMode)?.description}
-                    </p>
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="block text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/50">
-                      Clip Intent
-                    </label>
-                    <Select value={clipIntent} onValueChange={(value) => setClipIntent(value as typeof clipIntent)}>
-                      <SelectTrigger className="h-9 rounded-lg border-border/50 bg-background/60 text-sm">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {CLIP_INTENT_OPTIONS.map((option) => (
-                          <SelectItem key={option.value} value={option.value}>
-                            {option.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-
-                {modelDebugEnabled && (
-                  <details className="rounded-xl border border-amber-500/20 bg-amber-500/[0.04] p-3">
-                    <summary className="cursor-pointer text-xs font-semibold text-amber-200">
-                      Developer override — not visible to normal users
-                    </summary>
-                    <div className="mt-3 space-y-2">
-                      <Select value={debugModelOverride || "auto"} onValueChange={(value) => setDebugModelOverride(value === "auto" ? "" : value)}>
-                        <SelectTrigger className="h-9 rounded-lg border-amber-500/25 bg-background/60 text-sm">
-                          <SelectValue placeholder="Internal model override" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="auto">Auto model policy</SelectItem>
-                          {HIGHLIGHT_MODEL_OPTIONS.map((opt) => (
-                            <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <p className="text-[11px] leading-5 text-amber-100/65">
-                        Debug override bypasses automatic routing only in development/admin contexts.
-                        Normal users never see raw OpenRouter model IDs.
-                      </p>
-                    </div>
-                  </details>
-                )}
-              </div>
-
-              {transcriptPrecision !== "word" && transcriptPrecision !== "none" && (
-                <div className="rounded-xl border border-amber-500/20 bg-amber-500/[0.05] p-3">
-                  <p className="text-xs font-semibold text-amber-200">Lower precision transcript</p>
-                  <p className="mt-1 text-[11px] leading-5 text-amber-100/70">
-                    This source has segment-level timing. Word-level timing gives better clip boundaries.
-                  </p>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="mt-3 h-8 border-amber-500/30 bg-amber-500/10 text-xs text-amber-100 hover:bg-amber-500/15"
-                    onClick={() => toast({
-                      title: "Re-transcription available",
-                      description: "Use the retranscribe action from the project tools to rebuild word-level timing.",
-                    })}
-                  >
-                    Re-transcribe for word-level precision
-                  </Button>
-                </div>
-              )}
-
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div className="space-y-1.5">
-                  <label className="block text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/50">
-                    Target clips
-                  </label>
-                  <Select value={String(targetClipCount)} onValueChange={(value) => setTargetClipCount(Number(value))}>
-                    <SelectTrigger className="h-9 rounded-lg border-border/50 bg-background/60 text-sm">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {[3, 4, 5, 6, 7, 8].map((count) => (
-                        <SelectItem key={count} value={String(count)}>{count} clips</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-1.5">
-                  <label className="block text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/50">
-                    Clip length
-                  </label>
-                  <Select value={clipLengthPreset} onValueChange={(value) => setClipLengthPreset(value as typeof clipLengthPreset)}>
-                    <SelectTrigger className="h-9 rounded-lg border-border/50 bg-background/60 text-sm">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="short">Short · 18-30s</SelectItem>
-                      <SelectItem value="balanced">Balanced · 30-45s</SelectItem>
-                      <SelectItem value="detailed">Detailed · 45-58s</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-
-              {/* Highlight brief */}
-              <div className="space-y-1.5">
-                <label className="block text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/50">
-                  Highlight Brief
-                </label>
-                <textarea
-                  value={highlightBrief}
-                  onChange={(e) => setHighlightBrief(e.target.value)}
-                  placeholder="What core message should clips amplify?"
-                  rows={2}
-                  className="w-full px-3.5 py-2.5 rounded-lg border border-border/50 bg-background/60 text-foreground placeholder:text-muted-foreground/30 focus:outline-none focus:border-primary/50 transition-colors resize-none text-sm"
-                />
-              </div>
-
-              {/* Audience / Tone / CTA */}
-              <div className="space-y-3">
-                {[
-                  { label: "Audience", value: highlightAudience, set: setHighlightAudience, placeholder: "Growth-focused creators" },
-                  { label: "Tone", value: highlightTone, set: setHighlightTone, placeholder: "Tension → payoff, high energy" },
-                  { label: "Desired Action", value: highlightCallToAction, set: setHighlightCallToAction, placeholder: "Drive viewers to subscribe" },
-                ].map((f) => (
-                  <div key={f.label}>
-                    <label className="block text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/40 mb-1.5">
-                      {f.label}
-                    </label>
-                    <input
-                      type="text"
-                      value={f.value}
-                      onChange={(e) => f.set(e.target.value)}
-                      placeholder={f.placeholder}
-                      className="w-full px-3.5 py-2.5 rounded-lg border border-border/50 bg-background/60 text-foreground placeholder:text-muted-foreground/30 focus:outline-none focus:border-primary/50 transition-colors text-sm"
-                    />
-                  </div>
-                ))}
-              </div>
-
-              {/* Separator + CTA */}
-              <div className="mt-auto">
-                <div className="h-px bg-border/30 mb-5" />
-                {highlightProgress.isActive ? (
-                  <DetectionProgressCard phase={detectionPhase} onPhaseChange={setDetectionPhase} />
-                ) : (
-                  <Button
-                    variant="glow"
-                    className="w-full"
-                    onClick={handleAutoHighlightsWithProgress}
-                    disabled={!primaryAsset}
-                  >
-                    <Sparkles className="h-4 w-4 mr-1.5" />
-                    Auto-detect Highlights
-                  </Button>
-                )}
-              </div>
-            </AppCard>
-            <V1UsageLimitsCard />
-            </div>
-          </div>
-
-          <ProcessingStepTimeline active={highlightProgress.isActive} complete={Boolean(lastHighlightAnalytics || clipCount > 0)} />
-          <QualityDiagnosticsPanel analytics={lastHighlightAnalytics} />
-
-          {/* ── Detected Highlights grid ─────────────────────────────────────── */}
-          {clipCount > 0 && project && (
-            <div>
-              {/* Section header */}
-              <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-                <div>
-                  <h2 className="text-sm font-semibold">Detected Highlights</h2>
-                  <p className="text-xs text-muted-foreground/50 mt-0.5">
-                    {clipCount} clip{clipCount !== 1 ? "s" : ""} · ready to edit
-                  </p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    asChild
-                  >
-                    <Link href={`/repurpose/export?projectId=${projectId}`}>
-                      <Download className="h-3.5 w-3.5 mr-1.5" />
-                      Export All
-                    </Link>
-                  </Button>
-                  <Button
-                    variant="glow"
-                    size="sm"
-                    asChild
-                  >
-                    <Link href={`/repurpose/editor?projectId=${projectId}`}>
-                      Continue to Edit
-                      <ArrowRight className="h-4 w-4 ml-1.5" />
-                    </Link>
-                  </Button>
-                </div>
-              </div>
-
-              {/* Clip result card grid */}
-              <div className="grid gap-4 lg:grid-cols-2">
-                {project.clips.map((clip, index) => {
-                  const duration = clip.endMs - clip.startMs;
-                  const score = clip.viralityScore ?? null;
-                  const captionStatus = resolveCaptionStatus(clip.captionSrt);
-                  const renderStatus = clip.previewPath ? "Preview ready" : "Preview pending";
-                  const exportRecord = project.exports.find(
-                    (exp) =>
-                      isExportComplete(exp.status) &&
-                      exp.outputPath &&
-                      Array.isArray(exp.clipIds) &&
-                      exp.clipIds.includes(clip.id)
-                  );
-                  return (
-                    <div
-                      key={clip.id}
-                      className="group overflow-hidden rounded-2xl border border-border/50 bg-card/80 shadow-sm transition-all hover:border-primary/30 hover:shadow-lg hover:shadow-slate-950/5"
-                    >
-                      <div className="grid min-h-full gap-0 sm:grid-cols-[220px_minmax(0,1fr)]">
-                        <div className="relative aspect-video bg-black/50 sm:aspect-auto">
-                          {clip.previewPath ? (
-                            <video
-                              src={clip.previewPath}
-                              className="h-full w-full object-cover"
-                              muted
-                              loop
-                              playsInline
-                              preload="metadata"
-                            />
-                          ) : clip.thumbnail ? (
-                            <SafeThumbnailImage
-                              src={clip.thumbnail}
-                              alt={clip.title || `Clip ${index + 1} thumbnail`}
-                              className="absolute inset-0 aspect-auto"
-                            />
-                          ) : (
-                            <div className="flex h-full items-center justify-center">
-                              <Sparkles className="h-7 w-7 text-white/15" />
-                            </div>
-                          )}
-
-                          <div className="absolute left-2 top-2 rounded-full bg-black/65 px-2 py-1 text-[10px] font-semibold text-white/80 backdrop-blur-sm">
-                            #{index + 1}
-                          </div>
-
-                          {score !== null && (
-                            <div className={cn(
-                              "absolute right-2 top-2 flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-bold text-white backdrop-blur-sm",
-                              score >= 80 ? "bg-emerald-500/85" : score >= 60 ? "bg-amber-500/85" : "bg-orange-500/85"
-                            )}>
-                              <Flame className="h-3 w-3" />
-                              {score}
-                            </div>
-                          )}
-
-                          <div className="absolute bottom-2 left-2 flex items-center gap-1 rounded bg-black/70 px-2 py-1 font-mono text-[10px] font-semibold text-white/80">
-                            <Clock3 className="h-3 w-3" />
-                            {formatDuration(duration)}
-                          </div>
-                        </div>
-
-                        <div className="flex min-w-0 flex-col gap-3 p-4">
-                          <div className="min-w-0">
-                            <div className="flex items-start justify-between gap-3">
-                              <div className="min-w-0">
-                                <h3 className="truncate text-sm font-semibold text-foreground">
-                                  {clip.title || `Clip ${index + 1}`}
-                                </h3>
-                                <p className="mt-1 font-mono text-[11px] text-muted-foreground/55">
-                                  {formatDuration(clip.startMs)} → {formatDuration(clip.endMs)}
-                                </p>
-                              </div>
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  setSelectedClipIds(
-                                    selectedClipIds.includes(clip.id)
-                                      ? selectedClipIds.filter((id) => id !== clip.id)
-                                      : [...selectedClipIds, clip.id]
-                                  )
-                                }
-                                className={cn(
-                                  "shrink-0 rounded-full border px-2.5 py-1 text-[10px] font-semibold transition-colors",
-                                  selectedClipIds.includes(clip.id)
-                                    ? "border-primary/40 bg-primary/15 text-primary"
-                                    : "border-border/60 bg-muted/30 text-muted-foreground hover:text-foreground"
-                                )}
-                              >
-                                {selectedClipIds.includes(clip.id) ? "Selected" : "Select"}
-                              </button>
-                            </div>
-
-                            <p className="mt-2 line-clamp-2 text-xs leading-5 text-muted-foreground/70">
-                              {clip.summary || transcriptSnippet(clip.captionSrt) || "Transcript snippet will appear after captions are generated."}
-                            </p>
-                          </div>
-
-                          <div className="grid gap-2 text-[11px] sm:grid-cols-3">
-                            <StatusPill label="Captions" value={captionStatus} tone={captionStatus === "Ready" ? "good" : "warn"} />
-                            <StatusPill label="Render" value={renderStatus} tone={clip.previewPath ? "good" : "neutral"} />
-                            <StatusPill label="Export" value={exportRecord ? "Ready" : "Not exported"} tone={exportRecord ? "good" : "neutral"} />
-                          </div>
-
-                          {score !== null && (
-                            <div className="rounded-xl border border-border/50 bg-muted/25 p-3">
-                              <div className="mb-1.5 flex items-center justify-between text-[11px]">
-                                <span className="font-semibold text-foreground/80">Score explanation</span>
-                                <span className="font-semibold text-muted-foreground/60">{score}/100</span>
-                              </div>
-                              <p className="line-clamp-2 text-xs leading-5 text-muted-foreground/65">
-                                {scoreExplanation(clip.viralityFactors) || "Ranked by hook strength, pacing, emotional peak, transcript quality, and clip boundary quality."}
-                              </p>
-                            </div>
-                          )}
-
-                          <div className="mt-auto flex flex-wrap gap-2">
-                            {clip.previewPath ? (
-                              <a
-                                href={clip.previewPath}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="inline-flex items-center gap-1.5 rounded-lg border border-border/60 bg-muted/30 px-3 py-1.5 text-xs font-semibold text-foreground transition-colors hover:bg-muted/50"
-                              >
-                                <Eye className="h-3.5 w-3.5" />
-                                Preview
-                              </a>
-                            ) : null}
-                            <Link
-                              href={`/repurpose/editor?projectId=${projectId}`}
-                              className="inline-flex items-center gap-1.5 rounded-lg border border-border/60 bg-muted/30 px-3 py-1.5 text-xs font-semibold text-foreground transition-colors hover:bg-muted/50"
-                            >
-                              <Pencil className="h-3.5 w-3.5" />
-                              Edit
-                            </Link>
-                            <Link
-                              href={`/repurpose/export?projectId=${projectId}`}
-                              className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
-                            >
-                              <Download className="h-3.5 w-3.5" />
-                              Export
-                            </Link>
-                            {exportRecord?.outputPath ? (
-                              <a
-                                href={exportRecord.outputPath}
-                                download
-                                className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-xs font-semibold text-emerald-500 transition-colors hover:bg-emerald-500/15"
-                              >
-                                <Download className="h-3.5 w-3.5" />
-                                Download
-                              </a>
-                            ) : null}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
+          {stage === "export" && project ? (
+            <ExportStageEntry
+              clips={project.clips}
+              projectId={projectId}
+              selectedClipIds={selectedClipIds}
+              setSelectedClipIds={setSelectedClipIds}
+              onBack={() => setStage("review")}
+            />
+          ) : null}
         </div>
-      )}
+
+        <div className="space-y-4 lg:sticky lg:top-20">
+          <ProjectSummaryCard
+            hasSource={Boolean(primaryAsset)}
+            assetType={primaryAsset?.type}
+            durationSec={primaryAsset?.durationSec}
+            clipCount={clipCount}
+            approvedCount={approvedCount}
+            exportCount={project?.exports?.length ?? 0}
+            selectedCount={selectedClipIds.length}
+          />
+          <TechnicalDetailsDrawer
+            analytics={lastHighlightAnalytics}
+            transcriptPreview={transcriptPreview}
+            transcriptPrecision={transcriptPrecision}
+            modelDebugEnabled={modelDebugEnabled}
+            debugModelOverride={debugModelOverride}
+            setDebugModelOverride={setDebugModelOverride}
+          />
+          <details className="rounded-2xl border border-border/50 bg-card/55 p-4">
+            <summary className="cursor-pointer text-sm font-semibold">Plan usage</summary>
+            <div className="mt-3">
+              <V1UsageLimitsCard />
+            </div>
+          </details>
+        </div>
+      </div>
     </div>
   );
 }
 
-function StatusPill({
-  label,
-  value,
-  tone,
+function CreateClipHeader({
+  projects,
+  projectId,
+  setProjectId,
+  projectTitle,
+  status,
 }: {
-  label: string;
-  value: string;
-  tone: "good" | "warn" | "neutral";
+  projects: Array<{ id: string; title: string }>;
+  projectId: string;
+  setProjectId: (id: string) => void;
+  projectTitle: string;
+  status: string;
 }) {
   return (
-    <div
-      className={cn(
-        "rounded-lg border px-2.5 py-2",
-        tone === "good" && "border-emerald-500/20 bg-emerald-500/[0.06]",
-        tone === "warn" && "border-amber-500/20 bg-amber-500/[0.06]",
-        tone === "neutral" && "border-border/60 bg-muted/25"
-      )}
+    <div className="rounded-3xl border border-white/10 bg-slate-950/90 p-5 text-white shadow-xl shadow-black/10">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <div>
+          <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-cyan-200/70">Create Clips</p>
+          <div className="mt-2 flex flex-wrap items-center gap-3">
+            <h1 className="text-2xl font-semibold tracking-tight">{projectTitle}</h1>
+            <span className="rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs font-semibold text-white/75">
+              {status}
+            </span>
+          </div>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-white/60">
+            Upload a source, choose the outcome, generate clips, review winners, and export.
+          </p>
+        </div>
+        <div className="min-w-[240px]">
+          <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-white/40">
+            Project
+          </p>
+          <Select value={projectId || undefined} onValueChange={setProjectId}>
+            <SelectTrigger className="h-10 rounded-xl border-white/15 bg-white/10 text-sm text-white">
+              <SelectValue placeholder="Select project" />
+            </SelectTrigger>
+            <SelectContent>
+              {projects.map((project) => (
+                <SelectItem key={project.id} value={project.id}>{project.title}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ClipCreationStageNav({
+  stage,
+  setStage,
+  hasSource,
+  hasClips,
+  hasApproved,
+}: {
+  stage: WizardStage;
+  setStage: (stage: WizardStage) => void;
+  hasSource: boolean;
+  hasClips: boolean;
+  hasApproved: boolean;
+}) {
+  const currentIndex = STAGES.findIndex((item) => item.id === stage);
+  function disabled(id: WizardStage) {
+    if (id === "goals" || id === "generate") return !hasSource;
+    if (id === "review") return !hasClips;
+    if (id === "export") return !hasApproved;
+    return false;
+  }
+  return (
+    <div className="overflow-x-auto rounded-2xl border border-border/50 bg-card/60 p-2">
+      <div className="flex min-w-max items-center gap-2">
+        {STAGES.map((item, index) => {
+          const active = item.id === stage;
+          const complete = index < currentIndex;
+          const isDisabled = disabled(item.id);
+          return (
+            <button
+              key={item.id}
+              type="button"
+              disabled={isDisabled}
+              onClick={() => setStage(item.id)}
+              className={cn(
+                "flex items-center gap-3 rounded-xl px-3.5 py-3 text-left transition",
+                active ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
+                isDisabled && "cursor-not-allowed opacity-40 hover:bg-transparent hover:text-muted-foreground",
+              )}
+            >
+              <span className={cn(
+                "flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold",
+                active ? "bg-white/20" : complete ? "bg-emerald-500 text-white" : "bg-muted text-muted-foreground",
+              )}>
+                {complete ? <Check className="h-3.5 w-3.5" /> : index + 1}
+              </span>
+              <span>
+                <span className="block text-sm font-semibold">{item.label}</span>
+                <span className={cn("block text-[11px]", active ? "text-primary-foreground/70" : "text-muted-foreground/55")}>
+                  {item.helper}
+                </span>
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function SourceStage({
+  sourceUrl,
+  setSourceUrl,
+  handleIngestYouTube,
+  youtubeProgress,
+  projectId,
+  uploadSource,
+  primaryAsset,
+  transcriptPreview,
+  transcriptPrecision,
+  onNext,
+  toast,
+}: {
+  sourceUrl: string;
+  setSourceUrl: (value: string) => void;
+  handleIngestYouTube: () => Promise<void>;
+  youtubeProgress: { isActive: boolean; phase: string };
+  projectId: string;
+  uploadSource: (file: File) => Promise<void>;
+  primaryAsset: any;
+  transcriptPreview: TranscriptPreview;
+  transcriptPrecision: string;
+  onNext: () => void;
+  toast: ReturnType<typeof useToast>["toast"];
+}) {
+  return (
+    <StageShell
+      eyebrow="Stage 1"
+      title="Add your source"
+      description="Paste a YouTube link or upload a video/audio file. ViralSnipAI will handle the processing behind the scenes."
     >
-      <p className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground/45">
-        {label}
-      </p>
-      <p
-        className={cn(
-          "mt-1 truncate font-semibold",
-          tone === "good" && "text-emerald-500",
-          tone === "warn" && "text-amber-500",
-          tone === "neutral" && "text-muted-foreground"
+      <div className="grid gap-4 lg:grid-cols-2">
+        <div className="rounded-2xl border border-border/60 bg-background/50 p-5">
+          <div className="flex items-center gap-2">
+            <Youtube className="h-4 w-4 text-red-400" />
+            <h3 className="text-sm font-semibold">Paste YouTube link</h3>
+          </div>
+          <p className="mt-2 text-xs leading-5 text-muted-foreground/60">
+            Import a public video and prepare it for clipping.
+          </p>
+          <div className="mt-4 flex gap-2">
+            <div className="relative min-w-0 flex-1">
+              <LinkIcon className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/35" />
+              <input
+                value={sourceUrl}
+                onChange={(event) => setSourceUrl(event.target.value)}
+                placeholder="https://youtube.com/watch?v=..."
+                className="h-11 w-full rounded-xl border border-border/55 bg-background/70 pl-9 pr-3 text-sm outline-none transition focus:border-primary/45"
+              />
+            </div>
+            <Button onClick={handleIngestYouTube} disabled={youtubeProgress.isActive || !sourceUrl.trim()} className="h-11">
+              {youtubeProgress.isActive ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+              <span className="ml-1.5">{youtubeProgress.isActive ? youtubeProgress.phase || "Fetching" : "Fetch"}</span>
+            </Button>
+          </div>
+        </div>
+
+        <div className="rounded-2xl border border-border/60 bg-background/50 p-5">
+          <div className="flex items-center gap-2">
+            <UploadCloud className="h-4 w-4 text-cyan-400" />
+            <h3 className="text-sm font-semibold">Upload file</h3>
+          </div>
+          <p className="mt-2 text-xs leading-5 text-muted-foreground/60">
+            Drop a video or audio file up to 4 GB.
+          </p>
+          <div className="mt-4">
+            <UploadDropzone
+              projectId={projectId}
+              onUpload={uploadSource}
+              maxSizeMb={4096}
+              recommendedDurationMinutes={180}
+              description="Drop a video or audio file up to 4 GB"
+              formatHints={["MP4", "MOV", "WebM", "MP3", "WAV", "M4A"]}
+            />
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-5 rounded-2xl border border-border/60 bg-muted/20 p-4">
+        {primaryAsset ? (
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/25 bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-500">
+                  <CheckCircle2 className="h-3.5 w-3.5" />
+                  Source ready
+                </span>
+                <span className="text-xs capitalize text-muted-foreground">{primaryAsset.type}</span>
+                <span className="text-xs text-muted-foreground/40">·</span>
+                <span className="text-xs text-muted-foreground">{formatDuration((primaryAsset.durationSec ?? 0) * 1000)}</span>
+              </div>
+              {transcriptPrecision !== "word" && transcriptPrecision !== "none" ? (
+                <PrecisionNotice />
+              ) : null}
+              {primaryAsset.transcript ? (
+                <details className="mt-3">
+                  <summary className="cursor-pointer text-xs font-semibold text-muted-foreground">
+                    Source transcript preview
+                  </summary>
+                  <p className="mt-2 rounded-xl border border-border/50 bg-background/60 p-3 text-xs leading-5 text-muted-foreground/70">
+                    {transcriptPreview.text}
+                  </p>
+                </details>
+              ) : null}
+            </div>
+            <Button onClick={onNext}>
+              Continue to goals
+              <ArrowRight className="ml-1.5 h-4 w-4" />
+            </Button>
+          </div>
+        ) : (
+          <div className="flex items-start gap-3 text-sm text-muted-foreground">
+            <Info className="mt-0.5 h-4 w-4" />
+            <p>
+              No source loaded yet. Add a YouTube link or upload a file to continue.
+            </p>
+          </div>
         )}
-      >
-        {value}
+      </div>
+    </StageShell>
+  );
+}
+
+function GoalsStage({
+  qualityMode,
+  setQualityMode,
+  clipIntent,
+  setClipIntent,
+  targetPlatform,
+  setTargetPlatform,
+  targetClipCount,
+  setTargetClipCount,
+  clipLengthPreset,
+  setClipLengthPreset,
+  highlightBrief,
+  setHighlightBrief,
+  highlightAudience,
+  setHighlightAudience,
+  highlightTone,
+  setHighlightTone,
+  highlightCallToAction,
+  setHighlightCallToAction,
+  primaryAssetTranscript,
+  projectTitle,
+  onPromptsGenerated,
+  onBack,
+  onNext,
+}: any) {
+  return (
+    <StageShell
+      eyebrow="Stage 2"
+      title="Tell ViralSnipAI what to find"
+      description="You control the outcome. ViralSnipAI chooses the internal AI route automatically."
+    >
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_300px]">
+        <div className="space-y-5">
+          <div className="grid gap-3 sm:grid-cols-3">
+            {[
+              { value: "short", title: "Short", body: "18-30s" },
+              { value: "balanced", title: "Balanced", body: "30-45s" },
+              { value: "detailed", title: "Detailed", body: "45-58s" },
+            ].map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                onClick={() => setClipLengthPreset(option.value)}
+                className={cn(
+                  "rounded-2xl border p-4 text-left transition",
+                  clipLengthPreset === option.value
+                    ? "border-primary/45 bg-primary/10"
+                    : "border-border/60 bg-background/50 hover:border-border",
+                )}
+              >
+                <span className="text-sm font-semibold">{option.title}</span>
+                <span className="mt-1 block text-xs text-muted-foreground">{option.body}</span>
+              </button>
+            ))}
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <Field label="Clip count">
+              <Select value={String(targetClipCount)} onValueChange={(value) => setTargetClipCount(Number(value))}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {[3, 4, 5, 6, 7, 8].map((count) => (
+                    <SelectItem key={count} value={String(count)}>{count} clips</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+            <Field label="Clipping quality">
+              <Select value={qualityMode} onValueChange={setQualityMode}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {QUALITY_MODE_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="mt-1.5 text-[11px] text-muted-foreground/55">
+                {QUALITY_MODE_OPTIONS.find((option) => option.value === qualityMode)?.description}
+              </p>
+            </Field>
+            <Field label="Clip intent">
+              <Select value={clipIntent} onValueChange={setClipIntent}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {CLIP_INTENT_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+            <Field label="Target platform">
+              <Select value={targetPlatform} onValueChange={setTargetPlatform}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {TARGET_PLATFORM_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+          </div>
+
+          <div className="rounded-2xl border border-border/60 bg-background/50 p-4">
+            <div className="mb-4 flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-sm font-semibold">Creative direction</h3>
+                <p className="mt-1 text-xs text-muted-foreground/60">
+                  Optional context helps avoid generic clips.
+                </p>
+              </div>
+              <AIPromptGeneratorDialog
+                transcript={primaryAssetTranscript}
+                videoTitle={projectTitle}
+                onPromptsGenerated={onPromptsGenerated}
+              />
+            </div>
+            <div className="grid gap-3 md:grid-cols-3">
+              <TextInput label="Audience" value={highlightAudience} onChange={setHighlightAudience} />
+              <TextInput label="Tone" value={highlightTone} onChange={setHighlightTone} />
+              <TextInput label="Desired action" value={highlightCallToAction} onChange={setHighlightCallToAction} />
+            </div>
+            <Field label="Optional brief" className="mt-3">
+              <textarea
+                value={highlightBrief}
+                onChange={(event) => setHighlightBrief(event.target.value)}
+                placeholder="What should the best clips emphasize?"
+                rows={4}
+                className="w-full resize-none rounded-xl border border-border/55 bg-background/70 px-3 py-2.5 text-sm outline-none transition focus:border-primary/45"
+              />
+            </Field>
+          </div>
+        </div>
+
+        <div className="rounded-2xl border border-cyan-500/15 bg-cyan-500/[0.04] p-4">
+          <p className="text-sm font-semibold text-cyan-200">Simple by design</p>
+          <p className="mt-2 text-xs leading-5 text-cyan-50/65">
+            ViralSnipAI analyzes your source, finds high-potential moments, and prepares clips for review.
+            You do not need to choose a raw AI model.
+          </p>
+        </div>
+      </div>
+      <StageActions>
+        <Button variant="outline" onClick={onBack}><ChevronLeft className="mr-1.5 h-4 w-4" />Back</Button>
+        <Button onClick={onNext}>Continue to generate<ArrowRight className="ml-1.5 h-4 w-4" /></Button>
+      </StageActions>
+    </StageShell>
+  );
+}
+
+function GenerateStage({
+  canGenerate,
+  isGenerating,
+  progress,
+  generateClips,
+  onBack,
+  onReview,
+  clipCount,
+}: {
+  canGenerate: boolean;
+  isGenerating: boolean;
+  progress: number;
+  generateClips: () => Promise<void>;
+  onBack: () => void;
+  onReview: () => void;
+  clipCount: number;
+}) {
+  return (
+    <StageShell
+      eyebrow="Stage 3"
+      title="Generate clips"
+      description="One click starts the full clipping workflow. Long videos can take a few minutes."
+    >
+      <div className="mx-auto max-w-2xl rounded-3xl border border-border/60 bg-background/55 p-6 text-center">
+        <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+          {isGenerating ? <Loader2 className="h-6 w-6 animate-spin" /> : <Sparkles className="h-6 w-6" />}
+        </div>
+        <h3 className="mt-4 text-lg font-semibold">
+          {isGenerating ? "Creating your clips" : clipCount > 0 ? "Clips are ready" : "Ready to generate"}
+        </h3>
+        <p className="mt-2 text-sm leading-6 text-muted-foreground/70">
+          {isGenerating
+            ? "This can take a few minutes for long videos."
+            : "ViralSnipAI will find strong moments, rank clips, and create previews."}
+        </p>
+        <SimpleProcessingTimeline progress={progress} active={isGenerating} complete={clipCount > 0 && !isGenerating} />
+        <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-center">
+          <Button variant="outline" onClick={onBack} disabled={isGenerating}>
+            <ChevronLeft className="mr-1.5 h-4 w-4" />Back to goals
+          </Button>
+          {clipCount > 0 && !isGenerating ? (
+            <Button onClick={onReview}>Review clips<ArrowRight className="ml-1.5 h-4 w-4" /></Button>
+          ) : (
+            <Button onClick={generateClips} disabled={!canGenerate || isGenerating} className="min-w-[180px]">
+              {isGenerating ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Sparkles className="mr-1.5 h-4 w-4" />}
+              Generate Clips
+            </Button>
+          )}
+        </div>
+      </div>
+    </StageShell>
+  );
+}
+
+function ReviewStage({
+  clips,
+  projectId,
+  selectedClipIds,
+  setSelectedClipIds,
+  reviewFilter,
+  setReviewFilter,
+  reviewSort,
+  setReviewSort,
+  updateReviewStatus,
+  onBack,
+  onExport,
+}: any) {
+  const filtered = clips
+    .filter((clip: any) => reviewFilter === "all" || (clip.reviewStatus ?? "needs_review") === reviewFilter)
+    .slice()
+    .sort((a: any, b: any) => {
+      if (reviewSort === "shortest") return (a.endMs - a.startMs) - (b.endMs - b.startMs);
+      if (reviewSort === "longest") return (b.endMs - b.startMs) - (a.endMs - a.startMs);
+      if (reviewSort === "newest") return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      return (b.viralityScore ?? 0) - (a.viralityScore ?? 0);
+    });
+  const canExport = clips.some((clip: any) => clip.reviewStatus === "approved" || clip.reviewStatus === "export_ready");
+
+  return (
+    <StageShell
+      eyebrow="Stage 4"
+      title="Review generated clips"
+      description="Choose the clips worth keeping. Details stay available without crowding every card."
+    >
+      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-wrap gap-2">
+          {[
+            ["all", "All"],
+            ["needs_review", "Needs Review"],
+            ["approved", "Approved"],
+            ["rejected", "Rejected"],
+            ["export_ready", "Export Ready"],
+          ].map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              onClick={() => setReviewFilter(value)}
+              className={cn(
+                "rounded-full border px-3 py-1.5 text-xs font-semibold transition",
+                reviewFilter === value ? "border-primary/35 bg-primary/10 text-primary" : "border-border/60 text-muted-foreground hover:text-foreground",
+              )}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <Select value={reviewSort} onValueChange={setReviewSort}>
+          <SelectTrigger className="h-9 w-full sm:w-[170px]"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="best">Best first</SelectItem>
+            <SelectItem value="shortest">Shortest</SelectItem>
+            <SelectItem value="longest">Longest</SelectItem>
+            <SelectItem value="newest">Newest</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+      {filtered.length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-border/60 p-8 text-center">
+          <Sparkles className="mx-auto h-8 w-8 text-muted-foreground/25" />
+          <p className="mt-3 text-sm font-semibold">No clips match this view</p>
+          <p className="mt-1 text-xs text-muted-foreground/60">Change the filter or generate clips again.</p>
+        </div>
+      ) : (
+        <div className="grid gap-4">
+          {filtered.map((clip: any, index: number) => (
+            <CleanClipResultCard
+              key={clip.id}
+              clip={clip}
+              index={index}
+              projectId={projectId}
+              selected={selectedClipIds.includes(clip.id)}
+              toggleSelected={() =>
+                setSelectedClipIds(
+                  selectedClipIds.includes(clip.id)
+                    ? selectedClipIds.filter((id: string) => id !== clip.id)
+                    : [...selectedClipIds, clip.id],
+                )
+              }
+              updateReviewStatus={updateReviewStatus}
+            />
+          ))}
+        </div>
+      )}
+      <StageActions>
+        <Button variant="outline" onClick={onBack}><ChevronLeft className="mr-1.5 h-4 w-4" />Back</Button>
+        <Button onClick={onExport} disabled={!canExport}>
+          Continue to export<ArrowRight className="ml-1.5 h-4 w-4" />
+        </Button>
+      </StageActions>
+    </StageShell>
+  );
+}
+
+function CleanClipResultCard({
+  clip,
+  index,
+  projectId,
+  selected,
+  toggleSelected,
+  updateReviewStatus,
+}: any) {
+  const duration = clip.endMs - clip.startMs;
+  const score = clip.viralityScore ?? null;
+  const metadata = getClipMetadata(clip);
+  const summary = clip.summary || transcriptSnippet(clip.captionSrt) || "Generated clip ready for review.";
+  const status = clip.reviewStatus ?? "needs_review";
+  return (
+    <article className="overflow-hidden rounded-2xl border border-border/60 bg-card/70 shadow-sm">
+      <div className="grid gap-0 md:grid-cols-[240px_minmax(0,1fr)]">
+        <div className="relative bg-black/50">
+          {clip.previewPath ? (
+            <video src={clip.previewPath} className="aspect-video h-full w-full object-cover md:aspect-auto" muted loop playsInline preload="metadata" />
+          ) : clip.thumbnail ? (
+            <SafeThumbnailImage src={clip.thumbnail} alt={clip.title || `Clip ${index + 1}`} className="h-full min-h-[160px]" />
+          ) : (
+            <div className="flex aspect-video h-full items-center justify-center"><Sparkles className="h-7 w-7 text-white/15" /></div>
+          )}
+          {score !== null ? (
+            <span className="absolute right-2 top-2 rounded-full bg-black/70 px-2.5 py-1 text-xs font-bold text-white">
+              {score} score
+            </span>
+          ) : null}
+        </div>
+        <div className="p-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <h3 className="text-sm font-semibold">{clip.title || `Clip ${index + 1}`}</h3>
+                <ReviewStatusBadge status={status} />
+              </div>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {formatDuration(duration)} · {formatDuration(clip.startMs)} to {formatDuration(clip.endMs)}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={toggleSelected}
+              className={cn(
+                "rounded-full border px-3 py-1 text-xs font-semibold",
+                selected ? "border-primary/40 bg-primary/10 text-primary" : "border-border/60 text-muted-foreground",
+              )}
+            >
+              {selected ? "Selected" : "Select"}
+            </button>
+          </div>
+          <p className="mt-3 line-clamp-2 text-sm leading-6 text-muted-foreground/75">{summary}</p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {score !== null ? <CompactBadge>{score >= 80 ? "High potential" : "Good candidate"}</CompactBadge> : null}
+            <CompactBadge>{metadata.candidateType ? formatLabel(metadata.candidateType) : "AI clip"}</CompactBadge>
+            <CompactBadge>{metadata.boundaryConfidence ? `${formatLabel(metadata.boundaryConfidence)} confidence` : "Review timing"}</CompactBadge>
+          </div>
+          <details className="mt-3 rounded-xl border border-border/50 bg-muted/20 p-3">
+            <summary className="cursor-pointer text-xs font-semibold text-muted-foreground">Why this clip?</summary>
+            <p className="mt-2 text-xs leading-5 text-muted-foreground/70">
+              {scoreExplanation(clip.viralityFactors) || "Selected by hook strength, pacing, transcript quality, and clean boundaries."}
+            </p>
+          </details>
+          <div className="mt-4 flex flex-wrap gap-2">
+            {clip.previewPath ? (
+              <a href={clip.previewPath} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 rounded-lg border border-border/60 px-3 py-1.5 text-xs font-semibold">
+                <Eye className="h-3.5 w-3.5" />Preview
+              </a>
+            ) : null}
+            <Button size="sm" variant="outline" asChild><Link href={`/repurpose/editor?projectId=${projectId}`}><Pencil className="mr-1.5 h-3.5 w-3.5" />Edit</Link></Button>
+            <Button size="sm" variant="outline" onClick={() => updateReviewStatus(clip.id, "approved")}><Check className="mr-1.5 h-3.5 w-3.5" />Approve</Button>
+            <Button size="sm" variant="outline" onClick={() => updateReviewStatus(clip.id, "rejected")}><X className="mr-1.5 h-3.5 w-3.5" />Reject</Button>
+            <Button size="sm" onClick={() => updateReviewStatus(clip.id, "export_ready")}><Download className="mr-1.5 h-3.5 w-3.5" />Export ready</Button>
+          </div>
+        </div>
+      </div>
+    </article>
+  );
+}
+
+function ExportStageEntry({ clips, projectId, selectedClipIds, setSelectedClipIds, onBack }: any) {
+  const exportable = clips.filter((clip: any) => clip.reviewStatus === "approved" || clip.reviewStatus === "export_ready");
+  const selectedExportable = selectedClipIds.filter((id: string) => exportable.some((clip: any) => clip.id === id));
+  const effectiveSelection = selectedExportable.length > 0 ? selectedExportable : exportable.map((clip: any) => clip.id);
+  return (
+    <StageShell
+      eyebrow="Stage 5"
+      title="Export approved clips"
+      description="Use the quick entry here, or open the full Export Center for jobs, downloads, captions, and platform presets."
+    >
+      <div className="rounded-2xl border border-border/60 bg-background/50 p-5">
+        <div className="grid gap-3 sm:grid-cols-3">
+          <Metric label="Approved / ready" value={exportable.length} />
+          <Metric label="Selected" value={effectiveSelection.length} />
+          <Metric label="Default format" value="9:16" />
+        </div>
+        <div className="mt-5 grid gap-4 md:grid-cols-3">
+          <Field label="Platform preset">
+            <Select defaultValue="youtube_shorts">
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {TARGET_PLATFORM_OPTIONS.filter((option) => option.value !== "auto").map((option) => (
+                  <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Field>
+          <Field label="Aspect ratio">
+            <Select defaultValue="9:16">
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="9:16">9:16 vertical</SelectItem>
+                <SelectItem value="1:1">1:1 square</SelectItem>
+                <SelectItem value="16:9">16:9 landscape</SelectItem>
+              </SelectContent>
+            </Select>
+          </Field>
+          <Field label="Captions">
+            <Select defaultValue="on">
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="on">Captions on</SelectItem>
+                <SelectItem value="off">Captions off</SelectItem>
+              </SelectContent>
+            </Select>
+          </Field>
+        </div>
+        {exportable.length > 0 ? (
+          <div className="mt-5 flex flex-wrap gap-2">
+            {exportable.slice(0, 8).map((clip: any) => (
+              <button
+                key={clip.id}
+                type="button"
+                onClick={() =>
+                  setSelectedClipIds(
+                    selectedClipIds.includes(clip.id)
+                      ? selectedClipIds.filter((id: string) => id !== clip.id)
+                      : [...selectedClipIds, clip.id],
+                  )
+                }
+                className={cn(
+                  "rounded-full border px-3 py-1.5 text-xs font-semibold",
+                  effectiveSelection.includes(clip.id)
+                    ? "border-primary/40 bg-primary/10 text-primary"
+                    : "border-border/60 text-muted-foreground",
+                )}
+              >
+                {clip.title || "Clip"}
+              </button>
+            ))}
+          </div>
+        ) : (
+          <p className="mt-5 rounded-xl border border-amber-500/20 bg-amber-500/[0.06] p-3 text-sm text-amber-200">
+            Approve at least one clip before exporting.
+          </p>
+        )}
+      </div>
+      <StageActions>
+        <Button variant="outline" onClick={onBack}><ChevronLeft className="mr-1.5 h-4 w-4" />Back to review</Button>
+        <Button disabled={exportable.length === 0} asChild>
+          <Link href={`/repurpose/export?projectId=${projectId}`}>
+            Open Export Center<ArrowRight className="ml-1.5 h-4 w-4" />
+          </Link>
+        </Button>
+      </StageActions>
+    </StageShell>
+  );
+}
+
+function ProjectSummaryCard({
+  hasSource,
+  assetType,
+  durationSec,
+  clipCount,
+  approvedCount,
+  exportCount,
+  selectedCount,
+}: {
+  hasSource: boolean;
+  assetType?: string;
+  durationSec?: number | null;
+  clipCount: number;
+  approvedCount: number;
+  exportCount: number;
+  selectedCount: number;
+}) {
+  return (
+    <aside className="rounded-2xl border border-border/50 bg-card/70 p-4">
+      <p className="text-sm font-semibold">Project Summary</p>
+      <div className="mt-4 space-y-3">
+        <SummaryRow label="Source" value={hasSource ? "Ready" : "Missing"} good={hasSource} />
+        {hasSource ? (
+          <SummaryRow
+            label="Media"
+            value={`${assetType ?? "source"} · ${durationSec ? formatDuration(durationSec * 1000) : "duration pending"}`}
+          />
+        ) : null}
+        <SummaryRow label="Generated clips" value={String(clipCount)} />
+        <SummaryRow label="Approved" value={String(approvedCount)} good={approvedCount > 0} />
+        <SummaryRow label="Selected" value={String(selectedCount)} />
+        <SummaryRow label="Exports" value={String(exportCount)} />
+      </div>
+    </aside>
+  );
+}
+
+function TechnicalDetailsDrawer({
+  analytics,
+  transcriptPreview,
+  transcriptPrecision,
+  modelDebugEnabled,
+  debugModelOverride,
+  setDebugModelOverride,
+}: {
+  analytics: AutoHighlightsAnalytics | null;
+  transcriptPreview: TranscriptPreview;
+  transcriptPrecision: string;
+  modelDebugEnabled: boolean;
+  debugModelOverride: string;
+  setDebugModelOverride: (value: string) => void;
+}) {
+  return (
+    <details className="rounded-2xl border border-border/50 bg-card/55 p-4">
+      <summary className="cursor-pointer text-sm font-semibold">Technical details</summary>
+      <div className="mt-4 space-y-3 text-xs text-muted-foreground/70">
+        <SummaryRow label="Transcript" value={formatPrecisionForUser(transcriptPrecision)} />
+        <SummaryRow label="Preview text" value={transcriptPreview.text ? "Available" : "Not available"} />
+        {analytics ? (
+          <>
+            <SummaryRow label="Candidates found" value={String(analytics.candidatesGenerated ?? 0)} />
+            <SummaryRow label="Clips created" value={String(analytics.clipsCreated ?? 0)} />
+            <SummaryRow label="Quality mode" value={String(analytics.qualityMode ?? "balanced")} />
+            <SummaryRow label="Clip intent" value={formatLabel(String(analytics.clipIntent ?? "auto"))} />
+            <SummaryRow label="Boundary confidence" value={formatBoundaryCounts(analytics.boundaryConfidenceCounts)} />
+            {modelDebugEnabled ? (
+              <>
+                <SummaryRow label="Timing provider" value={analytics.providerTranscription ?? "openai"} />
+                <SummaryRow label="Reasoning provider" value={analytics.providerReasoning ?? "openrouter"} />
+                <SummaryRow label="Rerank model" value={analytics.selectedRerankModel ?? "auto"} />
+                <SummaryRow label="Fallbacks" value={(analytics.rerankFallbackModels ?? []).join(", ") || "default"} />
+                <QualityDiagnosticsPanel analytics={analytics} />
+              </>
+            ) : null}
+          </>
+        ) : (
+          <p>No generation analytics yet.</p>
+        )}
+        {modelDebugEnabled ? (
+          <div className="rounded-xl border border-amber-500/20 bg-amber-500/[0.04] p-3">
+            <p className="font-semibold text-amber-200">Developer override</p>
+            <p className="mt-1 text-[11px] leading-5 text-amber-100/70">
+              Visible only in development/admin contexts. Normal users do not see raw model IDs.
+            </p>
+            <Select value={debugModelOverride || "auto"} onValueChange={(value) => setDebugModelOverride(value === "auto" ? "" : value)}>
+              <SelectTrigger className="mt-3 h-9 border-amber-500/25 bg-background/70">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="auto">Auto model policy</SelectItem>
+                {HIGHLIGHT_MODEL_OPTIONS.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        ) : null}
+      </div>
+    </details>
+  );
+}
+
+function StageShell({
+  eyebrow,
+  title,
+  description,
+  children,
+}: {
+  eyebrow: string;
+  title: string;
+  description: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="rounded-3xl border border-border/55 bg-card/70 p-5 shadow-sm md:p-6">
+      <div className="mb-5">
+        <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-primary/70">{eyebrow}</p>
+        <h2 className="mt-2 text-2xl font-semibold tracking-tight">{title}</h2>
+        <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground/70">{description}</p>
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function StageActions({ children }: { children: React.ReactNode }) {
+  return <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-between">{children}</div>;
+}
+
+function SimpleProcessingTimeline({
+  progress,
+  active,
+  complete,
+}: {
+  progress: number;
+  active: boolean;
+  complete: boolean;
+}) {
+  const steps = [
+    ["Preparing video", 10],
+    ["Understanding transcript", 35],
+    ["Finding strong moments", 58],
+    ["Ranking clips", 78],
+    ["Creating previews", 95],
+  ] as const;
+  return (
+    <div className="mt-6 space-y-3 text-left">
+      <div className="h-2 overflow-hidden rounded-full bg-muted">
+        <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${complete ? 100 : progress}%` }} />
+      </div>
+      <div className="grid gap-2">
+        {steps.map(([label, threshold]) => {
+          const done = complete || progress >= threshold;
+          const current = active && !done && progress < threshold;
+          return (
+            <div key={label} className="flex items-center gap-2 text-sm">
+              <span className={cn(
+                "flex h-6 w-6 items-center justify-center rounded-full border",
+                done ? "border-emerald-500 bg-emerald-500 text-white" : current ? "border-primary text-primary" : "border-border text-muted-foreground",
+              )}>
+                {done ? <Check className="h-3.5 w-3.5" /> : current ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+              </span>
+              <span className={done ? "text-foreground" : "text-muted-foreground"}>{label}</span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function PrecisionNotice() {
+  return (
+    <div className="mt-3 rounded-xl border border-amber-500/20 bg-amber-500/[0.06] p-3">
+      <p className="text-xs font-semibold text-amber-500">Lower timing precision</p>
+      <p className="mt-1 text-xs leading-5 text-muted-foreground">
+        Clips may need quick review. Improve timing later if you want tighter word-level boundaries.
       </p>
     </div>
   );
 }
 
-function resolveCaptionStatus(captionSrt?: string | null) {
-  if (!captionSrt?.trim()) {
-    return "Missing";
-  }
-  if (captionSrt.includes("[Transcript unavailable]")) {
-    return "Needs regen";
-  }
-  return "Ready";
+function Field({ label, children, className }: { label: string; children: React.ReactNode; className?: string }) {
+  return (
+    <label className={cn("block space-y-1.5", className)}>
+      <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/55">{label}</span>
+      {children}
+    </label>
+  );
 }
 
-function transcriptSnippet(captionSrt?: string | null) {
-  if (!captionSrt) {
-    return "";
-  }
-  return captionSrt
-    .replace(/\d+\s*\n/g, " ")
-    .replace(/\d{2}:\d{2}:\d{2},\d{3}\s*-->\s*\d{2}:\d{2}:\d{2},\d{3}/g, " ")
-    .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, 180);
+function TextInput({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+  return (
+    <Field label={label}>
+      <input
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="h-10 w-full rounded-xl border border-border/55 bg-background/70 px-3 text-sm outline-none transition focus:border-primary/45"
+      />
+    </Field>
+  );
 }
 
-function scoreExplanation(viralityFactors: unknown) {
-  if (!viralityFactors || typeof viralityFactors !== "object") {
-    return "";
-  }
-  const factors = viralityFactors as {
-    reasoning?: unknown;
-    improvements?: unknown;
-    hookStrength?: unknown;
-    emotionalPeak?: unknown;
-    pacing?: unknown;
-  };
-  if (typeof factors.reasoning === "string" && factors.reasoning.trim()) {
-    return factors.reasoning.trim();
-  }
-  const parts = [
-    typeof factors.hookStrength === "number" ? `Hook ${factors.hookStrength}/100` : null,
-    typeof factors.emotionalPeak === "number" ? `emotion ${factors.emotionalPeak}/100` : null,
-    typeof factors.pacing === "number" ? `pacing ${factors.pacing}/100` : null,
-  ].filter(Boolean);
-  return parts.length ? `Strongest signals: ${parts.join(", ")}.` : "";
+function SummaryRow({ label, value, good }: { label: string; value: string; good?: boolean }) {
+  return (
+    <div className="flex items-center justify-between gap-3 text-xs">
+      <span className="text-muted-foreground/65">{label}</span>
+      <span className={cn("max-w-[190px] truncate text-right font-semibold", good ? "text-emerald-500" : "text-foreground/80")}>
+        {value}
+      </span>
+    </div>
+  );
 }
 
-function isExportComplete(status: string) {
-  return status === "done" || status === "completed";
+function Metric({ label, value }: { label: string; value: string | number }) {
+  return (
+    <div className="rounded-xl border border-border/60 bg-muted/20 p-3">
+      <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/50">{label}</p>
+      <p className="mt-2 text-xl font-semibold">{value}</p>
+    </div>
+  );
 }
 
-function parseTranscriptPreview(transcript?: string | null): {
+function CompactBadge({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="rounded-full border border-border/55 bg-muted/25 px-2.5 py-1 text-[11px] font-semibold text-muted-foreground">
+      {children}
+    </span>
+  );
+}
+
+function ReviewStatusBadge({ status }: { status: string }) {
+  const tone =
+    status === "approved" || status === "export_ready"
+      ? "border-emerald-500/25 bg-emerald-500/10 text-emerald-500"
+      : status === "rejected"
+        ? "border-red-500/25 bg-red-500/10 text-red-500"
+        : "border-amber-500/25 bg-amber-500/10 text-amber-500";
+  return <span className={cn("rounded-full border px-2 py-0.5 text-[10px] font-bold", tone)}>{formatLabel(status)}</span>;
+}
+
+type TranscriptPreview = {
   text: string;
   precision: string;
   language?: string | null;
   durationSec?: number | null;
-} {
+};
+
+function parseTranscriptPreview(transcript?: string | null): TranscriptPreview {
   if (!transcript) {
     return {
-      text: "No transcript yet — will generate during detection.",
+      text: "",
       precision: "none",
       language: null,
       durationSec: null,
@@ -978,145 +1396,52 @@ function parseTranscriptPreview(transcript?: string | null): {
   }
 }
 
-// ─── Detection Progress Card ───────────────────────────────────────────────────
-
-const DETECTION_PHASES = [
-  {
-    label: "Upload",
-    sublabel: "Validating source media and preparing the asset",
-    Icon: LinkIcon,
-    delayMs: 0,
-  },
-  {
-    label: "Audio extraction",
-    sublabel: "Extracting clean audio for transcription",
-    Icon: Music,
-    delayMs: 1500,
-  },
-  {
-    label: "Transcription",
-    sublabel: "Converting speech into timestamped text",
-    Icon: FileText,
-    delayMs: 7500,
-  },
-  {
-    label: "Scene detection",
-    sublabel: "Finding clean clip boundaries and visual changes",
-    Icon: Zap,
-    delayMs: 17500,
-  },
-  {
-    label: "Highlight scoring",
-    sublabel: "Ranking moments by hook, payoff, and pacing",
-    Icon: Sparkles,
-    delayMs: 27500,
-  },
-  {
-    label: "Caption generation",
-    sublabel: "Preparing editable captions for each clip",
-    Icon: FileText,
-    delayMs: 37500,
-  },
-  {
-    label: "Preview rendering",
-    sublabel: "Building playable previews and thumbnails",
-    Icon: Download,
-    delayMs: 47500,
-  },
-  {
-    label: "Ready",
-    sublabel: "Clips are ready to edit, export, and download",
-    Icon: CheckCircle2,
-    delayMs: 57500,
-  },
-] as const;
-
-function DetectionProgressCard({
-  phase,
-  onPhaseChange,
-}: {
-  phase: number;
-  onPhaseChange: (p: number) => void;
+function resolveUserStatus(params: {
+  hasSource: boolean;
+  generating: boolean;
+  clipCount: number;
+  approvedCount: number;
 }) {
-  useEffect(() => {
-    const timers = DETECTION_PHASES.slice(1).map((p, i) =>
-      setTimeout(() => onPhaseChange(i + 1), p.delayMs)
-    );
-    return () => timers.forEach(clearTimeout);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  if (params.generating) return "Generating";
+  if (!params.hasSource) return "No source";
+  if (params.approvedCount > 0) return "Ready to export";
+  if (params.clipCount > 0) return "Clips ready";
+  return "Source ready";
+}
 
-  return (
-    <div className="rounded-xl border border-primary/20 bg-primary/[0.04] p-5">
-      <div className="flex items-center gap-2 mb-4">
-        <div
-          className="flex h-6 w-6 items-center justify-center rounded-full"
-          style={{ background: "linear-gradient(135deg, #10b981 0%, #34d399 100%)" }}
-        >
-          <Loader2 className="h-3.5 w-3.5 text-white animate-spin" />
-        </div>
-        <p className="text-sm font-semibold text-primary/80">Detecting highlights…</p>
-      </div>
+function formatLabel(value: string) {
+  return value.replace(/_/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
+}
 
-      <div className="space-y-3">
-        {DETECTION_PHASES.map(({ label, sublabel, Icon }, idx) => {
-          const isDone   = idx < phase;
-          const isActive = idx === phase;
+function formatPrecisionForUser(value: string) {
+  if (value === "word") return "High timing precision";
+  if (value === "none") return "Not available yet";
+  return "Lower timing precision";
+}
 
-          return (
-            <div key={idx} className="flex items-start gap-3">
-              {/* Icon circle */}
-              <div
-                className={cn(
-                  "shrink-0 mt-0.5 w-7 h-7 rounded-full flex items-center justify-center transition-all",
-                  isDone
-                    ? "bg-emerald-500"
-                    : isActive
-                    ? "bg-primary"
-                    : "bg-muted"
-                )}
-              >
-                {isDone ? (
-                  <CheckCircle2 className="h-4 w-4 text-white" />
-                ) : isActive ? (
-                  <Loader2 className="h-3.5 w-3.5 text-white animate-spin" />
-                ) : (
-                  <Icon className="h-3.5 w-3.5 text-muted-foreground/30" />
-                )}
-              </div>
+function formatBoundaryCounts(counts?: { high?: number; medium?: number; low?: number } | null) {
+  if (!counts) return "Not available";
+  return `High ${counts.high ?? 0}, medium ${counts.medium ?? 0}, low ${counts.low ?? 0}`;
+}
 
-              {/* Text */}
-              <div className="flex-1 min-w-0">
-                <p
-                  className={cn(
-                    "text-sm font-medium transition-colors",
-                    isDone
-                      ? "text-emerald-400"
-                      : isActive
-                      ? "text-foreground"
-                      : "text-muted-foreground/30"
-                  )}
-                >
-                  {label}
-                </p>
-                {(isDone || isActive) && (
-                  <p className="text-xs text-muted-foreground/50 mt-0.5">{sublabel}</p>
-                )}
-              </div>
+function transcriptSnippet(captionSrt?: string | null) {
+  if (!captionSrt) return "";
+  return captionSrt
+    .replace(/\d+\s*\n/g, " ")
+    .replace(/\d{2}:\d{2}:\d{2},\d{3}\s*-->\s*\d{2}:\d{2}:\d{2},\d{3}/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 180);
+}
 
-              {/* Status chip */}
-              {isDone && (
-                <span className="shrink-0 text-[10px] font-semibold text-emerald-400 mt-0.5">Done</span>
-              )}
-              {isActive && (
-                <span className="shrink-0 text-[10px] font-semibold text-primary/70 mt-0.5 animate-pulse">
-                  Running…
-                </span>
-              )}
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
+function scoreExplanation(viralityFactors: unknown) {
+  if (!viralityFactors || typeof viralityFactors !== "object") return "";
+  const factors = viralityFactors as { reasoning?: unknown; hookStrength?: unknown; emotionalPeak?: unknown; pacing?: unknown };
+  if (typeof factors.reasoning === "string" && factors.reasoning.trim()) return factors.reasoning.trim();
+  const parts = [
+    typeof factors.hookStrength === "number" ? `Hook ${factors.hookStrength}/100` : null,
+    typeof factors.emotionalPeak === "number" ? `emotion ${factors.emotionalPeak}/100` : null,
+    typeof factors.pacing === "number" ? `pacing ${factors.pacing}/100` : null,
+  ].filter(Boolean);
+  return parts.length ? `Strongest signals: ${parts.join(", ")}.` : "";
 }

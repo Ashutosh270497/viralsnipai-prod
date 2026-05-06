@@ -83,6 +83,7 @@ export interface GenerateAutoHighlightsInput {
     targetClipCount?: number;
     qualityMode?: QualityMode;
     clipIntent?: ClipIntent;
+    targetPlatform?: string;
     debugModelOverride?: string;
     userPlan?: string | null;
     isModelDebugAllowed?: boolean;
@@ -139,6 +140,7 @@ export interface GenerateAutoHighlightsOutput {
     clipLengthPreset?: ClipLengthPreset;
     qualityMode?: QualityMode;
     clipIntent?: ClipIntent;
+    targetPlatform?: string;
     selectedRerankModel?: string;
     rerankFallbackModels?: string[];
     selectedViralityModel?: string;
@@ -215,6 +217,23 @@ function buildClipIntentBrief(intent: ClipIntent, brief?: string) {
                   : null;
 
   return [brief, intentInstruction].filter(Boolean).join("\n");
+}
+
+function buildTargetPlatformBrief(platform?: string) {
+  const platformInstruction =
+    platform === "youtube_shorts"
+      ? "Optimize for YouTube Shorts: clear spoken hook, strong retention, and searchable value."
+      : platform === "instagram_reels"
+        ? "Optimize for Instagram Reels: fast clarity, visual payoff, and concise social framing."
+        : platform === "tiktok"
+          ? "Optimize for TikTok: immediate curiosity, fast payoff, and shareable phrasing."
+          : platform === "x"
+            ? "Optimize for X video: concise quotable insight and strong point of view."
+            : platform === "linkedin"
+              ? "Optimize for LinkedIn: educational or business-relevant moments with credibility."
+              : null;
+
+  return platformInstruction ?? "";
 }
 
 function countBoundaryConfidence(
@@ -426,7 +445,10 @@ export class GenerateAutoHighlightsUseCase {
       // Step 5: Generate real timestamped candidates locally, rerank candidate
       // IDs with OpenRouter, then refine final boundaries locally. OpenRouter
       // never creates or controls final timestamps.
-      const routingBrief = buildClipIntentBrief(clipIntent, options.brief);
+      const routingBrief = [
+        buildClipIntentBrief(clipIntent, options.brief),
+        buildTargetPlatformBrief(options.targetPlatform),
+      ].filter(Boolean).join("\n");
       const generatedCandidates = this.candidateGenerationService.generateCandidates({
         transcript: canonicalTranscript,
         durationMs: sourceDurationMs,

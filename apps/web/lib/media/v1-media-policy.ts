@@ -5,8 +5,18 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { resolvePlanTier, type PlanTier } from "@/lib/billing/plans";
 
-export const V1_UPLOAD_MIME_TYPES = new Set(["video/mp4", "video/quicktime", "video/webm"]);
-export const V1_UPLOAD_EXTENSIONS = new Set([".mp4", ".mov", ".webm"]);
+export const V1_UPLOAD_MIME_TYPES = new Set([
+  "video/mp4",
+  "video/quicktime",
+  "video/webm",
+  "audio/mpeg",
+  "audio/mp3",
+  "audio/wav",
+  "audio/x-wav",
+  "audio/mp4",
+  "audio/x-m4a",
+]);
+export const V1_UPLOAD_EXTENSIONS = new Set([".mp4", ".mov", ".webm", ".mp3", ".wav", ".m4a"]);
 
 export type V1MediaUsageFeature = "video_upload" | "video_export";
 export type PublicExportStatus = "queued" | "processing" | "completed" | "failed" | "retryable" | "cancelled";
@@ -26,7 +36,7 @@ const DEFAULT_EXPORT_LIMITS: Record<PlanTier, number> = {
 };
 
 export function getMaxUploadBytes() {
-  return readPositiveInt("MAX_UPLOAD_MB", 500) * 1024 * 1024;
+  return readPositiveInt("MAX_UPLOAD_MB", 4096) * 1024 * 1024;
 }
 
 export function getMaxVideoDurationSeconds() {

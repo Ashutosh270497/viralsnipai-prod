@@ -42,7 +42,7 @@ export async function POST(request: Request) {
     if (!V1_UPLOAD_MIME_TYPES.has(file.type) || !V1_UPLOAD_EXTENSIONS.has(extension)) {
       return ApiResponseBuilder.errorResponse(
         ErrorCodes.VALIDATION_ERROR,
-        "Unsupported video file. Upload an MP4, MOV, or WEBM file.",
+        "Unsupported media file. Upload MP4, MOV, WebM, MP3, WAV, or M4A.",
         415,
         { allowedMimeTypes: [...V1_UPLOAD_MIME_TYPES], allowedExtensions: [...V1_UPLOAD_EXTENSIONS] }
       );
@@ -56,7 +56,7 @@ export async function POST(request: Request) {
     if (file.size > maxUploadBytes) {
       return ApiResponseBuilder.errorResponse(
         ErrorCodes.FILE_UPLOAD_FAILED,
-        `File too large. Maximum upload size is ${Math.floor(maxUploadBytes / (1024 * 1024))} MB.`,
+        `File exceeds ${formatUploadLimit(maxUploadBytes)} upload limit.`,
         413
       );
     }
@@ -90,8 +90,8 @@ export async function POST(request: Request) {
 
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
-    if (!looksLikeSupportedVideo(buffer, extension)) {
-      return ApiResponseBuilder.validationError("The uploaded file is not a valid MP4, MOV, or WEBM video.");
+    if (!looksLikeSupportedMedia(buffer, extension)) {
+      return ApiResponseBuilder.validationError("The uploaded file is not a valid MP4, MOV, WebM, MP3, WAV, or M4A file.");
     }
 
     const durationSec = await probeUploadedVideoDuration(buffer, extension);
@@ -112,7 +112,7 @@ export async function POST(request: Request) {
     const asset = await prisma.asset.create({
       data: {
         projectId: project.id,
-        type: "video",
+        type: file.type.startsWith("audio/") ? "audio" : "video",
         path: saved.url,
         storagePath: saved.storagePath,
         durationSec
@@ -159,18 +159,38 @@ export async function POST(request: Request) {
   }
 }
 
-function looksLikeSupportedVideo(buffer: Buffer, extension: string) {
+function looksLikeSupportedMedia(buffer: Buffer, extension: string) {
   if (buffer.length < 12) return false;
 
   if (extension === ".webm") {
     return buffer[0] === 0x1a && buffer[1] === 0x45 && buffer[2] === 0xdf && buffer[3] === 0xa3;
   }
 
-  if (extension === ".mp4" || extension === ".mov") {
+  if (extension === ".mp4" || extension === ".mov" || extension === ".m4a") {
     return buffer.subarray(4, 8).toString("ascii") === "ftyp";
   }
 
+  if (extension === ".wav") {
+    return buffer.subarray(0, 4).toString("ascii") === "RIFF" &&
+      buffer.subarray(8, 12).toString("ascii") === "WAVE";
+  }
+
+  if (extension === ".mp3") {
+    const tag = buffer.subarray(0, 3).toString("ascii");
+    const hasId3 = tag === "ID3";
+    const hasFrameSync = buffer[0] === 0xff && (buffer[1] & 0xe0) === 0xe0;
+    return hasId3 || hasFrameSync;
+  }
+
   return false;
+}
+
+function formatUploadLimit(bytes: number) {
+  const mb = bytes / (1024 * 1024);
+  if (mb >= 1024) {
+    return `${Number((mb / 1024).toFixed(1)).toLocaleString()} GB`;
+  }
+  return `${Math.floor(mb)} MB`;
 }
 
 async function probeUploadedVideoDuration(buffer: Buffer, extension: string) {

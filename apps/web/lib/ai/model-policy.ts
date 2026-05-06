@@ -45,11 +45,17 @@ export type ResolveModelPolicyInput = {
 const DEFAULT_MODELS = {
   fast: process.env.OPENROUTER_FAST_MODEL ?? "google/gemini-3-flash-preview",
   balanced: process.env.OPENROUTER_HIGHLIGHT_RERANK_MODEL ?? "google/gemini-2.5-pro",
-  best: process.env.OPENROUTER_BEST_MODEL ?? "anthropic/claude-sonnet-4.5",
+  best: process.env.OPENROUTER_BEST_RERANK_MODEL ?? process.env.OPENROUTER_BEST_MODEL ?? "anthropic/claude-sonnet-4.6",
   virality: process.env.OPENROUTER_VIRALITY_MODEL ?? "google/gemini-3.1-flash-lite-preview",
   metadata: process.env.OPENROUTER_METADATA_MODEL ?? "google/gemini-3.1-flash-lite-preview",
   caption: process.env.OPENROUTER_CAPTION_MODEL ?? "google/gemini-3.1-flash-lite-preview",
 };
+
+const BEST_QUALITY_FALLBACK_MODELS = [
+  "openai/gpt-5.2",
+  "google/gemini-3.1-pro-preview",
+  "qwen/qwen3.6-plus",
+];
 
 export function resolveModelPolicy(input: ResolveModelPolicyInput): ModelPolicy {
   const isDev = input.isDev ?? process.env.NODE_ENV !== "production";
@@ -105,11 +111,13 @@ export function resolveModelPolicy(input: ResolveModelPolicyInput): ModelPolicy 
       task: input.task,
       qualityMode: effectiveQuality,
       userPlan,
-      primaryModel: effectiveQuality === "best" ? DEFAULT_MODELS.metadata : DEFAULT_MODELS.virality,
-      fallbackModels: [DEFAULT_MODELS.virality, DEFAULT_MODELS.fast, "qwen/qwen3.6-plus"],
+      primaryModel: effectiveQuality === "best" ? DEFAULT_MODELS.best : DEFAULT_MODELS.virality,
+      fallbackModels: effectiveQuality === "best"
+        ? BEST_QUALITY_FALLBACK_MODELS
+        : [DEFAULT_MODELS.virality, DEFAULT_MODELS.fast, "qwen/qwen3.6-plus"],
       maxTokens: 2200,
       temperature: 0.2,
-      costTier: "low",
+      costTier: effectiveQuality === "best" ? "high" : "low",
       reason: reasonParts.join(" "),
     });
   }
@@ -119,11 +127,17 @@ export function resolveModelPolicy(input: ResolveModelPolicyInput): ModelPolicy 
       task: input.task,
       qualityMode: effectiveQuality,
       userPlan,
-      primaryModel: effectiveQuality === "fast" ? DEFAULT_MODELS.virality : DEFAULT_MODELS.metadata,
-      fallbackModels: [DEFAULT_MODELS.virality, DEFAULT_MODELS.fast, "qwen/qwen3.6-plus"],
+      primaryModel: effectiveQuality === "best"
+        ? DEFAULT_MODELS.best
+        : effectiveQuality === "fast"
+          ? DEFAULT_MODELS.virality
+          : DEFAULT_MODELS.metadata,
+      fallbackModels: effectiveQuality === "best"
+        ? BEST_QUALITY_FALLBACK_MODELS
+        : [DEFAULT_MODELS.virality, DEFAULT_MODELS.fast, "qwen/qwen3.6-plus"],
       maxTokens: 1600,
       temperature: 0.35,
-      costTier: effectiveQuality === "best" ? "medium" : "low",
+      costTier: effectiveQuality === "best" ? "high" : "low",
       reason: reasonParts.join(" "),
     });
   }
@@ -201,9 +215,9 @@ function modelForQuality(qualityMode: QualityMode) {
 function fallbackModelsFor(task: AIModelTask, qualityMode: QualityMode, primary?: string) {
   const models =
     task === "highlight_rerank" && qualityMode === "best"
-      ? [DEFAULT_MODELS.balanced, "openai/gpt-4o", DEFAULT_MODELS.fast, "qwen/qwen3.6-plus"]
+      ? BEST_QUALITY_FALLBACK_MODELS
       : task === "highlight_rerank" && qualityMode === "balanced"
-        ? ["openai/gpt-4o", "anthropic/claude-sonnet-4.5", DEFAULT_MODELS.fast, "qwen/qwen3.6-plus"]
+        ? ["openai/gpt-5.2", "google/gemini-3.1-pro-preview", DEFAULT_MODELS.fast, "qwen/qwen3.6-plus"]
         : [DEFAULT_MODELS.fast, "qwen/qwen3.6-plus", "openai/gpt-4o"];
   return Array.from(new Set(models.map((model) => normalizePolicyOpenRouterModel(model))))
     .filter((model) => model !== primary);
