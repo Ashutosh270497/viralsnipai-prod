@@ -14,8 +14,18 @@ const generateSchema = z.object({
   assetId: z.string().min(1),
   target: z.number().int().min(1).max(8).optional(),
   clipLengthPreset: z.enum(["short", "balanced", "detailed"]).optional().default("balanced"),
+  qualityMode: z.enum(["fast", "balanced", "best"]).optional().default("balanced"),
+  clipIntent: z
+    .enum(["auto", "viral_hooks", "educational", "contrarian", "story", "product_demo", "funny", "quotes"])
+    .optional()
+    .default("auto"),
   mode: z.enum(["replace", "merge", "append"]).optional().default("merge"),
+  /**
+   * Legacy raw model field. Public API users should route through qualityMode
+   * and clipIntent; raw model IDs are not accepted in this API surface.
+   */
   model: z.string().trim().min(1).optional(),
+  debugModelOverride: z.string().trim().min(1).optional(),
   audience: z.string().trim().max(160).optional(),
   tone: z.string().trim().max(160).optional(),
   brief: z.string().trim().max(600).optional(),
@@ -28,6 +38,12 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
 
   const parsed = generateSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return platformApiError("Invalid generate-clips payload", 400, parsed.error.flatten());
+  if (parsed.data.model || parsed.data.debugModelOverride) {
+    return platformApiError(
+      "Raw model overrides are not available through the public API. Use qualityMode and clipIntent.",
+      400,
+    );
+  }
 
   const asset = await (prisma as any).asset.findFirst({
     where: {
@@ -49,8 +65,9 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     options: {
       targetClipCount: parsed.data.target,
       clipLengthPreset: parsed.data.clipLengthPreset,
+      qualityMode: parsed.data.qualityMode,
+      clipIntent: parsed.data.clipIntent,
       mode: parsed.data.mode,
-      model: parsed.data.model,
       audience: parsed.data.audience,
       tone: parsed.data.tone,
       brief: parsed.data.brief,

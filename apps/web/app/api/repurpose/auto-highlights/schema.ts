@@ -1,15 +1,15 @@
 import { z } from "zod";
 
-import { HIGHLIGHT_MODEL_VALUES } from "@/lib/constants/repurpose";
+import { CLIP_INTENT_VALUES, QUALITY_MODE_VALUES } from "@/lib/ai/model-routing-options";
 import { V1_CLIP_POLICY } from "@/lib/repurpose/clip-policy";
-
-const HIGHLIGHT_MODELS = HIGHLIGHT_MODEL_VALUES;
 
 export const autoHighlightsRequestSchema = z.object({
   assetId: z.string(),
   strategy: z.string().optional(),
   target: z.number().min(1).max(V1_CLIP_POLICY.maxTargetClips).optional(),
   clipLengthPreset: z.enum(["short", "balanced", "detailed"]).optional().default("balanced"),
+  qualityMode: z.enum(QUALITY_MODE_VALUES).optional().default("balanced"),
+  clipIntent: z.enum(CLIP_INTENT_VALUES).optional().default("auto"),
   /**
    * How to reconcile new highlights with existing clips on the project:
    *   "merge" (default)   — keep existing clips; skip new ones that overlap existing within 5s
@@ -18,21 +18,23 @@ export const autoHighlightsRequestSchema = z.object({
    * Callers must opt into "replace" explicitly when they want destructive regeneration.
    */
   mode: z.enum(["replace", "merge", "append"]).optional().default("merge"),
+  /**
+   * Legacy raw model field. Production users are not allowed to set this. The
+   * route maps it to debugModelOverride only in developer/admin contexts.
+   */
   model: z
     .string()
     .optional()
     .transform((val) => {
       if (!val || val.trim().length === 0) return undefined;
-      const trimmed = val.trim();
-      return trimmed;
-    })
-    .superRefine((val, ctx) => {
-      if (val && !HIGHLIGHT_MODELS.includes(val as any)) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: `Invalid OpenRouter reasoning model "${val}".`,
-        });
-      }
+      return val.trim();
+    }),
+  debugModelOverride: z
+    .string()
+    .optional()
+    .transform((val) => {
+      if (!val || val.trim().length === 0) return undefined;
+      return val.trim();
     }),
   brief: z
     .string()

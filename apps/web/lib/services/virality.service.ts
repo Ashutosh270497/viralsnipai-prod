@@ -9,6 +9,7 @@ import { logger } from '../logger';
 import type { TranscriptionSegment } from '../transcript';
 import { transcriptEnhancementService } from './transcript-enhancement.service';
 import { scoreClipVirality } from '@/lib/ai/providers/openrouter-reasoning-provider';
+import type { ModelPolicy } from '@/lib/ai/model-policy';
 
 // ── Config ────────────────────────────────────────────────────────────────────
 // Use a fast, cheap structured-output model — NOT the large highlights/reasoning
@@ -78,8 +79,9 @@ export class ViralityService {
     startSec: number;
     endSec: number;
     metadata?: { title?: string; summary?: string; tone?: string };
+    modelPolicy?: ModelPolicy;
   }): Promise<ViralityAnalysis> {
-    const { transcript, startSec, endSec, metadata } = params;
+    const { transcript, startSec, endSec, metadata, modelPolicy } = params;
 
     // Truncate long transcripts
     const safeTranscript =
@@ -89,13 +91,34 @@ export class ViralityService {
 
     const duration = Math.round(endSec - startSec);
     try {
-      const parsed = await scoreClipVirality({
-        text: safeTranscript,
-        firstThreeSecondsText: safeTranscript.split(/\s+/).slice(0, 14).join(' '),
-        durationSec: duration,
-        deterministicQualitySignals: metadata,
-        model: VIRALITY_MODEL,
-      });
+      const models = modelPolicy
+        ? [modelPolicy.primaryModel, ...modelPolicy.fallbackModels]
+        : [VIRALITY_MODEL];
+      let parsed: Awaited<ReturnType<typeof scoreClipVirality>> | null = null;
+      const failures: string[] = [];
+      for (const model of Array.from(new Set(models))) {
+        try {
+          parsed = await scoreClipVirality({
+            text: safeTranscript,
+            firstThreeSecondsText: safeTranscript.split(/\s+/).slice(0, 14).join(' '),
+            durationSec: duration,
+            deterministicQualitySignals: metadata,
+            model,
+          });
+          if (model !== modelPolicy?.primaryModel) {
+            logger.warn('Virality model fallback used', { model, primaryModel: modelPolicy?.primaryModel });
+          }
+          break;
+        } catch (error) {
+          const reason = error instanceof Error ? error.message : String(error);
+          failures.push(`${model}: ${reason}`);
+          logger.warn('Virality model failed', { model, reason });
+        }
+      }
+
+      if (!parsed) {
+        throw new Error(failures.join('; ') || 'Virality model routing failed');
+      }
 
       // Validate and normalise all numeric fields
       const analysis: ViralityAnalysis = {
@@ -131,14 +154,16 @@ export class ViralityService {
     startMs: number;
     endMs: number;
     metadata?: { title?: string; summary?: string; tone?: string };
+    modelPolicy?: ModelPolicy;
   }): Promise<ViralityAnalysis & { enhancementData?: unknown }> {
-    const { transcript, segments, startMs, endMs, metadata } = params;
+    const { transcript, segments, startMs, endMs, metadata, modelPolicy } = params;
 
     const baseAnalysis = await this.analyzeClip({
       transcript,
       startSec: startMs / 1000,
       endSec: endMs / 1000,
       metadata,
+      modelPolicy,
     });
 
     if (segments?.length > 0) {
@@ -193,7 +218,8 @@ export class ViralityService {
       startSec: number;
       endSec: number;
       metadata?: { title?: string; summary?: string; tone?: string };
-    }>
+    }>,
+    modelPolicy?: ModelPolicy,
   ): Promise<Map<string, ViralityAnalysis>> {
     const results = new Map<string, ViralityAnalysis>();
 
@@ -210,6 +236,7 @@ export class ViralityService {
             startSec: clip.startSec,
             endSec: clip.endSec,
             metadata: clip.metadata,
+            modelPolicy,
           });
           return { id: clip.id, analysis };
         })

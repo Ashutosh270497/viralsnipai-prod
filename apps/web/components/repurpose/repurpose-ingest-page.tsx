@@ -39,6 +39,7 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/components/ui/use-toast";
 import { HIGHLIGHT_MODEL_OPTIONS } from "@/lib/constants/repurpose";
+import { CLIP_INTENT_OPTIONS, QUALITY_MODE_OPTIONS } from "@/lib/ai/model-routing-options";
 import { V1UsageLimitsCard } from "@/components/repurpose/v1-usage-limits-card";
 import {
   ProviderBadge,
@@ -68,8 +69,12 @@ export function RepurposeIngestPage() {
     setSourceUrl,
     youtubeProgress,
     highlightProgress,
-    highlightModel,
-    setHighlightModel,
+    qualityMode,
+    setQualityMode,
+    clipIntent,
+    setClipIntent,
+    debugModelOverride,
+    setDebugModelOverride,
     highlightBrief,
     setHighlightBrief,
     highlightAudience,
@@ -92,7 +97,11 @@ export function RepurposeIngestPage() {
   });
 
   const clipCount = project?.clips?.length ?? 0;
-  const transcriptPrecision = lastHighlightAnalytics?.transcriptPrecision ?? getClipMetadata(project?.clips?.[0]).boundaryPrecision ?? inferTranscriptPrecision(primaryAsset?.transcript);
+  const transcriptPreview = useMemo(() => parseTranscriptPreview(primaryAsset?.transcript), [primaryAsset?.transcript]);
+  const transcriptPrecision = lastHighlightAnalytics?.transcriptPrecision ?? getClipMetadata(project?.clips?.[0]).boundaryPrecision ?? transcriptPreview.precision;
+  const modelDebugEnabled =
+    process.env.NODE_ENV !== "production" ||
+    process.env.NEXT_PUBLIC_ENABLE_MODEL_DEBUG === "true";
   const activeStep = clipCount > 0 ? 1 : primaryAsset ? 0 : 0;
   const appliedSeedRef = useRef<string | null>(null);
   const seededIdea = useMemo(() => {
@@ -391,7 +400,20 @@ export function RepurposeIngestPage() {
                   </div>
                   {primaryAsset.transcript ? (
                     <div className="h-28 overflow-y-auto rounded-lg bg-muted/60 px-3 py-2 text-xs text-muted-foreground/60 leading-relaxed">
-                      {primaryAsset.transcript}
+                      <div className="mb-2 flex flex-wrap items-center gap-2">
+                        <TranscriptPrecisionBadge precision={transcriptPreview.precision} />
+                        {transcriptPreview.language && (
+                          <span className="rounded-full border border-border/40 px-2 py-0.5 text-[10px] uppercase tracking-widest text-muted-foreground/50">
+                            {transcriptPreview.language}
+                          </span>
+                        )}
+                        {transcriptPreview.durationSec ? (
+                          <span className="rounded-full border border-border/40 px-2 py-0.5 text-[10px] text-muted-foreground/50">
+                            {formatDuration(transcriptPreview.durationSec * 1000)}
+                          </span>
+                        ) : null}
+                      </div>
+                      {transcriptPreview.text}
                     </div>
                   ) : (
                     <p className="text-xs text-muted-foreground/40">
@@ -432,25 +454,103 @@ export function RepurposeIngestPage() {
                 />
               </div>
 
-              {/* Model selector */}
-              <div className="space-y-1.5">
-                <label className="block text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/50">
-                  OpenRouter reasoning model
-                </label>
-                <Select value={highlightModel} onValueChange={setHighlightModel}>
-                  <SelectTrigger className="h-9 rounded-lg border-border/50 bg-background/60 text-sm">
-                    <SelectValue placeholder="Select model" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {HIGHLIGHT_MODEL_OPTIONS.map((opt) => (
-                      <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <p className="text-[11px] text-muted-foreground/45">
-                  Transcription and timing use OpenAI automatically.
-                </p>
+              <div className="space-y-3">
+                <div>
+                  <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/50">
+                    AI Clipping Settings
+                  </p>
+                  <p className="mt-1 text-[11px] leading-5 text-muted-foreground/50">
+                    ViralSnipAI automatically chooses the best AI model based on quality mode,
+                    video length, transcript precision, and your plan.
+                  </p>
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="space-y-1.5">
+                    <label className="block text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/50">
+                      Clipping Quality
+                    </label>
+                    <Select value={qualityMode} onValueChange={(value) => setQualityMode(value as typeof qualityMode)}>
+                      <SelectTrigger className="h-9 rounded-lg border-border/50 bg-background/60 text-sm">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {QUALITY_MODE_OPTIONS.map((option) => (
+                          <SelectItem key={option.value} value={option.value}>
+                            {option.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-[11px] text-muted-foreground/45">
+                      {QUALITY_MODE_OPTIONS.find((option) => option.value === qualityMode)?.description}
+                    </p>
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="block text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/50">
+                      Clip Intent
+                    </label>
+                    <Select value={clipIntent} onValueChange={(value) => setClipIntent(value as typeof clipIntent)}>
+                      <SelectTrigger className="h-9 rounded-lg border-border/50 bg-background/60 text-sm">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {CLIP_INTENT_OPTIONS.map((option) => (
+                          <SelectItem key={option.value} value={option.value}>
+                            {option.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                {modelDebugEnabled && (
+                  <details className="rounded-xl border border-amber-500/20 bg-amber-500/[0.04] p-3">
+                    <summary className="cursor-pointer text-xs font-semibold text-amber-200">
+                      Developer override — not visible to normal users
+                    </summary>
+                    <div className="mt-3 space-y-2">
+                      <Select value={debugModelOverride || "auto"} onValueChange={(value) => setDebugModelOverride(value === "auto" ? "" : value)}>
+                        <SelectTrigger className="h-9 rounded-lg border-amber-500/25 bg-background/60 text-sm">
+                          <SelectValue placeholder="Internal model override" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="auto">Auto model policy</SelectItem>
+                          {HIGHLIGHT_MODEL_OPTIONS.map((opt) => (
+                            <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <p className="text-[11px] leading-5 text-amber-100/65">
+                        Debug override bypasses automatic routing only in development/admin contexts.
+                        Normal users never see raw OpenRouter model IDs.
+                      </p>
+                    </div>
+                  </details>
+                )}
               </div>
+
+              {transcriptPrecision !== "word" && transcriptPrecision !== "none" && (
+                <div className="rounded-xl border border-amber-500/20 bg-amber-500/[0.05] p-3">
+                  <p className="text-xs font-semibold text-amber-200">Lower precision transcript</p>
+                  <p className="mt-1 text-[11px] leading-5 text-amber-100/70">
+                    This source has segment-level timing. Word-level timing gives better clip boundaries.
+                  </p>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="mt-3 h-8 border-amber-500/30 bg-amber-500/10 text-xs text-amber-100 hover:bg-amber-500/15"
+                    onClick={() => toast({
+                      title: "Re-transcription available",
+                      description: "Use the retranscribe action from the project tools to rebuild word-level timing.",
+                    })}
+                  >
+                    Re-transcribe for word-level precision
+                  </Button>
+                </div>
+              )}
 
               <div className="grid gap-3 sm:grid-cols-2">
                 <div className="space-y-1.5">
@@ -831,13 +931,50 @@ function isExportComplete(status: string) {
   return status === "done" || status === "completed";
 }
 
-function inferTranscriptPrecision(transcript?: string | null) {
-  if (!transcript) return "none";
+function parseTranscriptPreview(transcript?: string | null): {
+  text: string;
+  precision: string;
+  language?: string | null;
+  durationSec?: number | null;
+} {
+  if (!transcript) {
+    return {
+      text: "No transcript yet — will generate during detection.",
+      precision: "none",
+      language: null,
+      durationSec: null,
+    };
+  }
   try {
     const parsed = JSON.parse(transcript);
-    return typeof parsed?.precision === "string" ? parsed.precision : "segment";
+    if (parsed && typeof parsed === "object") {
+      const text =
+        typeof parsed.text === "string" && parsed.text.trim()
+          ? parsed.text.trim()
+          : "Transcript available, but preview could not be displayed.";
+      return {
+        text: text.slice(0, 500),
+        precision: typeof parsed.precision === "string" ? parsed.precision : "segment",
+        language: typeof parsed.language === "string" ? parsed.language : null,
+        durationSec:
+          typeof parsed.durationSec === "number" && Number.isFinite(parsed.durationSec)
+            ? parsed.durationSec
+            : null,
+      };
+    }
+    return {
+      text: "Transcript available, but preview could not be displayed.",
+      precision: "segment",
+      language: null,
+      durationSec: null,
+    };
   } catch {
-    return "none";
+    return {
+      text: transcript.trim().slice(0, 500) || "Transcript available, but preview could not be displayed.",
+      precision: "approximate",
+      language: null,
+      durationSec: null,
+    };
   }
 }
 

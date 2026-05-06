@@ -16,20 +16,24 @@ describe("auto-highlights request validation", () => {
   it("accepts valid clip length presets", () => {
     const parsed = autoHighlightsRequestSchema.parse({
       assetId: "asset_1",
-      model: "google/gemini-2.5-pro",
+      qualityMode: "fast",
+      clipIntent: "viral_hooks",
       clipLengthPreset: "short",
     });
 
     expect(parsed.clipLengthPreset).toBe("short");
+    expect(parsed.qualityMode).toBe("fast");
+    expect(parsed.clipIntent).toBe("viral_hooks");
   });
 
   it("defaults missing clip length preset to balanced", () => {
     const parsed = autoHighlightsRequestSchema.parse({
       assetId: "asset_1",
-      model: "google/gemini-2.5-pro",
     });
 
     expect(parsed.clipLengthPreset).toBe("balanced");
+    expect(parsed.qualityMode).toBe("balanced");
+    expect(parsed.clipIntent).toBe("auto");
   });
 
   it("rejects invalid clip length presets", () => {
@@ -41,12 +45,30 @@ describe("auto-highlights request validation", () => {
     ).toThrow();
   });
 
-  it("rejects invalid reasoning models", () => {
+  it("rejects invalid quality mode", () => {
     expect(() =>
       autoHighlightsRequestSchema.parse({
         assetId: "asset_1",
-        model: "whisper-1",
+        qualityMode: "ultra",
       }),
-    ).toThrow(/Invalid OpenRouter reasoning model/);
+    ).toThrow();
+  });
+
+  it("rejects invalid clip intent", () => {
+    expect(() =>
+      autoHighlightsRequestSchema.parse({
+        assetId: "asset_1",
+        clipIntent: "raw_model",
+      }),
+    ).toThrow();
+  });
+
+  it("still parses legacy raw model for route-level dev/admin handling", () => {
+    const parsed = autoHighlightsRequestSchema.parse({
+      assetId: "asset_1",
+      model: "google/gemini-2.5-pro",
+    });
+
+    expect(parsed.model).toBe("google/gemini-2.5-pro");
   });
 });

@@ -52,6 +52,8 @@ import {
 } from "@/lib/repurpose/clip-optimization";
 import { detectRepurposeSceneCuts } from "@/lib/repurpose/scene-detection";
 import { resolveClipPolicy, type ClipLengthPreset } from "@/lib/repurpose/clip-policy";
+import { normalizeClipIntent, resolveModelPolicy } from "@/lib/ai/model-policy";
+import type { ClipIntent, QualityMode } from "@/lib/ai/model-routing-options";
 import { prisma } from "@/lib/prisma";
 import {
   buildNewClipBrandDefaults,
@@ -79,7 +81,11 @@ export interface GenerateAutoHighlightsInput {
   userId: string;
   options?: {
     targetClipCount?: number;
-    model?: string;
+    qualityMode?: QualityMode;
+    clipIntent?: ClipIntent;
+    debugModelOverride?: string;
+    userPlan?: string | null;
+    isModelDebugAllowed?: boolean;
     audience?: string;
     tone?: string;
     brief?: string;
@@ -131,6 +137,14 @@ export interface GenerateAutoHighlightsOutput {
     averageClipDurationSec?: number | null;
     lowPrecisionWarning?: string | null;
     clipLengthPreset?: ClipLengthPreset;
+    qualityMode?: QualityMode;
+    clipIntent?: ClipIntent;
+    selectedRerankModel?: string;
+    rerankFallbackModels?: string[];
+    selectedViralityModel?: string;
+    selectedMetadataModel?: string;
+    modelOverrideUsed?: boolean;
+    modelSelectionReason?: string;
     clipPolicy?: {
       minMs: number;
       idealMs: number;
@@ -180,6 +194,27 @@ function getLowPrecisionWarning(transcript: CanonicalTranscript): string | null 
     return "Transcript has segment-level timing only; clip boundaries use lower-confidence segment snapping.";
   }
   return "Transcript timing precision is low; clips may need manual review.";
+}
+
+function buildClipIntentBrief(intent: ClipIntent, brief?: string) {
+  const intentInstruction =
+    intent === "viral_hooks"
+      ? "Prioritize immediate hooks, curiosity gaps, and first-three-second punch."
+      : intent === "educational"
+        ? "Prioritize clear lessons, frameworks, how-to explanations, and useful takeaways."
+        : intent === "contrarian"
+          ? "Prioritize contrarian claims, surprising beliefs, and strong points of view."
+          : intent === "story"
+            ? "Prioritize complete story moments with setup, tension, and payoff."
+            : intent === "product_demo"
+              ? "Prioritize product walkthroughs, proof points, feature demos, and user outcomes."
+              : intent === "funny"
+                ? "Prioritize funny reactions, unexpected moments, and expressive punchlines."
+                : intent === "quotes"
+                  ? "Prioritize concise quotable lines that can stand alone."
+                  : null;
+
+  return [brief, intentInstruction].filter(Boolean).join("\n");
 }
 
 function countBoundaryConfidence(
@@ -250,6 +285,8 @@ export class GenerateAutoHighlightsUseCase {
     const materialized = await materializeMediaLocally([asset.storagePath, asset.path]);
     const sourcePath = materialized?.localPath ?? null;
     const clipLengthPreset = options.clipLengthPreset ?? "balanced";
+    const qualityMode = options.qualityMode ?? "balanced";
+    const clipIntent = normalizeClipIntent(options.clipIntent);
     const clipPolicy = resolveClipPolicy(clipLengthPreset);
 
     try {
@@ -299,6 +336,27 @@ export class GenerateAutoHighlightsUseCase {
         clipPolicy.maxTargetClips,
         Math.max(1, options.targetClipCount ?? clipPolicy.defaultTargetClips),
       );
+      const modelPolicyBase = {
+        qualityMode,
+        userPlan: options.userPlan ?? "free",
+        videoDurationSec: sourceDurationSec,
+        transcriptPrecision: canonicalTranscript.precision,
+        requestedOverrideModel: options.isModelDebugAllowed ? options.debugModelOverride : undefined,
+        isAdmin: Boolean(options.isModelDebugAllowed),
+        isDev: process.env.NODE_ENV !== "production",
+      };
+      const rerankPolicy = resolveModelPolicy({
+        task: "highlight_rerank",
+        ...modelPolicyBase,
+      });
+      const viralityPolicy = resolveModelPolicy({
+        task: "virality_score",
+        ...modelPolicyBase,
+      });
+      const metadataPolicy = resolveModelPolicy({
+        task: "clip_metadata",
+        ...modelPolicyBase,
+      });
 
       // Step 3: Detect scene transitions (visual motion proxy) for cleaner cuts.
       let sceneCutsMs: number[] = [];
@@ -368,6 +426,7 @@ export class GenerateAutoHighlightsUseCase {
       // Step 5: Generate real timestamped candidates locally, rerank candidate
       // IDs with OpenRouter, then refine final boundaries locally. OpenRouter
       // never creates or controls final timestamps.
+      const routingBrief = buildClipIntentBrief(clipIntent, options.brief);
       const generatedCandidates = this.candidateGenerationService.generateCandidates({
         transcript: canonicalTranscript,
         durationMs: sourceDurationMs,
@@ -375,15 +434,14 @@ export class GenerateAutoHighlightsUseCase {
         policy: clipPolicy,
         audience: options.audience,
         tone: options.tone,
-        brief: options.brief,
+        brief: routingBrief,
       });
 
       if (generatedCandidates.length === 0) {
         throw AppError.internal("Failed to generate any timestamped clip candidates");
       }
 
-      let rerankModel =
-        options.model ?? process.env.OPENROUTER_HIGHLIGHT_RERANK_MODEL ?? "google/gemini-2.5-pro";
+      let rerankModel = rerankPolicy.primaryModel;
       let rerankWarnings: string[] = [];
       let selectedCandidatePairs: Array<{
         candidate: ClipCandidate;
@@ -403,7 +461,7 @@ export class GenerateAutoHighlightsUseCase {
           targetClipCount: targetCount,
           audience: options.audience,
           tone: options.tone,
-          brief: options.brief,
+          brief: routingBrief,
           callToAction: options.callToAction,
           transcriptPrecision: canonicalTranscript.precision,
           sourceDurationSec,
@@ -412,7 +470,7 @@ export class GenerateAutoHighlightsUseCase {
             idealMs: clipPolicy.idealMs,
             maxMs: clipPolicy.maxMs,
           },
-          model: options.model,
+          modelPolicy: rerankPolicy,
         });
         rerankModel = reranked.model;
         rerankWarnings = reranked.overallWarnings;
@@ -557,8 +615,15 @@ export class GenerateAutoHighlightsUseCase {
               providerReasoning: "openrouter",
               transcriptionModel: canonicalTranscript.model,
               rerankModel,
-              viralityModel:
-                process.env.OPENROUTER_VIRALITY_MODEL ?? "google/gemini-3.1-flash-lite-preview",
+              viralityModel: viralityPolicy.primaryModel,
+              qualityMode,
+              clipIntent,
+              selectedRerankModel: rerankModel,
+              rerankFallbackModels: rerankPolicy.fallbackModels,
+              selectedViralityModel: viralityPolicy.primaryModel,
+              selectedMetadataModel: metadataPolicy.primaryModel,
+              modelOverrideUsed: Boolean(options.debugModelOverride && options.isModelDebugAllowed),
+              modelSelectionReason: rerankPolicy.modelSelectionReason,
               transcriptPrecision: canonicalTranscript.precision,
               candidatesGenerated: generatedCandidates.length,
               candidatesReranked: selectedCandidatePairs.length,
@@ -606,6 +671,7 @@ export class GenerateAutoHighlightsUseCase {
             tone: options.tone,
           },
         })),
+        viralityPolicy,
       );
 
       // Step 7: Analyze transcript quality (Phase 1 enhancement)
@@ -704,6 +770,12 @@ export class GenerateAutoHighlightsUseCase {
             boundaryReasons: extractedClip.boundary.boundaryReasons,
             providerTranscription: "openai",
             providerReasoning: "openrouter",
+            qualityMode,
+            clipIntent,
+            selectedRerankModel: rerankModel,
+            selectedViralityModel: viralityPolicy.primaryModel,
+            selectedMetadataModel: metadataPolicy.primaryModel,
+            modelSelectionReason: rerankPolicy.modelSelectionReason,
             sourceGeometry,
             ...(brandDefaults as { brandMetadata?: Record<string, unknown> }).brandMetadata,
           },
@@ -908,8 +980,15 @@ export class GenerateAutoHighlightsUseCase {
           providerReasoning: "openrouter",
           transcriptionModel: canonicalTranscript.model,
           rerankModel,
-          viralityModel:
-            process.env.OPENROUTER_VIRALITY_MODEL ?? "google/gemini-3.1-flash-lite-preview",
+          viralityModel: viralityPolicy.primaryModel,
+          qualityMode,
+          clipIntent,
+          selectedRerankModel: rerankModel,
+          rerankFallbackModels: rerankPolicy.fallbackModels,
+          selectedViralityModel: viralityPolicy.primaryModel,
+          selectedMetadataModel: metadataPolicy.primaryModel,
+          modelOverrideUsed: Boolean(options.debugModelOverride && options.isModelDebugAllowed),
+          modelSelectionReason: rerankPolicy.modelSelectionReason,
           transcriptPrecision: canonicalTranscript.precision,
           candidatesGenerated: generatedCandidates.length,
           candidatesReranked: selectedCandidatePairs.length,

@@ -41,6 +41,14 @@ export type AutoHighlightsAnalytics = {
   previewFailures?: number;
   lowPrecisionWarning?: string | null;
   clipLengthPreset?: "short" | "balanced" | "detailed" | string;
+  qualityMode?: "fast" | "balanced" | "best" | string;
+  clipIntent?: string;
+  selectedRerankModel?: string;
+  rerankFallbackModels?: string[];
+  selectedViralityModel?: string;
+  selectedMetadataModel?: string;
+  modelOverrideUsed?: boolean;
+  modelSelectionReason?: string;
   clipPolicy?: {
     minMs: number;
     idealMs: number;
@@ -383,6 +391,18 @@ export function QualityDiagnosticsPanel({
           {analytics.lowPrecisionWarning}
         </div>
       ) : null}
+      {(analytics.qualityMode || analytics.clipIntent || analytics.selectedRerankModel) && (
+        <div className="mt-3 rounded-xl border border-violet-400/20 bg-violet-400/[0.06] p-3 text-xs leading-5 text-violet-100/80">
+          <span className="font-semibold text-violet-100">Model routing:</span>{" "}
+          {analytics.qualityMode ?? "balanced"} quality
+          {analytics.clipIntent ? ` · ${analytics.clipIntent}` : ""}
+          {analytics.selectedRerankModel ? ` · rerank ${analytics.selectedRerankModel}` : ""}
+          {analytics.modelOverrideUsed ? " · override used" : ""}
+          {analytics.modelSelectionReason ? (
+            <span className="block text-violet-100/60">{analytics.modelSelectionReason}</span>
+          ) : null}
+        </div>
+      )}
     </div>
   );
 }

@@ -4,8 +4,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useToast } from "@/components/ui/use-toast";
 import { useProgress } from "@/hooks/use-progress";
-import { HIGHLIGHT_MODEL_OPTIONS } from "@/lib/constants/repurpose";
 import type { AutoHighlightsAnalytics } from "@/components/repurpose/quality-indicators";
+import type { ClipIntent, QualityMode } from "@/lib/ai/model-routing-options";
 
 type UseRepurposeIngestArgs = {
   projectId: string;
@@ -23,15 +23,9 @@ export function useRepurposeIngest({
   const [sourceUrl, setSourceUrl] = useState("");
   const youtubeProgress = useProgress(800);
   const highlightProgress = useProgress(800);
-  const highlightModelDefault =
-    typeof process !== "undefined" &&
-    typeof process.env.NEXT_PUBLIC_REPURPOSE_DEFAULT_MODEL === "string" &&
-    HIGHLIGHT_MODEL_OPTIONS.some(
-      (option) => option.value === process.env.NEXT_PUBLIC_REPURPOSE_DEFAULT_MODEL!.trim(),
-    )
-      ? process.env.NEXT_PUBLIC_REPURPOSE_DEFAULT_MODEL!.trim()
-      : HIGHLIGHT_MODEL_OPTIONS[0].value;
-  const [highlightModel, setHighlightModel] = useState<string>(highlightModelDefault);
+  const [qualityMode, setQualityMode] = useState<QualityMode>("balanced");
+  const [clipIntent, setClipIntent] = useState<ClipIntent>("auto");
+  const [debugModelOverride, setDebugModelOverride] = useState<string>("");
   const [highlightBrief, setHighlightBrief] = useState<string>("");
   const [highlightAudience, setHighlightAudience] = useState<string>("Growth-focused creators");
   const [highlightTone, setHighlightTone] = useState<string>("Tension → payoff, high energy");
@@ -87,7 +81,11 @@ export function useRepurposeIngest({
         body: JSON.stringify({
           assetId: primaryAssetId,
           mode: "merge",
-          model: highlightModel,
+          qualityMode,
+          clipIntent,
+          ...(debugModelOverride.trim()
+            ? { debugModelOverride: debugModelOverride.trim() }
+            : {}),
           brief: highlightBrief,
           audience: highlightAudience,
           tone: highlightTone,
@@ -115,7 +113,9 @@ export function useRepurposeIngest({
     highlightAudience,
     highlightBrief,
     highlightCallToAction,
-    highlightModel,
+    qualityMode,
+    clipIntent,
+    debugModelOverride,
     highlightProgress,
     highlightTone,
     clipLengthPreset,
@@ -286,8 +286,12 @@ export function useRepurposeIngest({
     setSourceUrl,
     youtubeProgress,
     highlightProgress,
-    highlightModel,
-    setHighlightModel,
+    qualityMode,
+    setQualityMode,
+    clipIntent,
+    setClipIntent,
+    debugModelOverride,
+    setDebugModelOverride,
     highlightBrief,
     setHighlightBrief,
     highlightAudience,

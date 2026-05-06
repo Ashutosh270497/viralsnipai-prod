@@ -9,6 +9,8 @@ import { ApiResponseBuilder, ErrorCodes } from "@/lib/api/response";
 import { AppError, withErrorHandling } from "@/lib/utils/error-handler";
 import { logger } from "@/lib/logger";
 import { autoHighlightsRequestSchema } from "@/app/api/repurpose/auto-highlights/schema";
+import { canUseModelDebug } from "@/lib/ai/model-policy";
+import { prisma } from "@/lib/prisma";
 
 export const POST = withErrorHandling(async (request: Request) => {
   // Step 1: Authenticate user
@@ -35,10 +37,29 @@ export const POST = withErrorHandling(async (request: Request) => {
     );
   }
 
+  const dbUser = await prisma.user.findUnique({
+    where: { id: user.id },
+    select: { plan: true, subscriptionTier: true, email: true },
+  });
+  const debugAllowed = canUseModelDebug({
+    userEmail: dbUser?.email ?? user.email ?? null,
+    isDev: process.env.NODE_ENV !== "production",
+  });
+  const requestedRawModel = parsedData.debugModelOverride ?? parsedData.model;
+
+  if (requestedRawModel && !debugAllowed) {
+    throw AppError.validation(
+      "Raw model overrides are not available for this account.",
+      "Use qualityMode and clipIntent instead.",
+    );
+  }
+
   logger.info("Auto-highlights request received", {
     userId: user.id,
     assetId: parsedData.assetId,
-    model: parsedData.model,
+    qualityMode: parsedData.qualityMode,
+    clipIntent: parsedData.clipIntent,
+    debugModelOverride: requestedRawModel ? "[provided]" : undefined,
     targetClips: parsedData.target,
     clipLengthPreset: parsedData.clipLengthPreset,
     mode: parsedData.mode,
@@ -56,7 +77,11 @@ export const POST = withErrorHandling(async (request: Request) => {
       userId: user.id,
       options: {
         targetClipCount: parsedData.target,
-        model: parsedData.model,
+        qualityMode: parsedData.qualityMode,
+        clipIntent: parsedData.clipIntent,
+        debugModelOverride: debugAllowed ? requestedRawModel : undefined,
+        userPlan: dbUser?.subscriptionTier ?? dbUser?.plan ?? "free",
+        isModelDebugAllowed: debugAllowed,
         audience: parsedData.audience,
         tone: parsedData.tone,
         brief: parsedData.brief,
