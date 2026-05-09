@@ -6,6 +6,7 @@ import { ArrowLeft, Download, Film, Languages, Loader2, Mic } from "lucide-react
 
 import { useRepurpose } from "@/components/repurpose/repurpose-context";
 import { ExportPanel } from "@/components/repurpose/export-panel";
+import { SourceQualityNotice } from "@/components/repurpose/source-quality-notice";
 import { SocialPublishComposer } from "@/components/repurpose/social-publish-composer";
 import {
   AppCard,
@@ -649,9 +650,19 @@ export default function RepurposeExportPage() {
               </div>
 
               {previewClip && (
-                <p className="mt-2.5 text-center text-[10px] text-muted-foreground/35 truncate">
-                  {previewClip.title || "Clip preview"}
-                </p>
+                <>
+                  <p className="mt-2.5 text-center text-[10px] text-muted-foreground/35 truncate">
+                    {previewClip.title || "Clip preview"}
+                  </p>
+                  <SourceQualityNotice
+                    sourceWidth={primaryAsset?.sourceWidth}
+                    sourceHeight={primaryAsset?.sourceHeight}
+                    targetWidth={selectedPresetConfig.width}
+                    targetHeight={selectedPresetConfig.height}
+                    compact
+                    className="mt-3"
+                  />
+                </>
               )}
             </div>
           </AppCard>

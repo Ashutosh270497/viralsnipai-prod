@@ -18,6 +18,8 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/components/ui/use-toast";
 import { SafeThumbnailImage, normalizeThumbnailSrc } from "@/components/repurpose/safe-thumbnail-image";
 import { cn } from "@/lib/utils";
+import type { ClipUpdatePayload } from "@/components/repurpose/use-clip-update-queue";
+import type { ProjectClip } from "@/components/repurpose/types";
 import type { SmartReframeMode, SmartReframePlan, CropKeyframe } from "@/lib/media/smart-reframe";
 import {
   ASPECT_RATIO_PRESETS,
@@ -368,6 +370,10 @@ interface FramingPanelProps {
   /** Called after successful re-analysis so the parent can refresh clip data */
   onAnalysisComplete: () => void;
   onApplyLayoutToSelected?: (layout: ClipLayoutConfig) => Promise<void>;
+  onUpdateClip?: (
+    updates: ClipUpdatePayload,
+    options?: { refresh?: boolean; retryOnConflict?: boolean; forcePreviewInvalidation?: boolean },
+  ) => Promise<ProjectClip | undefined>;
 }
 
 export function FramingPanel({
@@ -382,6 +388,7 @@ export function FramingPanel({
   isPremium = false,
   onAnalysisComplete,
   onApplyLayoutToSelected,
+  onUpdateClip,
 }: FramingPanelProps) {
   const { toast } = useToast();
   const [layout, setLayout] = useState<ClipLayoutConfig>(() =>
@@ -475,21 +482,32 @@ export function FramingPanel({
       setIsSavingLayout(true);
       try {
         const normalized = normalizeClipLayoutConfig(nextLayout);
-        const res = await fetch(`/api/clips/${clipId}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            expectedVersion,
-            layoutPreset: normalized.preset,
-            aspectRatio: normalized.aspectRatio,
-            layoutConfig: normalized,
-          }),
-          cache: "no-store",
-        });
+        if (onUpdateClip) {
+          await onUpdateClip(
+            {
+              layoutPreset: normalized.preset,
+              aspectRatio: normalized.aspectRatio,
+              layoutConfig: normalized,
+            },
+            { refresh: false },
+          );
+        } else {
+          const res = await fetch(`/api/clips/${clipId}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              expectedVersion,
+              layoutPreset: normalized.preset,
+              aspectRatio: normalized.aspectRatio,
+              layoutConfig: normalized,
+            }),
+            cache: "no-store",
+          });
 
-        if (!res.ok) {
-          const body = await res.json().catch(() => null);
-          throw new Error(body?.error?.message ?? body?.message ?? "Could not save layout");
+          if (!res.ok) {
+            const body = await res.json().catch(() => null);
+            throw new Error(body?.error?.message ?? body?.message ?? "Could not save layout");
+          }
         }
 
         toast({ title: "Layout saved", description: "This clip will export with the selected crop and ratio." });
@@ -504,7 +522,7 @@ export function FramingPanel({
         setIsSavingLayout(false);
       }
     },
-    [clipId, expectedVersion, onAnalysisComplete, toast]
+    [clipId, expectedVersion, onAnalysisComplete, onUpdateClip, toast]
   );
 
   const updateLayout = useCallback(

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useState, useMemo } from "react";
+import { useCallback, useRef, useState, useMemo } from "react";
 import {
   ArrowLeft,
   ArrowRight,
@@ -27,6 +27,8 @@ import { FramingPanel } from "@/components/repurpose/framing-panel";
 import { CreativeEnhancementsPanel } from "@/components/repurpose/creative-enhancements-panel";
 import { BrandTemplateApplyPanel } from "@/components/repurpose/brand-template-apply-panel";
 import { SafeThumbnailImage } from "@/components/repurpose/safe-thumbnail-image";
+import { SourceQualityNotice } from "@/components/repurpose/source-quality-notice";
+import { useClipUpdateQueue } from "@/components/repurpose/use-clip-update-queue";
 import { useRepurpose } from "@/components/repurpose/repurpose-context";
 import {
   AlertDialog,
@@ -95,8 +97,20 @@ export default function RepurposeEditorPage() {
     {},
   );
   const [statusUpdating, setStatusUpdating] = useState<Record<string, boolean>>({});
+  const captionInFlightRef = useRef<Set<string>>(new Set());
 
   const clips = useMemo(() => project?.clips ?? [], [project?.clips]);
+  const { updateClip } = useClipUpdateQueue({
+    projectId: project?.id,
+    clips,
+    onProjectRefreshed: invalidate,
+    onConflictResolved: () => {
+      toast({
+        title: "Clip refreshed",
+        description: "A background update finished first, so ViralSnipAI retried with the latest clip version.",
+      });
+    },
+  });
   const getReviewStatus = useCallback(
     (clip: { id: string; reviewStatus?: ClipReviewStatus | null }): ClipReviewStatus =>
       reviewStatusByClip[clip.id] ?? clip.reviewStatus ?? "needs_review",
@@ -338,17 +352,7 @@ export default function RepurposeEditorPage() {
     const selected = clips.filter((clip) => selectedClipIds.includes(clip.id));
     if (selected.length === 0) return;
     await Promise.all(
-      selected.map((clip) =>
-        fetch(`/api/clips/${clip.id}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            captionStyle: style,
-            expectedVersion: clip.version,
-          }),
-          cache: "no-store",
-        }),
-      ),
+      selected.map((clip) => updateClip(clip.id, { captionStyle: style }, { refresh: false })),
     );
     toast({
       title: "Caption style applied",
@@ -361,24 +365,17 @@ export default function RepurposeEditorPage() {
     const selected = clips.filter((clip) => selectedClipIds.includes(clip.id));
     if (selected.length === 0) return;
     const results = await Promise.all(
-      selected.map(async (clip) => {
-        const response = await fetch(`/api/clips/${clip.id}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
+      selected.map((clip) =>
+        updateClip(
+          clip.id,
+          {
             layoutPreset: layoutConfig.preset,
             aspectRatio: layoutConfig.aspectRatio,
             layoutConfig,
-            expectedVersion: clip.version,
-          }),
-          cache: "no-store",
-        });
-        if (!response.ok) {
-          const body = await response.json().catch(() => null);
-          throw new Error(body?.error?.message ?? "Failed to apply layout");
-        }
-        return response;
-      }),
+          },
+          { refresh: false },
+        ),
+      ),
     );
     toast({
       title: "Layout applied",
@@ -388,12 +385,16 @@ export default function RepurposeEditorPage() {
   }
 
   async function handleGenerateCaptions(clipId: string) {
+    if (captionInFlightRef.current.has(clipId)) {
+      return;
+    }
+    captionInFlightRef.current.add(clipId);
     setCaptionLoading(clipId);
     try {
       const res = await fetch("/api/repurpose/captions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ clipId }),
+        body: JSON.stringify({ clipId, force: true }),
         cache: "no-store",
       });
       if (!res.ok) throw new Error();
@@ -402,6 +403,7 @@ export default function RepurposeEditorPage() {
     } catch {
       toast({ variant: "destructive", title: "Could not generate captions" });
     } finally {
+      captionInFlightRef.current.delete(clipId);
       setCaptionLoading(undefined);
     }
   }
@@ -963,6 +965,16 @@ export default function RepurposeEditorPage() {
                 </div>
               </div>
 
+              <div className="border-b border-border/40 px-5 py-4">
+                <SourceQualityNotice
+                  sourceWidth={activeAsset?.sourceWidth}
+                  sourceHeight={activeAsset?.sourceHeight}
+                  targetWidth={1080}
+                  targetHeight={1920}
+                  compact
+                />
+              </div>
+
               <div className="grid gap-3 border-b border-border/40 px-5 py-4 lg:grid-cols-[minmax(0,1fr)_320px]">
                 <div className="rounded-xl border border-border/50 bg-muted/25 p-4">
                   <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/45">
@@ -1140,6 +1152,7 @@ export default function RepurposeEditorPage() {
                     assetTranscript={activeAsset?.transcript ?? null}
                     selectedClipCount={selectedClipIds.length}
                     onApplyCaptionStyleToSelected={applyCaptionStyleToSelected}
+                    onUpdateClip={(updates, options) => updateClip(activeClip.id, updates, options)}
                     smartReframePlan={
                       (activeClip.viralityFactors?.metadata?.smartReframe as
                         | import("@/lib/media/smart-reframe").SmartReframePlan
@@ -1169,6 +1182,7 @@ export default function RepurposeEditorPage() {
                     }
                     selectedClipCount={selectedClipIds.length}
                     onApplyLayoutToSelected={applyLayoutToSelected}
+                    onUpdateClip={(updates, options) => updateClip(activeClip.id, updates, options)}
                     onAnalysisComplete={invalidate}
                   />
                 </TabsContent>

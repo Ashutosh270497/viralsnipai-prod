@@ -6,14 +6,21 @@ import { z } from 'zod';
 import { getCurrentUser } from '@/lib/auth';
 import { container } from '@/lib/infrastructure/di/container';
 import { TYPES } from '@/lib/infrastructure/di/types';
-import { GenerateCaptionsUseCase } from '@/lib/application/use-cases/GenerateCaptionsUseCase';
+import {
+  GenerateCaptionsUseCase,
+  type GenerateCaptionsOutput,
+} from '@/lib/application/use-cases/GenerateCaptionsUseCase';
 import { withErrorHandling } from '@/lib/utils/error-handler';
 import { ApiResponseBuilder } from '@/lib/api/response';
 import { logger } from '@/lib/logger';
 
 const schema = z.object({
   clipId: z.string(),
+  force: z.boolean().optional().default(false),
+  preserveExistingCaptionSrt: z.boolean().optional().default(false),
 });
+
+const inFlightCaptionJobs = new Map<string, Promise<GenerateCaptionsOutput>>();
 
 /**
  * POST /api/repurpose/captions
@@ -44,23 +51,41 @@ export const POST = withErrorHandling(async (request: Request) => {
     });
   }
 
-  const { clipId } = result.data;
+  const { clipId, force, preserveExistingCaptionSrt } = result.data;
 
   logger.info('Caption generation API called', {
     clipId,
     userId: user.id,
+    force,
+    preserveExistingCaptionSrt,
   });
 
   // Step 3: Execute use case via DI container
   const useCase = container.get<GenerateCaptionsUseCase>(TYPES.GenerateCaptionsUseCase);
 
-  const output = await useCase.execute({
-    clipId,
-    userId: user.id,
-    options: {
-      maxWordsPerCaption: 4,
-      maxDurationMs: 2000,
-    },
+  const jobKey = `${user.id}:${clipId}`;
+  const existingJob = inFlightCaptionJobs.get(jobKey);
+  const job =
+    existingJob ??
+    useCase.execute({
+      clipId,
+      userId: user.id,
+      options: {
+        maxWordsPerCaption: 4,
+        maxDurationMs: 2000,
+        force,
+        preserveExistingCaptionSrt,
+      },
+    });
+
+  if (!existingJob) {
+    inFlightCaptionJobs.set(jobKey, job);
+  }
+
+  const output = await job.finally(() => {
+    if (!existingJob && inFlightCaptionJobs.get(jobKey) === job) {
+      inFlightCaptionJobs.delete(jobKey);
+    }
   });
 
   // Step 4: Return success response
@@ -70,6 +95,7 @@ export const POST = withErrorHandling(async (request: Request) => {
       analytics: {
         captionGenerated: output.captionGenerated,
         previewGenerated: output.previewGenerated,
+        duplicateRequestJoined: Boolean(existingJob),
       },
     },
     'Captions generated successfully'

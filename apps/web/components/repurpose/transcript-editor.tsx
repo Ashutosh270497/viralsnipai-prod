@@ -38,6 +38,8 @@ import {
   validateCaptionCues,
 } from "@/lib/repurpose/caption-studio";
 import type { ClipEditOperation } from "@/lib/types";
+import type { ClipUpdatePayload } from "@/components/repurpose/use-clip-update-queue";
+import type { ProjectClip } from "@/components/repurpose/types";
 
 interface TranscriptEditorProps {
   clipId: string;
@@ -55,6 +57,10 @@ interface TranscriptEditorProps {
   assetTranscript?: string | null;
   selectedClipCount?: number;
   onApplyCaptionStyleToSelected?: (style: ClipCaptionStyleConfig) => Promise<void> | void;
+  onUpdateClip?: (
+    updates: ClipUpdatePayload,
+    options?: { refresh?: boolean; retryOnConflict?: boolean; forcePreviewInvalidation?: boolean },
+  ) => Promise<ProjectClip | undefined>;
   onSave: () => Promise<void>;
   onGenerateCaptions?: () => void;
   isGenerating?: boolean;
@@ -466,6 +472,7 @@ export function TranscriptEditor({
   assetTranscript,
   selectedClipCount,
   onApplyCaptionStyleToSelected,
+  onUpdateClip,
   onSave,
   onGenerateCaptions,
   isGenerating,
@@ -665,19 +672,30 @@ export function TranscriptEditor({
 
     setOperationLoading(true);
     try {
-      const response = await fetch(`/api/clips/${clipId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          startMs: nextStartMs,
-          endMs: nextEndMs,
-          previewPath: null,
-          expectedVersion,
-        }),
-        cache: "no-store",
-      });
-      if (!response.ok) {
-        throw new Error("Failed to update clip boundary");
+      if (onUpdateClip) {
+        await onUpdateClip(
+          {
+            startMs: nextStartMs,
+            endMs: nextEndMs,
+            previewPath: null,
+          },
+          { refresh: false, forcePreviewInvalidation: true },
+        );
+      } else {
+        const response = await fetch(`/api/clips/${clipId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            startMs: nextStartMs,
+            endMs: nextEndMs,
+            previewPath: null,
+            expectedVersion,
+          }),
+          cache: "no-store",
+        });
+        if (!response.ok) {
+          throw new Error("Failed to update clip boundary");
+        }
       }
       await saveEditOperation({
         type: kind === "start" ? "trim_start" : "trim_end",
@@ -975,61 +993,64 @@ export function TranscriptEditor({
         patchPayload.previewPath = null;
       }
 
-      const updateResponse = await fetch(`/api/clips/${clipId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(patchPayload),
-        cache: "no-store",
-      });
+      const updatedClip = onUpdateClip
+        ? await onUpdateClip(patchPayload, {
+            refresh: false,
+            forcePreviewInvalidation: retimedFromTranscript,
+          })
+        : null;
 
-      if (!updateResponse.ok) throw new Error("Failed to save transcript");
-
-      const updatePayload = (await updateResponse.json().catch(() => null)) as
+      let updatePayload:
         | {
             data?: {
               clip?: { startMs?: number; endMs?: number; version?: number };
               normalizedTranscriptEditRangesMs?: Array<{ startMs: number; endMs: number }> | null;
             };
           }
-        | null;
+        | null = updatedClip
+        ? {
+            data: {
+              clip: updatedClip,
+              normalizedTranscriptEditRangesMs:
+                (updatedClip.viralityFactors?.metadata?.transcriptEditRangesMs as
+                  | Array<{ startMs: number; endMs: number }>
+                  | undefined) ?? null,
+            },
+          }
+        : null;
+
+      if (!onUpdateClip) {
+        const updateResponse = await fetch(`/api/clips/${clipId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(patchPayload),
+          cache: "no-store",
+        });
+
+        if (!updateResponse.ok) throw new Error("Failed to save transcript");
+        updatePayload = (await updateResponse.json().catch(() => null)) as
+          | {
+              data?: {
+                clip?: { startMs?: number; endMs?: number; version?: number };
+                normalizedTranscriptEditRangesMs?: Array<{ startMs: number; endMs: number }> | null;
+              };
+            }
+          | null;
+      }
       const persistedStartMs = Number(updatePayload?.data?.clip?.startMs);
       const persistedEndMs = Number(updatePayload?.data?.clip?.endMs);
       if (Number.isFinite(persistedStartMs) && Number.isFinite(persistedEndMs) && persistedEndMs > persistedStartMs) {
         nextStartMs = persistedStartMs;
         nextEndMs = persistedEndMs;
       }
-      const normalizedRangesFromServer = Array.isArray(updatePayload?.data?.normalizedTranscriptEditRangesMs)
-        ? updatePayload?.data?.normalizedTranscriptEditRangesMs
-        : null;
-      const rangesForPersistence = hasInternalEditCuts
-        ? normalizedRangesFromServer ?? absoluteEditRanges
-        : null;
-
       if (retimedFromTranscript || hasInternalEditCuts) {
         const regenerateResponse = await fetch("/api/repurpose/captions", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ clipId }),
+          body: JSON.stringify({ clipId, force: true, preserveExistingCaptionSrt: true }),
           cache: "no-store",
         });
-        if (regenerateResponse.ok) {
-          const restoreRes = await fetch(`/api/clips/${clipId}`, {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              captionSrt: captionSrtToPersist,
-              startMs: nextStartMs,
-              endMs: nextEndMs,
-              captionStyle: normalizedCaptionStyle,
-              transcriptEditRangesMs: rangesForPersistence,
-              expectedVersion: Number(updatePayload?.data?.clip?.version) || expectedVersion + 1,
-            }),
-            cache: "no-store",
-          });
-          if (!restoreRes.ok) {
-            toast({ title: "Clip timing synced", description: "Preview refreshed, but transcript restore failed. Please click Save once more." });
-          }
-        } else {
+        if (!regenerateResponse.ok) {
           toast({ title: "Clip timing synced", description: "Transcript saved, but preview refresh failed. Regenerate captions to refresh preview." });
         }
       }

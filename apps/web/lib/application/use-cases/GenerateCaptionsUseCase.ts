@@ -38,6 +38,8 @@ export interface GenerateCaptionsInput {
   options?: {
     maxWordsPerCaption?: number;
     maxDurationMs?: number;
+    force?: boolean;
+    preserveExistingCaptionSrt?: boolean;
   };
 }
 
@@ -95,11 +97,28 @@ export class GenerateCaptionsUseCase {
     const srtPath = path.join(captionsDir, `${clip.id}.srt`);
     const previewPath = path.join(previewsDir, `${clip.id}.mp4`);
 
+    if (!options.force && clip.captionSrt && clip.previewPath) {
+      logger.info('Caption generation skipped; clip already has captions and preview', {
+        clipId,
+        previewPath: clip.previewPath,
+      });
+
+      return {
+        clip,
+        captionGenerated: false,
+        previewGenerated: false,
+      };
+    }
+
     // Step 4: Generate SRT captions from transcript
     let srtContent: string;
     let captionGenerated = false;
 
-    if (asset.transcript) {
+    if (options.preserveExistingCaptionSrt && clip.captionSrt) {
+      srtContent = clip.captionSrt;
+      captionGenerated = false;
+      logger.info('Preserving existing clip captions while regenerating preview', { clipId });
+    } else if (asset.transcript) {
       let transcriptPayload = asset.transcript;
       const parsedTranscript = this.transcriptionService.parseTranscript(asset.transcript);
 
