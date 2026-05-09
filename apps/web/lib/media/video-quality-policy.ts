@@ -119,6 +119,20 @@ export function assertNotPreviewPreset(presetKey: VideoQualityPresetKey, caller:
 }
 
 /**
+ * Assert that final export code is reading from the original source media,
+ * never from preview/intermediate MP4s generated for browser playback.
+ */
+export function assertOriginalSourceForFinalExport(inputPath: string, caller: string): void {
+  const normalized = inputPath.replace(/\\/g, "/").toLowerCase();
+  const previewMarkers = ["/previews/", "/preview/", "_preview.", "-preview."];
+  if (previewMarkers.some((marker) => normalized.includes(marker))) {
+    throw new Error(
+      `[video-quality-policy] ${caller} received a preview/intermediate file for final export. Final exports must use the original source video: ${inputPath}`
+    );
+  }
+}
+
+/**
  * Return the FFmpeg options array for the given preset.
  * Typed so callers don't need to index the const directly.
  */

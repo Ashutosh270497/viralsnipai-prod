@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useRef, useState, useMemo } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft,
   ArrowRight,
@@ -45,6 +46,7 @@ import { useToast } from "@/components/ui/use-toast";
 import { getCaptionQuality } from "@/lib/caption-quality";
 import { cn, formatDuration } from "@/lib/utils";
 import { srtToWebVTT } from "@/lib/captions/webvtt";
+import { projectKeys } from "@/lib/hooks/queries/useProjects";
 import {
   BoundaryConfidenceBadge,
   ClipTypeBadge,
@@ -72,6 +74,7 @@ const REVIEW_STATUSES: ClipReviewStatus[] = [
 
 export default function RepurposeEditorPage() {
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const {
     projects,
     project,
@@ -205,6 +208,23 @@ export default function RepurposeEditorPage() {
   const activeQualitySignals = activeClip?.viralityFactors?.qualitySignals;
   const activePortraitPlan = activeClip?.viralityFactors?.reframePlans?.find(
     (plan) => plan.ratio === "9:16",
+  );
+  const mergeClipIntoProjectCache = useCallback(
+    (clip: unknown) => {
+      if (!project?.id || !clip || typeof clip !== "object" || !("id" in clip)) return;
+      queryClient.setQueryData(projectKeys.detail(project.id), (current: any) => {
+        const currentProject = current?.project ?? current;
+        if (!currentProject?.clips) return current;
+        const nextProject = {
+          ...currentProject,
+          clips: currentProject.clips.map((existing: any) =>
+            existing.id === (clip as any).id ? { ...existing, ...(clip as any) } : existing,
+          ),
+        };
+        return current?.project ? { ...current, project: nextProject } : nextProject;
+      });
+    },
+    [project?.id, queryClient],
   );
 
   // ── Guard states ────────────────────────────────────────────────────────────
@@ -398,6 +418,11 @@ export default function RepurposeEditorPage() {
         cache: "no-store",
       });
       if (!res.ok) throw new Error();
+      const body = await res.json().catch(() => null);
+      const nextClip = body?.data?.clip;
+      if (nextClip) {
+        mergeClipIntoProjectCache(nextClip);
+      }
       toast({ title: "Captions generated", description: "Transcript ready for editing." });
       await invalidate();
     } catch {
@@ -1147,6 +1172,8 @@ export default function RepurposeEditorPage() {
                     startMs={activeClip.startMs}
                     endMs={activeClip.endMs}
                     previewPath={activeClip.previewPath}
+                    sourceWidth={activeAsset?.sourceWidth}
+                    sourceHeight={activeAsset?.sourceHeight}
                     projectId={project.id}
                     assetId={activeClip.assetId}
                     assetTranscript={activeAsset?.transcript ?? null}

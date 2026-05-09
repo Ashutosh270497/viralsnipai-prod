@@ -26,6 +26,7 @@ import {
 
 import { AIPromptGeneratorDialog } from "@/components/repurpose/ai-prompt-generator-dialog";
 import { SafeThumbnailImage } from "@/components/repurpose/safe-thumbnail-image";
+import { SourceQualityNotice } from "@/components/repurpose/source-quality-notice";
 import { useRepurpose } from "@/components/repurpose/repurpose-context";
 import { V1UsageLimitsCard } from "@/components/repurpose/v1-usage-limits-card";
 import type { AutoHighlightsAnalytics } from "@/components/repurpose/quality-indicators";
@@ -607,6 +608,12 @@ function SourceStage({
               {transcriptPrecision !== "word" && transcriptPrecision !== "none" ? (
                 <PrecisionNotice />
               ) : null}
+              <SourceQualityNotice
+                sourceWidth={primaryAsset.sourceWidth}
+                sourceHeight={primaryAsset.sourceHeight}
+                compact
+                className="mt-3"
+              />
               {primaryAsset.transcript ? (
                 <details className="mt-3">
                   <summary className="cursor-pointer text-xs font-semibold text-muted-foreground">

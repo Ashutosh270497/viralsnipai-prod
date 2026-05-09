@@ -10,6 +10,7 @@ import type { ClipReframePlan, VideoGeometry } from "@/lib/types";
 import type { ClipCaptionStyleConfig, HookOverlay } from "@/lib/repurpose/caption-style-config";
 import {
   assertNotPreviewPreset,
+  assertOriginalSourceForFinalExport,
   getQualityOptions,
   validateExportOptions,
 } from "@/lib/media/video-quality-policy";
@@ -65,16 +66,6 @@ function assertFinalExportQuality(options: readonly string[], caller: string) {
   const violations = validateExportOptions(options);
   if (violations.length > 0) {
     throw new Error(`[video-quality-policy] ${caller} produced invalid final export options: ${violations.join("; ")}`);
-  }
-}
-
-function assertOriginalSourceForFinalExport(inputPath: string, caller: string) {
-  const normalized = inputPath.replace(/\\/g, "/").toLowerCase();
-  const previewMarkers = ["/previews/", "/preview/", "_preview.", "-preview."];
-  if (previewMarkers.some((marker) => normalized.includes(marker))) {
-    throw new Error(
-      `[video-quality-policy] ${caller} received a preview/intermediate file for final export. Final exports must use the original source video: ${inputPath}`
-    );
   }
 }
 

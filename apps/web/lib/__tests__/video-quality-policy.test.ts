@@ -15,6 +15,7 @@ import {
   MAX_EXPORT_CRF,
   MIN_EXPORT_AUDIO_KBPS,
   assertNotPreviewPreset,
+  assertOriginalSourceForFinalExport,
   validateExportOptions,
   getQualityOptions,
 } from "@/lib/media/video-quality-policy";
@@ -187,5 +188,17 @@ describe("pipeline invariants", () => {
     // The stream copy path produces H.264 that cannot have captions burned in after the fact.
     // The extractAndRenderSegment function handles captioned clips always with a full encode.
     expect(VIDEO_QUALITY_PRESETS.high_quality_export.streamCopy).toBe(false);
+  });
+
+  it("rejects preview files as final export inputs", () => {
+    expect(() =>
+      assertOriginalSourceForFinalExport("/uploads/previews/project/clip-preview.mp4", "renderExport"),
+    ).toThrow(/original source video/);
+  });
+
+  it("accepts original source files as final export inputs", () => {
+    expect(() =>
+      assertOriginalSourceForFinalExport("/uploads/projects/source-video.mp4", "renderExport"),
+    ).not.toThrow();
   });
 });

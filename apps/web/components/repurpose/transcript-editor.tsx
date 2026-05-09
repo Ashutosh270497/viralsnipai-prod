@@ -9,6 +9,7 @@ import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/components/ui/use-toast";
 import { CaptionOverlayStudio } from "@/components/repurpose/caption-overlay-studio";
 import { RemotionClipPreview, type RemotionClipPreviewHandle } from "@/components/repurpose/remotion-clip-preview";
+import { SourceQualityNotice } from "@/components/repurpose/source-quality-notice";
 import { srtUtils, type CaptionEntry } from "@/lib/srt-utils";
 import { getCaptionQuality, isPlaceholderCaptionText } from "@/lib/caption-quality";
 import type { SmartReframePlan } from "@/lib/media/smart-reframe";
@@ -51,6 +52,8 @@ interface TranscriptEditorProps {
   startMs: number;
   endMs: number;
   previewPath?: string | null;
+  sourceWidth?: number | null;
+  sourceHeight?: number | null;
   smartReframePlan?: SmartReframePlan | null;
   projectId?: string | null;
   assetId?: string | null;
@@ -466,6 +469,8 @@ export function TranscriptEditor({
   startMs,
   endMs,
   previewPath,
+  sourceWidth,
+  sourceHeight,
   smartReframePlan,
   projectId,
   assetId,
@@ -659,6 +664,14 @@ export function TranscriptEditor({
   }
 
   async function applyWordBoundary(kind: "start" | "end", word: TranscriptUiWord) {
+    if (isGenerating) {
+      toast({
+        title: "Caption update in progress",
+        description: "Wait for the preview refresh to finish before changing clip timing.",
+      });
+      return;
+    }
+
     const nextStartMs = kind === "start" ? Math.max(0, word.startMs - 300) : startMs;
     const nextEndMs = kind === "end" ? Math.max(word.endMs + 500, word.endMs) : endMs;
     if (nextEndMs <= nextStartMs || nextEndMs - nextStartMs < MIN_TRIMMED_CLIP_DURATION_MS) {
@@ -920,6 +933,13 @@ export function TranscriptEditor({
 
   async function handleSave() {
     if (!hasChanges) return;
+    if (isGenerating) {
+      toast({
+        title: "Preview refresh in progress",
+        description: "Wait for captions and preview regeneration to finish before saving more changes.",
+      });
+      return;
+    }
 
     const combinedText = entries.map((e) => e.text).join(" ").trim();
     if (!combinedText) {
@@ -1107,11 +1127,28 @@ export function TranscriptEditor({
         </Button>
       </div>
     ) : null;
+  const generatingNotice = isGenerating ? (
+    <div className="flex items-center gap-2 rounded-lg border border-primary/20 bg-primary/10 px-3 py-2 text-xs text-primary">
+      <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+      <span>Captions generating. Preview will refresh when this finishes.</span>
+    </div>
+  ) : null;
+  const sourceQualityNotice = (
+    <SourceQualityNotice
+      sourceWidth={sourceWidth}
+      sourceHeight={sourceHeight}
+      targetWidth={1080}
+      targetHeight={1920}
+      compact
+    />
+  );
 
   if ((!captionSrt || entries.length === 0) && clipWords.length === 0) {
     return (
       <div className="space-y-3">
         {videoPlayer}
+        {sourceQualityNotice}
+        {generatingNotice}
         {missingPreviewNotice}
         <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border/60 bg-muted/10 px-4 py-8 text-center">
           <Type className="mb-2 h-7 w-7 text-muted-foreground/25" />
@@ -1132,6 +1169,8 @@ export function TranscriptEditor({
     return (
       <div className="space-y-3">
         {videoPlayer}
+        {sourceQualityNotice}
+        {generatingNotice}
         {missingPreviewNotice}
         <div className="flex flex-col items-center justify-center rounded-lg border border-amber-500/30 bg-amber-500/5 px-4 py-8 text-center">
           <AlertTriangle className="mb-2 h-7 w-7 text-amber-500/60" />
@@ -1151,6 +1190,8 @@ export function TranscriptEditor({
   return (
     <div className="space-y-3">
       {videoPlayer}
+      {sourceQualityNotice}
+      {generatingNotice}
       {missingPreviewNotice}
 
       <WordLevelTranscriptPanel
@@ -1162,7 +1203,7 @@ export function TranscriptEditor({
         fillerCount={fillerMatches.length}
         pauseCount={pauseMatches.length}
         operationCount={editOperations.length}
-        isBusy={operationLoading}
+        isBusy={operationLoading || Boolean(isGenerating)}
         searchQuery={fullTranscriptSearchQuery}
         searchResults={fullTranscriptSearchResults}
         onSearchChange={setFullTranscriptSearchQuery}
@@ -1337,9 +1378,9 @@ export function TranscriptEditor({
               Undo
             </Button>
           )}
-          <Button size="sm" className="h-6 gap-1 px-2.5 text-[11px]" onClick={handleSave} disabled={!hasChanges || isSaving}>
+          <Button size="sm" className="h-6 gap-1 px-2.5 text-[11px]" onClick={handleSave} disabled={!hasChanges || isSaving || isGenerating}>
             <Save className="h-3 w-3" />
-            {isSaving ? "Saving…" : "Save"}
+            {isSaving ? "Saving…" : isGenerating ? "Refreshing…" : "Save"}
           </Button>
         </div>
       </div>

@@ -74,10 +74,10 @@ export const OPENROUTER_MODELS = {
   scripts: process.env.OPENROUTER_SCRIPTS_MODEL ?? 'anthropic/claude-sonnet-4.6',
 
   /**
-   * Highlight / timestamp detection — Gemini 2.5 Pro
-   * Stable-first long transcript reasoning for structured clip timestamps.
+   * Legacy highlight reasoning — Gemini 3 Flash Preview.
+   * V1 clipping uses model-policy.ts for reranking and never lets this path own final timestamps.
    */
-  highlights: process.env.OPENROUTER_HIGHLIGHTS_MODEL ?? 'google/gemini-2.5-pro',
+  highlights: process.env.OPENROUTER_HIGHLIGHTS_MODEL ?? 'google/gemini-3-flash-preview',
 
   /**
    * Imagen prompt enhancement — Gemini 3.1 Flash Lite Preview
