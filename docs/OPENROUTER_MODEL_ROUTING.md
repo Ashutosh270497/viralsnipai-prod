@@ -1,56 +1,63 @@
 # OpenRouter Model Routing
 
-Last updated: 2026-04-25
+Last updated: 2026-05-10
 
-This is the current model-routing baseline for ViralSnipAI. The source of truth in code is `apps/web/lib/openrouter-client.ts`; this document explains why each default is used.
+The source of truth is `apps/web/lib/ai/model-policy.ts`. Normal users do not select raw model IDs. The product exposes simple controls:
 
-## Source Of Truth
+- Clipping Quality: `fast`, `balanced`, `best`
+- Clip Intent: `auto`, `viral_hooks`, `educational`, `contrarian`, `story`, `product_demo`, `funny`, `quotes`
 
-- Runtime registry: `apps/web/lib/openrouter-client.ts`
-- V1 highlight selector options: `apps/web/lib/constants/repurpose.ts`
-- Complete env reference: `.env.example`
-- V1 production env template: `.env.v1.example`
+Developer/admin model override is allowed only through debug paths.
 
-## Current OpenRouter Defaults
+## Provider Boundary
 
-| Product task | Env override | Default model | Why |
+- OpenAI is used for transcription, timing, and word timestamps.
+- OpenRouter is used for reasoning, ranking, scoring, metadata, captions, and prompt suggestions.
+- Local deterministic code owns candidate timestamps and final clip boundaries.
+- LLM output can select/rank known candidate IDs, but it must not create final clip timestamps.
+
+## Current Defaults
+
+| Task | Quality | Primary model | Fallbacks |
 |---|---|---|---|
-| Video/audio ingest metadata | `OPENROUTER_VIDEO_INGEST_MODEL` | `google/gemini-3-flash-preview` | Balanced multimodal model for future direct ingest metadata and extraction. |
-| Auto-highlight detection | `OPENROUTER_HIGHLIGHTS_MODEL` | `google/gemini-3.1-pro-preview` | Best fit for long transcript/video reasoning, 1M context, multimodal input, and structured clip JSON. |
-| Caption refinement | `OPENROUTER_CAPTIONS_MODEL` | `google/gemini-3.1-flash-lite-preview` | High-volume transform task where speed and cost matter. |
-| Hooks | `OPENROUTER_HOOKS_MODEL` | `anthropic/claude-sonnet-4.6` | Strong creative copy quality. |
-| Scripts | `OPENROUTER_SCRIPTS_MODEL` | `anthropic/claude-sonnet-4.6` | Strong long-form writing and tone control. |
-| Content calendar | `OPENROUTER_CONTENT_CALENDAR_MODEL` | `anthropic/claude-sonnet-4.6` | Multi-step creative planning. |
-| Titles | `OPENROUTER_TITLES_MODEL` | `google/gemini-3.1-flash-lite-preview` | Short high-volume copy generation. |
-| Imagen prompt rewrite | `OPENROUTER_IMAGEN_PROMPT_MODEL` | `google/gemini-3.1-flash-lite-preview` | Fast structured prompt improvement. |
+| Highlight rerank | Fast | `google/gemini-3-flash-preview` | `qwen/qwen3.6-plus` |
+| Highlight rerank | Balanced | `google/gemini-3-flash-preview` | `anthropic/claude-sonnet-4.6`, `qwen/qwen3.6-plus` |
+| Highlight rerank | Best | `anthropic/claude-sonnet-4.6` | `google/gemini-3-flash-preview`, `qwen/qwen3.6-plus` |
+| Virality score | Fast/Balanced | `google/gemini-3.1-flash-lite-preview` | `google/gemini-3-flash-preview`, `qwen/qwen3.6-plus` |
+| Virality score | Best | `anthropic/claude-sonnet-4.6` | `google/gemini-3-flash-preview`, `qwen/qwen3.6-plus` |
+| Clip metadata | Fast/Balanced | `google/gemini-3.1-flash-lite-preview` | `google/gemini-3-flash-preview`, `qwen/qwen3.6-plus` |
+| Clip metadata | Best | `anthropic/claude-sonnet-4.6` | `google/gemini-3-flash-preview`, `qwen/qwen3.6-plus` |
+| Prompt goal suggestions | Fast | `google/gemini-3-flash-preview` | `qwen/qwen3.6-plus` |
+| Prompt goal suggestions | Balanced | `openai/gpt-5.2` | `qwen/qwen3.6-plus` |
+| Prompt goal suggestions | Best | `anthropic/claude-sonnet-4.6` | `qwen/qwen3.6-plus` |
+| Caption cleanup/translate | All | `google/gemini-3.1-flash-lite-preview` | `google/gemini-3-flash-preview`, `qwen/qwen3.6-plus` |
 
-## Highlight Model Selector
+## Environment Overrides
 
-The V1 Create Clip flow now accepts OpenRouter model IDs directly:
+The defaults above can be overridden by environment variables:
 
-- `google/gemini-3.1-pro-preview`
-- `google/gemini-3-flash-preview`
-- `qwen/qwen3.6-plus`
-- `xiaomi/mimo-v2.5`
-- `google/gemini-3.1-flash-lite-preview`
-- `openai/gpt-5.5`
+```bash
+OPENROUTER_FAST_MODEL="google/gemini-3-flash-preview"
+OPENROUTER_HIGHLIGHT_RERANK_MODEL="google/gemini-3-flash-preview"
+OPENROUTER_BEST_RERANK_MODEL="anthropic/claude-sonnet-4.6"
+OPENROUTER_VIRALITY_MODEL="google/gemini-3.1-flash-lite-preview"
+OPENROUTER_METADATA_MODEL="google/gemini-3.1-flash-lite-preview"
+OPENROUTER_CAPTION_MODEL="google/gemini-3.1-flash-lite-preview"
+OPENROUTER_PROMPT_GENERATOR_MODEL="openai/gpt-5.2"
+OPENROUTER_PROMPT_GENERATOR_FALLBACK_MODELS="qwen/qwen3.6-plus"
+OPENROUTER_PROMPT_GENERATOR_TIMEOUT_MS="90000"
+OPENROUTER_TIMEOUT_MS="180000"
+```
 
-When one of these IDs is selected, the auto-highlight API sends that exact model to OpenRouter. Older direct Google Gemini model names still route through the direct Google Gemini path when `GOOGLE_GEMINI_API_KEY` is configured.
+Local `.env.local` values can change runtime behavior. When debugging model selection, check analytics fields emitted by the clip-generation route.
 
-## Practical Routing Guidance
+## Reranking Reliability
 
-- Use `google/gemini-3.1-pro-preview` for the default V1 highlight detector because wrong clip timestamps waste user time.
-- Use `google/gemini-3-flash-preview` for future direct video/audio ingest metadata and when latency matters but the task still needs multimodal/context reasoning.
-- Use `qwen/qwen3.6-plus` when video-capable long-context analysis needs a lower-cost alternative to Gemini Pro.
-- Use `xiaomi/mimo-v2.5` for experimental native audio/video understanding when broad media input matters more than premium reasoning.
-- Use `google/gemini-3.1-flash-lite-preview` for captions, short transforms, reply assist, and high-volume background enrichment.
-- Use `anthropic/claude-sonnet-4.6` for polished creative writing, style transfer, hooks, scripts, threads, and template remix.
-- Use `openai/gpt-5.5` for premium transcript/file QA and manual review of highlight quality. It is not the default video detector because the current OpenRouter listing exposes text/image/file input, not native video input.
+Highlight reranking uses this fallback sequence:
 
-## Current Limitation
+1. Try the primary model with structured output.
+2. Retry the same model with a less strict JSON mode when needed.
+3. Try fallback models.
+4. Fall back to deterministic local ranking if all models fail.
 
-The V1 media pipeline still uploads and transcribes video through the existing app media flow. OpenRouter is currently used for transcript/highlight/caption intelligence, not as a direct raw-video ingestion replacement. The `OPENROUTER_VIDEO_INGEST_MODEL` key is in place for future direct multimodal ingest work.
-
-## Provider Policy
-
-Text/model generation is OpenRouter-only. If OpenRouter is not configured, returns no content, or returns invalid JSON for structured tasks, the request should fail clearly instead of falling back to OpenAI, Gemini, mock content, or deterministic model output.
+The deterministic fallback scores local candidates using transcript hooks, claims, question-answer structure, duration fit, boundary quality, filler density, scene alignment, and clip diversity.

@@ -59,10 +59,10 @@ See `apps/web/.env.production.example` for the complete annotated list.
 
 | Variable | Default | Description |
 |---|---|---|
-| `OPENAI_API_KEY` | — | Whisper transcription (`TRANSCRIBE_PROVIDER=openai`) |
+| `OPENAI_API_KEY` | — | OpenAI transcription, timing, and word timestamps |
 | `CV_WORKER_URL` | — | URL of the CV worker service |
 | `SMART_REFRAME_ENABLED` | `true` | Enable face/person smart crop |
-| `TRANSCRIBE_PROVIDER` | `openai` | `openai` \| `openrouter` |
+| `OPENAI_TRANSCRIBE_MODEL` | `whisper-1` | OpenAI transcription model for timing and word timestamps |
 
 ### Remotion animated exports (opt-in)
 

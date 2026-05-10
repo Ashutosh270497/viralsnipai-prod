@@ -234,7 +234,7 @@ Key changes:
 - Added clip feedback model for accepted/rejected/edited/exported/published events.
 - Added quality analytics aggregation for acceptance rate, manual trim delta, virality, candidate type performance, transcript precision, boundary confidence, preview/export failures, and rejection reasons.
 - Added learning-loop placeholders for future scoring personalization.
-- Added API documentation and Phase 10 QA notes.
+- Added API documentation and platform QA coverage.
 
 Important files:
 - `apps/web/lib/platform/api-keys.ts`
@@ -248,7 +248,6 @@ Important files:
 - `apps/web/app/api/clips/[id]/feedback/route.ts`
 - `apps/web/app/api/repurpose/quality/analytics/route.ts`
 - `docs/api/VIRALSNIPAI_PUBLIC_API_V1.md`
-- `docs/PHASE10_PLATFORM_QA.md`
 
 Migration:
 - `apps/web/prisma/migrations/20260505230000_add_platform_api_quality_foundation/`
@@ -291,10 +290,15 @@ OPENROUTER_API_KEY=""
 OPENROUTER_BASE_URL="https://openrouter.ai/api/v1"
 OPENROUTER_SITE_URL="http://localhost:3000"
 OPENROUTER_APP_NAME="ViralSnipAI"
-OPENROUTER_HIGHLIGHT_RERANK_MODEL="google/gemini-2.5-pro"
+OPENROUTER_FAST_MODEL="google/gemini-3-flash-preview"
+OPENROUTER_HIGHLIGHT_RERANK_MODEL="google/gemini-3-flash-preview"
+OPENROUTER_BEST_RERANK_MODEL="anthropic/claude-sonnet-4.6"
 OPENROUTER_VIRALITY_MODEL="google/gemini-3.1-flash-lite-preview"
 OPENROUTER_METADATA_MODEL="google/gemini-3.1-flash-lite-preview"
 OPENROUTER_CAPTION_MODEL="google/gemini-3.1-flash-lite-preview"
+OPENROUTER_PROMPT_GENERATOR_MODEL="openai/gpt-5.2"
+OPENROUTER_PROMPT_GENERATOR_FALLBACK_MODELS="qwen/qwen3.6-plus"
+OPENROUTER_PROMPT_GENERATOR_TIMEOUT_MS="90000"
 OPENROUTER_TIMEOUT_MS="180000"
 OPENROUTER_MAX_RETRIES="2"
 
