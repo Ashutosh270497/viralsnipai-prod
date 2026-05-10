@@ -22,6 +22,7 @@ interface CaptionOverlayStudioProps {
   captionEntries?: CaptionEntry[];
   selectedClipCount?: number;
   onApplyToSelected?: (style: ClipCaptionStyleConfig) => void;
+  presetFirst?: boolean;
 }
 
 const POSITION_OPTIONS = [
@@ -65,6 +66,7 @@ export function CaptionOverlayStudio({
   captionEntries = [],
   selectedClipCount = 0,
   onApplyToSelected,
+  presetFirst = false,
 }: CaptionOverlayStudioProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [currentMs, setCurrentMs] = useState(0);
@@ -191,6 +193,14 @@ export function CaptionOverlayStudio({
               </button>
             ) : null}
           </div>
+
+          <details
+            open={!presetFirst}
+            className="mt-4 rounded-lg border border-border/40 bg-background/35 p-3"
+          >
+            <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wider text-muted-foreground/60">
+              Customize style
+            </summary>
 
           <div className="mt-4 grid gap-3 md:grid-cols-2">
             <Field label="Font family">
@@ -387,6 +397,7 @@ export function CaptionOverlayStudio({
               </p>
             ) : null}
           </div>
+          </details>
         </section>
 
         <section className="rounded-xl border border-border/40 bg-muted/30 p-4">

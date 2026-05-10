@@ -43,6 +43,7 @@ import type { ClipUpdatePayload } from "@/components/repurpose/use-clip-update-q
 import type { ProjectClip } from "@/components/repurpose/types";
 
 interface TranscriptEditorProps {
+  mode?: "full" | "transcript" | "captions" | "style";
   clipId: string;
   clipTitle?: string | null;
   captionSrt?: string | null;
@@ -67,6 +68,7 @@ interface TranscriptEditorProps {
   onSave: () => Promise<void>;
   onGenerateCaptions?: () => void;
   isGenerating?: boolean;
+  showSourceQualityNotice?: boolean;
 }
 
 type TimedWord = {
@@ -460,6 +462,7 @@ function buildTimedCaptionEntriesFromEditedText(
 }
 
 export function TranscriptEditor({
+  mode = "full",
   clipId,
   clipTitle,
   captionSrt,
@@ -481,6 +484,7 @@ export function TranscriptEditor({
   onSave,
   onGenerateCaptions,
   isGenerating,
+  showSourceQualityNotice = true,
 }: TranscriptEditorProps) {
   const { toast } = useToast();
   const remotionPreviewRef = useRef<RemotionClipPreviewHandle>(null);
@@ -1133,7 +1137,7 @@ export function TranscriptEditor({
       <span>Captions generating. Preview will refresh when this finishes.</span>
     </div>
   ) : null;
-  const sourceQualityNotice = (
+  const sourceQualityNotice = showSourceQualityNotice ? (
     <SourceQualityNotice
       sourceWidth={sourceWidth}
       sourceHeight={sourceHeight}
@@ -1141,12 +1145,18 @@ export function TranscriptEditor({
       targetHeight={1920}
       compact
     />
-  );
+  ) : null;
+  const showVideoPlayer = mode === "full" || mode === "captions";
+  const showWordEditor = mode === "full";
+  const showAdvancedTranscript = mode === "transcript";
+  const showCaptionTools = mode === "full" || mode === "captions";
+  const showSegmentEditor = mode !== "style";
+  const showStyleStudio = mode === "full" || mode === "style";
 
   if ((!captionSrt || entries.length === 0) && clipWords.length === 0) {
     return (
       <div className="space-y-3">
-        {videoPlayer}
+        {showVideoPlayer && videoPlayer}
         {sourceQualityNotice}
         {generatingNotice}
         {missingPreviewNotice}
@@ -1168,7 +1178,7 @@ export function TranscriptEditor({
   if (captionQuality.tier === "low_quality" && clipWords.length === 0) {
     return (
       <div className="space-y-3">
-        {videoPlayer}
+        {showVideoPlayer && videoPlayer}
         {sourceQualityNotice}
         {generatingNotice}
         {missingPreviewNotice}
@@ -1189,53 +1199,166 @@ export function TranscriptEditor({
 
   return (
     <div className="space-y-3">
-      {videoPlayer}
+      {showVideoPlayer && videoPlayer}
       {sourceQualityNotice}
       {generatingNotice}
       {missingPreviewNotice}
 
-      <WordLevelTranscriptPanel
-        precision={transcriptPrecision}
-        words={clipWords}
-        segments={clipSegments}
-        selectedRange={selectedWordRange}
-        activeWordIndex={activeWord?.index ?? null}
-        fillerCount={fillerMatches.length}
-        pauseCount={pauseMatches.length}
-        operationCount={editOperations.length}
-        isBusy={operationLoading || Boolean(isGenerating)}
-        searchQuery={fullTranscriptSearchQuery}
-        searchResults={fullTranscriptSearchResults}
-        onSearchChange={setFullTranscriptSearchQuery}
-        onWordClick={(word, event) => {
-          selectWord(word, event.shiftKey);
-          remotionPreviewRef.current?.seekToMs(Math.max(0, word.startMs - startMs));
-          handlePreviewTimeUpdate(Math.max(0, word.startMs - startMs));
-        }}
-        onClearSelection={() => setSelectedWordRange(null)}
-        onSetStart={() => {
-          const selected = getSelectedWords();
-          const first = selected[0];
-          if (first) void applyWordBoundary("start", first);
-        }}
-        onSetEnd={() => {
-          const selected = getSelectedWords();
-          const last = selected[selected.length - 1];
-          if (last) void applyWordBoundary("end", last);
-        }}
-        onRemoveSelected={() => void removeSelectedWords()}
-        onCopyQuote={() => void copySelectedQuote()}
-        onCreateClip={() => void createClipFromSelection(getSelectedWords())}
-        onRemoveFillers={() => void markRemoveRanges(fillerMatches, "fillers")}
-        onRemovePauses={() => void markRemoveRanges(pauseMatches, "pauses")}
-        onResetOperations={() => void resetEditOperations()}
-        onCreateClipFromSearch={(startWordIndex, endWordIndex) => {
-          const words = parsedTranscript.words.filter(
-            (word) => word.index >= startWordIndex && word.index <= endWordIndex,
-          );
-          void createClipFromSelection(words);
-        }}
-      />
+      {mode === "transcript" && (
+        <div className="rounded-xl border border-border/40 bg-muted/20 p-3">
+          <p className="text-sm font-semibold text-foreground">Edit transcript</p>
+          <p className="mt-1 text-xs leading-5 text-muted-foreground/60">
+            Clean the readable transcript first. Use advanced word timing only when you need exact
+            start, end, or removal ranges.
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Button
+              variant="secondary"
+              size="sm"
+              className="h-8 px-3 text-xs"
+              disabled={operationLoading}
+              onClick={() => void runCaptionAssist("cleanup", { mode: "cleanup" })}
+            >
+              Clean
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              className="h-8 px-3 text-xs"
+              disabled={operationLoading}
+              onClick={() => void markRemoveRanges(fillerMatches, "fillers")}
+            >
+              Remove fillers
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              className="h-8 px-3 text-xs"
+              disabled={operationLoading}
+              onClick={() => void markRemoveRanges(pauseMatches, "pauses")}
+            >
+              Shorten pauses
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              className="h-8 px-3 text-xs"
+              disabled={operationLoading}
+              onClick={() => void runCaptionAssist("cleanup", { mode: "simplify" })}
+            >
+              Simplify
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              className="h-8 px-3 text-xs"
+              disabled={operationLoading}
+              onClick={() =>
+                void runCaptionAssist("translate", { language: captionTranslateLanguage })
+              }
+            >
+              Translate
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {showWordEditor && (
+        <WordLevelTranscriptPanel
+          precision={transcriptPrecision}
+          words={clipWords}
+          segments={clipSegments}
+          selectedRange={selectedWordRange}
+          activeWordIndex={activeWord?.index ?? null}
+          fillerCount={fillerMatches.length}
+          pauseCount={pauseMatches.length}
+          operationCount={editOperations.length}
+          isBusy={operationLoading || Boolean(isGenerating)}
+          searchQuery={fullTranscriptSearchQuery}
+          searchResults={fullTranscriptSearchResults}
+          onSearchChange={setFullTranscriptSearchQuery}
+          onWordClick={(word, event) => {
+            selectWord(word, event.shiftKey);
+            remotionPreviewRef.current?.seekToMs(Math.max(0, word.startMs - startMs));
+            handlePreviewTimeUpdate(Math.max(0, word.startMs - startMs));
+          }}
+          onClearSelection={() => setSelectedWordRange(null)}
+          onSetStart={() => {
+            const selected = getSelectedWords();
+            const first = selected[0];
+            if (first) void applyWordBoundary("start", first);
+          }}
+          onSetEnd={() => {
+            const selected = getSelectedWords();
+            const last = selected[selected.length - 1];
+            if (last) void applyWordBoundary("end", last);
+          }}
+          onRemoveSelected={() => void removeSelectedWords()}
+          onCopyQuote={() => void copySelectedQuote()}
+          onCreateClip={() => void createClipFromSelection(getSelectedWords())}
+          onRemoveFillers={() => void markRemoveRanges(fillerMatches, "fillers")}
+          onRemovePauses={() => void markRemoveRanges(pauseMatches, "pauses")}
+          onResetOperations={() => void resetEditOperations()}
+          onCreateClipFromSearch={(startWordIndex, endWordIndex) => {
+            const words = parsedTranscript.words.filter(
+              (word) => word.index >= startWordIndex && word.index <= endWordIndex,
+            );
+            void createClipFromSelection(words);
+          }}
+        />
+      )}
+
+      {showAdvancedTranscript && (
+        <details className="rounded-xl border border-border/40 bg-background/55 p-3">
+          <summary className="cursor-pointer text-sm font-semibold text-foreground">
+            Advanced transcript mode
+          </summary>
+          <div className="mt-3">
+            <WordLevelTranscriptPanel
+              precision={transcriptPrecision}
+              words={clipWords}
+              segments={clipSegments}
+              selectedRange={selectedWordRange}
+              activeWordIndex={activeWord?.index ?? null}
+              fillerCount={fillerMatches.length}
+              pauseCount={pauseMatches.length}
+              operationCount={editOperations.length}
+              isBusy={operationLoading || Boolean(isGenerating)}
+              searchQuery={fullTranscriptSearchQuery}
+              searchResults={fullTranscriptSearchResults}
+              onSearchChange={setFullTranscriptSearchQuery}
+              onWordClick={(word, event) => {
+                selectWord(word, event.shiftKey);
+                remotionPreviewRef.current?.seekToMs(Math.max(0, word.startMs - startMs));
+                handlePreviewTimeUpdate(Math.max(0, word.startMs - startMs));
+              }}
+              onClearSelection={() => setSelectedWordRange(null)}
+              onSetStart={() => {
+                const selected = getSelectedWords();
+                const first = selected[0];
+                if (first) void applyWordBoundary("start", first);
+              }}
+              onSetEnd={() => {
+                const selected = getSelectedWords();
+                const last = selected[selected.length - 1];
+                if (last) void applyWordBoundary("end", last);
+              }}
+              onRemoveSelected={() => void removeSelectedWords()}
+              onCopyQuote={() => void copySelectedQuote()}
+              onCreateClip={() => void createClipFromSelection(getSelectedWords())}
+              onRemoveFillers={() => void markRemoveRanges(fillerMatches, "fillers")}
+              onRemovePauses={() => void markRemoveRanges(pauseMatches, "pauses")}
+              onResetOperations={() => void resetEditOperations()}
+              onCreateClipFromSearch={(startWordIndex, endWordIndex) => {
+                const words = parsedTranscript.words.filter(
+                  (word) => word.index >= startWordIndex && word.index <= endWordIndex,
+                );
+                void createClipFromSelection(words);
+              }}
+            />
+          </div>
+        </details>
+      )}
 
       {captionQuality.tier === "needs_cleanup" && (
         <div className="flex items-center gap-2 rounded-lg border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
@@ -1244,93 +1367,99 @@ export function TranscriptEditor({
         </div>
       )}
 
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border/40 bg-muted/20 px-3 py-2">
-        <div className="min-w-0">
-          <p className="text-xs font-semibold text-foreground">Caption controls</p>
-          <p className="text-[11px] text-muted-foreground/55">
-            Edit subtitle text, style, color, size, and position. Saving marks the clip for preview/export refresh.
-          </p>
-        </div>
-        <label className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
-          Subtitle preview
-          <Switch
-            checked={subtitlesPreviewEnabled}
-            onCheckedChange={setSubtitlesPreviewEnabled}
-            aria-label="Toggle subtitle preview"
-          />
-        </label>
-      </div>
+      {showCaptionTools && (
+        <>
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border/40 bg-muted/20 px-3 py-2">
+            <div className="min-w-0">
+              <p className="text-xs font-semibold text-foreground">Caption controls</p>
+              <p className="text-[11px] text-muted-foreground/55">
+                Edit subtitle text and clean cues. Styling lives in the Style tab.
+              </p>
+            </div>
+            <label className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+              Subtitle preview
+              <Switch
+                checked={subtitlesPreviewEnabled}
+                onCheckedChange={setSubtitlesPreviewEnabled}
+                aria-label="Toggle subtitle preview"
+              />
+            </label>
+          </div>
 
-      <div className="grid gap-2 rounded-xl border border-border/40 bg-muted/15 px-3 py-2 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
-        <div>
-          <p className="text-xs font-semibold text-foreground">AI caption assist</p>
-          <p className="text-[11px] text-muted-foreground/55">
-            OpenRouter edits caption text only. Cue timing stays local and unchanged.
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-1.5">
-          <Button
-            variant="secondary"
-            size="sm"
-            className="h-7 px-2 text-[11px]"
-            disabled={operationLoading}
-            onClick={() => void runCaptionAssist("cleanup", { mode: "cleanup" })}
-          >
-            Clean
-          </Button>
-          <Button
-            variant="secondary"
-            size="sm"
-            className="h-7 px-2 text-[11px]"
-            disabled={operationLoading}
-            onClick={() => void runCaptionAssist("cleanup", { mode: "simplify" })}
-          >
-            Simplify
-          </Button>
-          <Button
-            variant="secondary"
-            size="sm"
-            className="h-7 px-2 text-[11px]"
-            disabled={operationLoading}
-            onClick={() => void runCaptionAssist("cleanup", { mode: "add_emojis" })}
-          >
-            Emojis
-          </Button>
-          <Button
-            variant="secondary"
-            size="sm"
-            className="h-7 px-2 text-[11px]"
-            disabled={operationLoading}
-            onClick={() => void runCaptionAssist("highlight-keywords")}
-          >
-            Keywords
-          </Button>
-          <select
-            value={captionTranslateLanguage}
-            onChange={(event) => setCaptionTranslateLanguage(event.target.value)}
-            className="h-7 rounded-md border border-border/50 bg-background px-2 text-[11px]"
-          >
-            <option value="hi">Hindi</option>
-            <option value="es">Spanish</option>
-            <option value="fr">French</option>
-            <option value="de">German</option>
-            <option value="pt">Portuguese</option>
-            <option value="ja">Japanese</option>
-          </select>
-          <Button
-            variant="secondary"
-            size="sm"
-            className="h-7 px-2 text-[11px]"
-            disabled={operationLoading}
-            onClick={() =>
-              void runCaptionAssist("translate", { language: captionTranslateLanguage })
-            }
-          >
-            Translate
-          </Button>
-        </div>
-      </div>
+          <div className="grid gap-2 rounded-xl border border-border/40 bg-muted/15 px-3 py-2 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
+            <div>
+              <p className="text-xs font-semibold text-foreground">Caption assist</p>
+              <p className="text-[11px] text-muted-foreground/55">
+                Improve text while keeping cue timing unchanged.
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <Button
+                variant="secondary"
+                size="sm"
+                className="h-7 px-2 text-[11px]"
+                disabled={operationLoading}
+                onClick={() => void runCaptionAssist("cleanup", { mode: "cleanup" })}
+              >
+                Clean
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                className="h-7 px-2 text-[11px]"
+                disabled={operationLoading}
+                onClick={() => void runCaptionAssist("cleanup", { mode: "simplify" })}
+              >
+                Simplify
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                className="h-7 px-2 text-[11px]"
+                disabled={operationLoading}
+                onClick={() => void runCaptionAssist("cleanup", { mode: "add_emojis" })}
+              >
+                Emojis
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                className="h-7 px-2 text-[11px]"
+                disabled={operationLoading}
+                onClick={() => void runCaptionAssist("highlight-keywords")}
+              >
+                Keywords
+              </Button>
+              <select
+                value={captionTranslateLanguage}
+                onChange={(event) => setCaptionTranslateLanguage(event.target.value)}
+                className="h-7 rounded-md border border-border/50 bg-background px-2 text-[11px]"
+              >
+                <option value="hi">Hindi</option>
+                <option value="es">Spanish</option>
+                <option value="fr">French</option>
+                <option value="de">German</option>
+                <option value="pt">Portuguese</option>
+                <option value="ja">Japanese</option>
+              </select>
+              <Button
+                variant="secondary"
+                size="sm"
+                className="h-7 px-2 text-[11px]"
+                disabled={operationLoading}
+                onClick={() =>
+                  void runCaptionAssist("translate", { language: captionTranslateLanguage })
+                }
+              >
+                Translate
+              </Button>
+            </div>
+          </div>
+        </>
+      )}
 
+      {showSegmentEditor && (
+        <>
       {/* Transcript toolbar: search + segment count + actions */}
       <div className="flex items-center gap-2 flex-wrap">
         {/* Search */}
@@ -1419,16 +1548,47 @@ export function TranscriptEditor({
           ))
         )}
       </div>
+        </>
+      )}
 
-      <CaptionOverlayStudio
-        value={safeCaptionStyle}
-        onChange={handleCaptionStyleChange}
-        sampleCaption={entries[0]?.text}
-        previewPath={previewPath}
-        captionEntries={entries}
-        selectedClipCount={selectedClipCount}
-        onApplyToSelected={onApplyCaptionStyleToSelected}
-      />
+      {showStyleStudio && (
+        <>
+          {mode === "style" && (
+            <div className="rounded-xl border border-violet-500/20 bg-violet-500/10 p-3">
+              <p className="text-sm font-semibold text-violet-100">Choose a caption look</p>
+              <p className="mt-1 text-xs leading-5 text-violet-100/70">
+                Start with a preset. Open Customize style only when you need deeper controls.
+              </p>
+            </div>
+          )}
+          <CaptionOverlayStudio
+            value={safeCaptionStyle}
+            onChange={handleCaptionStyleChange}
+            sampleCaption={entries[0]?.text}
+            previewPath={previewPath}
+            captionEntries={entries}
+            selectedClipCount={selectedClipCount}
+            onApplyToSelected={onApplyCaptionStyleToSelected}
+            presetFirst={mode === "style"}
+          />
+          {mode === "style" && (
+            <div className="flex items-center justify-between gap-3 rounded-xl border border-border/40 bg-muted/20 px-3 py-2">
+              <p className="text-xs text-muted-foreground/65">
+                {hasStyleChanges ? "Caption style has unsaved changes." : "Caption style is saved."}
+              </p>
+              <Button
+                size="sm"
+                className="h-8 gap-1.5 px-3 text-xs"
+                onClick={handleSave}
+                disabled={!hasStyleChanges || isSaving || isGenerating}
+              >
+                <Save className="h-3.5 w-3.5" />
+                {isSaving ? "Saving..." : "Save style"}
+              </Button>
+            </div>
+          )}
+        </>
+      )}
     </div>
   );
 }

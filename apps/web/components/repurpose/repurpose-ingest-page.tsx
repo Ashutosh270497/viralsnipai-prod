@@ -9,10 +9,10 @@ import {
   CheckCircle2,
   ChevronLeft,
   Clock3,
+  HelpCircle,
   Download,
   Eye,
   FileText,
-  Info,
   Link as LinkIcon,
   Loader2,
   Pencil,
@@ -56,7 +56,7 @@ type GeneratedPromptSet = {
 };
 
 const STAGES: Array<{ id: WizardStage; label: string; helper: string }> = [
-  { id: "source", label: "Source", helper: "Add media" },
+  { id: "source", label: "Source", helper: "Add video" },
   { id: "goals", label: "Goals", helper: "Set outcome" },
   { id: "generate", label: "Generate", helper: "Create clips" },
   { id: "review", label: "Review", helper: "Choose winners" },
@@ -141,6 +141,7 @@ export function RepurposeIngestPage() {
   const modelDebugEnabled =
     process.env.NODE_ENV !== "production" ||
     process.env.NEXT_PUBLIC_ENABLE_MODEL_DEBUG === "true";
+  const isEmptySourceState = stage === "source" && !primaryAsset;
 
   const appliedSeedRef = useRef<string | null>(null);
   const seededIdea = useMemo(() => {
@@ -258,6 +259,15 @@ export function RepurposeIngestPage() {
         })}
       />
 
+      <div className="space-y-1.5">
+        <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">
+          Create clips from your video
+        </h1>
+        <p className="max-w-2xl text-sm leading-6 text-muted-foreground">
+          Upload a video or paste a YouTube link. ViralSnipAI will find the best moments automatically.
+        </p>
+      </div>
+
       <ClipCreationStageNav
         stage={stage}
         setStage={setStage}
@@ -285,7 +295,14 @@ export function RepurposeIngestPage() {
         </div>
       ) : null}
 
-      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_340px] lg:items-start">
+      <div
+        className={cn(
+          "grid gap-5 lg:items-start",
+          isEmptySourceState
+            ? "lg:grid-cols-[minmax(0,1fr)_280px]"
+            : "lg:grid-cols-[minmax(0,1fr)_340px]",
+        )}
+      >
         <div className="min-w-0">
           {stage === "source" ? (
             <SourceStage
@@ -299,7 +316,6 @@ export function RepurposeIngestPage() {
               transcriptPreview={transcriptPreview}
               transcriptPrecision={transcriptPrecision}
               onNext={() => setStage("goals")}
-              toast={toast}
             />
           ) : null}
 
@@ -378,29 +394,81 @@ export function RepurposeIngestPage() {
         </div>
 
         <div className="space-y-4 lg:sticky lg:top-20">
-          <ProjectSummaryCard
-            hasSource={Boolean(primaryAsset)}
-            assetType={primaryAsset?.type}
-            durationSec={primaryAsset?.durationSec}
-            clipCount={clipCount}
-            approvedCount={approvedCount}
-            exportCount={project?.exports?.length ?? 0}
-            selectedCount={selectedClipIds.length}
-          />
-          <TechnicalDetailsDrawer
-            analytics={lastHighlightAnalytics}
-            transcriptPreview={transcriptPreview}
-            transcriptPrecision={transcriptPrecision}
-            modelDebugEnabled={modelDebugEnabled}
-            debugModelOverride={debugModelOverride}
-            setDebugModelOverride={setDebugModelOverride}
-          />
-          <details className="rounded-2xl border border-border/50 bg-card/55 p-4">
-            <summary className="cursor-pointer text-sm font-semibold">Plan usage</summary>
-            <div className="mt-3">
-              <V1UsageLimitsCard />
-            </div>
-          </details>
+          {isEmptySourceState ? (
+            <>
+              <BestResultsCard />
+              <AdvancedDetailsPanel
+                hasSource={false}
+                assetType={undefined}
+                durationSec={undefined}
+                clipCount={clipCount}
+                approvedCount={approvedCount}
+                exportCount={project?.exports?.length ?? 0}
+                selectedCount={selectedClipIds.length}
+                analytics={lastHighlightAnalytics}
+                transcriptPreview={transcriptPreview}
+                transcriptPrecision={transcriptPrecision}
+                modelDebugEnabled={modelDebugEnabled}
+                debugModelOverride={debugModelOverride}
+                setDebugModelOverride={setDebugModelOverride}
+              />
+            </>
+          ) : stage === "goals" ? (
+            <>
+              <ProjectSummaryCard
+                hasSource={Boolean(primaryAsset)}
+                assetType={primaryAsset?.type}
+                durationSec={primaryAsset?.durationSec}
+                clipCount={clipCount}
+                approvedCount={approvedCount}
+                exportCount={project?.exports?.length ?? 0}
+                selectedCount={selectedClipIds.length}
+                compact
+              />
+              <AdvancedDetailsPanel
+                hasSource={Boolean(primaryAsset)}
+                assetType={primaryAsset?.type}
+                durationSec={primaryAsset?.durationSec}
+                clipCount={clipCount}
+                approvedCount={approvedCount}
+                exportCount={project?.exports?.length ?? 0}
+                selectedCount={selectedClipIds.length}
+                analytics={lastHighlightAnalytics}
+                transcriptPreview={transcriptPreview}
+                transcriptPrecision={transcriptPrecision}
+                modelDebugEnabled={modelDebugEnabled}
+                debugModelOverride={debugModelOverride}
+                setDebugModelOverride={setDebugModelOverride}
+                showProjectSummary={false}
+              />
+            </>
+          ) : (
+            <>
+              <ProjectSummaryCard
+                hasSource={Boolean(primaryAsset)}
+                assetType={primaryAsset?.type}
+                durationSec={primaryAsset?.durationSec}
+                clipCount={clipCount}
+                approvedCount={approvedCount}
+                exportCount={project?.exports?.length ?? 0}
+                selectedCount={selectedClipIds.length}
+              />
+              <TechnicalDetailsDrawer
+                analytics={lastHighlightAnalytics}
+                transcriptPreview={transcriptPreview}
+                transcriptPrecision={transcriptPrecision}
+                modelDebugEnabled={modelDebugEnabled}
+                debugModelOverride={debugModelOverride}
+                setDebugModelOverride={setDebugModelOverride}
+              />
+              <details className="rounded-2xl border border-border/50 bg-card/55 p-4">
+                <summary className="cursor-pointer text-sm font-semibold">Plan usage</summary>
+                <div className="mt-3">
+                  <V1UsageLimitsCard />
+                </div>
+              </details>
+            </>
+          )}
         </div>
       </div>
     </div>
@@ -420,27 +488,42 @@ function CreateClipHeader({
   projectTitle: string;
   status: string;
 }) {
+  const navItems = [
+    { label: "Create", href: `/repurpose?projectId=${projectId}`, active: true, disabled: false },
+    { label: "Editor", href: `/repurpose/editor?projectId=${projectId}`, active: false, disabled: false },
+    { label: "Export", href: `/repurpose/export?projectId=${projectId}`, active: false, disabled: false },
+  ];
+
   return (
-    <div className="rounded-3xl border border-white/10 bg-slate-950/90 p-5 text-white shadow-xl shadow-black/10">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-        <div>
-          <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-cyan-200/70">Create Clips</p>
-          <div className="mt-2 flex flex-wrap items-center gap-3">
-            <h1 className="text-2xl font-semibold tracking-tight">{projectTitle}</h1>
-            <span className="rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs font-semibold text-white/75">
+    <div className="rounded-2xl border border-border/60 bg-card/70 px-4 py-3 shadow-sm">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="truncate text-sm font-semibold text-foreground">{projectTitle}</p>
+            <span className="rounded-full border border-border/60 bg-muted/40 px-2.5 py-1 text-[11px] font-semibold text-muted-foreground">
               {status}
             </span>
           </div>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-white/60">
-            Upload a source, choose the outcome, generate clips, review winners, and export.
-          </p>
         </div>
-        <div className="min-w-[240px]">
-          <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-white/40">
-            Project
-          </p>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+          <nav className="flex w-full rounded-xl border border-border/50 bg-background/50 p-1 sm:w-auto">
+            {navItems.map((item) => (
+              <Link
+                key={item.label}
+                href={item.href}
+                className={cn(
+                  "flex-1 rounded-lg px-3 py-1.5 text-center text-xs font-semibold transition sm:flex-none",
+                  item.active
+                    ? "bg-primary text-primary-foreground shadow-sm"
+                    : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
+                )}
+              >
+                {item.label}
+              </Link>
+            ))}
+          </nav>
           <Select value={projectId || undefined} onValueChange={setProjectId}>
-            <SelectTrigger className="h-10 rounded-xl border-white/15 bg-white/10 text-sm text-white">
+            <SelectTrigger className="h-9 min-w-[210px] rounded-xl text-sm">
               <SelectValue placeholder="Select project" />
             </SelectTrigger>
             <SelectContent>
@@ -476,8 +559,8 @@ function ClipCreationStageNav({
     return false;
   }
   return (
-    <div className="overflow-x-auto rounded-2xl border border-border/50 bg-card/60 p-2">
-      <div className="flex min-w-max items-center gap-2">
+    <div className="overflow-x-auto rounded-2xl border border-border/45 bg-card/45 p-1.5">
+      <div className="flex min-w-max items-center gap-1.5">
         {STAGES.map((item, index) => {
           const active = item.id === stage;
           const complete = index < currentIndex;
@@ -489,23 +572,18 @@ function ClipCreationStageNav({
               disabled={isDisabled}
               onClick={() => setStage(item.id)}
               className={cn(
-                "flex items-center gap-3 rounded-xl px-3.5 py-3 text-left transition",
+                "flex items-center gap-2 rounded-xl px-3 py-2 text-left transition",
                 active ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
                 isDisabled && "cursor-not-allowed opacity-40 hover:bg-transparent hover:text-muted-foreground",
               )}
             >
               <span className={cn(
-                "flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold",
+                "flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-bold",
                 active ? "bg-white/20" : complete ? "bg-emerald-500 text-white" : "bg-muted text-muted-foreground",
               )}>
                 {complete ? <Check className="h-3.5 w-3.5" /> : index + 1}
               </span>
-              <span>
-                <span className="block text-sm font-semibold">{item.label}</span>
-                <span className={cn("block text-[11px]", active ? "text-primary-foreground/70" : "text-muted-foreground/55")}>
-                  {item.helper}
-                </span>
-              </span>
+              <span className="block text-sm font-semibold">{item.label}</span>
             </button>
           );
         })}
@@ -525,7 +603,6 @@ function SourceStage({
   transcriptPreview,
   transcriptPrecision,
   onNext,
-  toast,
 }: {
   sourceUrl: string;
   setSourceUrl: (value: string) => void;
@@ -537,108 +614,153 @@ function SourceStage({
   transcriptPreview: TranscriptPreview;
   transcriptPrecision: string;
   onNext: () => void;
-  toast: ReturnType<typeof useToast>["toast"];
 }) {
+  const [isReplacingSource, setIsReplacingSource] = useState(false);
+  const hasSource = Boolean(primaryAsset);
+  const showInputOptions = !hasSource || isReplacingSource;
+  const sourceName = getAssetDisplayName(primaryAsset);
+
   return (
     <StageShell
-      eyebrow="Stage 1"
-      title="Add your source"
-      description="Paste a YouTube link or upload a video/audio file. ViralSnipAI will handle the processing behind the scenes."
+      eyebrow={hasSource && !isReplacingSource ? "Source ready" : "Stage 1"}
+      title={hasSource && !isReplacingSource ? "Source added" : "Add your source"}
+      description={
+        hasSource && !isReplacingSource
+          ? "Your video is ready. Continue to goals when you are ready to choose the clips you want."
+          : "Start with a video, podcast, webinar, tutorial, interview, or YouTube link."
+      }
     >
-      <div className="grid gap-4 lg:grid-cols-2">
-        <div className="rounded-2xl border border-border/60 bg-background/50 p-5">
-          <div className="flex items-center gap-2">
-            <Youtube className="h-4 w-4 text-red-400" />
-            <h3 className="text-sm font-semibold">Paste YouTube link</h3>
-          </div>
-          <p className="mt-2 text-xs leading-5 text-muted-foreground/60">
-            Import a public video and prepare it for clipping.
-          </p>
-          <div className="mt-4 flex gap-2">
-            <div className="relative min-w-0 flex-1">
-              <LinkIcon className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/35" />
-              <input
-                value={sourceUrl}
-                onChange={(event) => setSourceUrl(event.target.value)}
-                placeholder="https://youtube.com/watch?v=..."
-                className="h-11 w-full rounded-xl border border-border/55 bg-background/70 pl-9 pr-3 text-sm outline-none transition focus:border-primary/45"
-              />
-            </div>
-            <Button onClick={handleIngestYouTube} disabled={youtubeProgress.isActive || !sourceUrl.trim()} className="h-11">
-              {youtubeProgress.isActive ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
-              <span className="ml-1.5">{youtubeProgress.isActive ? youtubeProgress.phase || "Fetching" : "Fetch"}</span>
-            </Button>
-          </div>
-        </div>
-
-        <div className="rounded-2xl border border-border/60 bg-background/50 p-5">
-          <div className="flex items-center gap-2">
-            <UploadCloud className="h-4 w-4 text-cyan-400" />
-            <h3 className="text-sm font-semibold">Upload file</h3>
-          </div>
-          <p className="mt-2 text-xs leading-5 text-muted-foreground/60">
-            Upload videos up to 500 MB. Up to 60 minutes recommended.
-          </p>
-          <div className="mt-4">
-            <UploadDropzone
-              projectId={projectId}
-              onUpload={uploadSource}
-              maxSizeMb={500}
-              recommendedDurationMinutes={60}
-              description="Upload videos up to 500 MB"
-              formatHints={["MP4", "MOV", "WebM", "MP3", "WAV", "M4A"]}
-            />
-          </div>
-        </div>
-      </div>
-
-      <div className="mt-5 rounded-2xl border border-border/60 bg-muted/20 p-4">
-        {primaryAsset ? (
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-            <div>
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/25 bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-500">
-                  <CheckCircle2 className="h-3.5 w-3.5" />
-                  Source ready
-                </span>
-                <span className="text-xs capitalize text-muted-foreground">{primaryAsset.type}</span>
-                <span className="text-xs text-muted-foreground/40">·</span>
-                <span className="text-xs text-muted-foreground">{formatDuration((primaryAsset.durationSec ?? 0) * 1000)}</span>
+      {showInputOptions ? (
+        <div className="grid gap-4 lg:grid-cols-2">
+          <div className="rounded-3xl border border-border/60 bg-background/60 p-5 shadow-sm transition hover:border-red-400/30 hover:bg-background/75">
+            <div className="flex items-center gap-3">
+              <span className="rounded-2xl bg-red-500/10 p-3 text-red-400">
+                <Youtube className="h-5 w-5" />
+              </span>
+              <div>
+                <h3 className="text-base font-semibold">Paste YouTube link</h3>
+                <p className="mt-1 text-xs text-muted-foreground/70">Paste a public YouTube URL.</p>
               </div>
-              {transcriptPrecision !== "word" && transcriptPrecision !== "none" ? (
-                <PrecisionNotice />
-              ) : null}
-              <SourceQualityNotice
-                sourceWidth={primaryAsset.sourceWidth}
-                sourceHeight={primaryAsset.sourceHeight}
-                compact
-                className="mt-3"
-              />
-              {primaryAsset.transcript ? (
-                <details className="mt-3">
-                  <summary className="cursor-pointer text-xs font-semibold text-muted-foreground">
-                    Source transcript preview
-                  </summary>
-                  <p className="mt-2 rounded-xl border border-border/50 bg-background/60 p-3 text-xs leading-5 text-muted-foreground/70">
-                    {transcriptPreview.text}
-                  </p>
-                </details>
-              ) : null}
             </div>
-            <Button onClick={onNext}>
-              Continue to goals
-              <ArrowRight className="ml-1.5 h-4 w-4" />
-            </Button>
+            <div className="mt-5 flex flex-col gap-2 sm:flex-row">
+              <div className="relative min-w-0 flex-1">
+                <LinkIcon className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/40" />
+                <input
+                  value={sourceUrl}
+                  onChange={(event) => setSourceUrl(event.target.value)}
+                  placeholder="https://youtube.com/watch?v=..."
+                  className="h-12 w-full rounded-2xl border border-border/55 bg-background/80 pl-10 pr-3 text-sm outline-none transition focus:border-primary/55 focus:ring-2 focus:ring-primary/10"
+                />
+              </div>
+              <Button onClick={handleIngestYouTube} disabled={youtubeProgress.isActive || !sourceUrl.trim()} className="h-12 rounded-2xl px-5">
+                {youtubeProgress.isActive ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+                <span className="ml-1.5">{youtubeProgress.isActive ? youtubeProgress.phase || "Importing" : "Import"}</span>
+              </Button>
+            </div>
           </div>
-        ) : (
-          <div className="flex items-start gap-3 text-sm text-muted-foreground">
-            <Info className="mt-0.5 h-4 w-4" />
-            <p>
-              No source loaded yet. Add a YouTube link or upload a file to continue.
+
+          <div className="rounded-3xl border border-primary/25 bg-primary/[0.045] p-5 shadow-sm shadow-primary/5 transition hover:border-primary/40 hover:bg-primary/[0.06]">
+            <div className="flex items-center gap-3">
+              <span className="rounded-2xl bg-primary/10 p-3 text-primary">
+                <UploadCloud className="h-5 w-5" />
+              </span>
+              <div>
+                <h3 className="text-base font-semibold">Upload video</h3>
+                <p className="mt-1 text-xs text-muted-foreground/70">Upload MP4, MOV, WebM, MP3, WAV, or M4A.</p>
+              </div>
+            </div>
+            <div className="mt-5">
+              <UploadDropzone
+                projectId={projectId}
+                onUpload={uploadSource}
+                maxSizeMb={500}
+                recommendedDurationMinutes={60}
+                description="Upload videos up to 500 MB"
+                formatHints={["MP4", "MOV", "WebM", "MP3", "WAV", "M4A"]}
+              />
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="rounded-3xl border border-emerald-500/20 bg-emerald-500/[0.045] p-5">
+          <div className="flex flex-col gap-5 md:flex-row md:items-start md:justify-between">
+            <div className="flex min-w-0 gap-4">
+              <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-2xl border border-emerald-500/20 bg-background/60 text-emerald-400">
+                {primaryAsset?.type === "audio" ? <FileText className="h-7 w-7" /> : <Play className="h-7 w-7" />}
+              </div>
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/25 bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-500">
+                    <CheckCircle2 className="h-3.5 w-3.5" />
+                    Source added
+                  </span>
+                  <span className="text-xs capitalize text-muted-foreground">{primaryAsset?.type}</span>
+                </div>
+                <h3 className="mt-3 truncate text-lg font-semibold">{sourceName}</h3>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {primaryAsset?.durationSec
+                    ? formatDuration(primaryAsset.durationSec * 1000)
+                    : "Duration is being analyzed"}
+                  {primaryAsset?.sourceWidth && primaryAsset?.sourceHeight
+                    ? ` · ${primaryAsset.sourceWidth}x${primaryAsset.sourceHeight}`
+                    : ""}
+                </p>
+                {transcriptPrecision !== "word" && transcriptPrecision !== "none" ? (
+                  <PrecisionNotice />
+                ) : null}
+                <SourceQualityNotice
+                  sourceWidth={primaryAsset?.sourceWidth}
+                  sourceHeight={primaryAsset?.sourceHeight}
+                  compact
+                  className="mt-3"
+                />
+                {primaryAsset?.transcript ? (
+                  <details className="mt-3">
+                    <summary className="cursor-pointer text-xs font-semibold text-muted-foreground">
+                      Transcript preview
+                    </summary>
+                    <p className="mt-2 rounded-xl border border-border/50 bg-background/60 p-3 text-xs leading-5 text-muted-foreground/70">
+                      {transcriptPreview.text}
+                    </p>
+                  </details>
+                ) : null}
+              </div>
+            </div>
+            <div className="flex shrink-0 flex-col gap-2 sm:flex-row md:flex-col">
+              <Button onClick={onNext} size="lg">
+                Continue to Goals
+                <ArrowRight className="ml-1.5 h-4 w-4" />
+              </Button>
+              <Button variant="outline" onClick={() => setIsReplacingSource(true)}>
+                Replace source
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showInputOptions ? (
+        <div className="sticky bottom-3 z-20 mt-6 rounded-2xl border border-border/60 bg-background/90 p-3 shadow-2xl shadow-black/10 backdrop-blur md:static md:shadow-none">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-sm text-muted-foreground">
+              {hasSource
+                ? "Import or upload a replacement, or continue with the current source."
+                : "Add a YouTube link or upload a file to continue."}
             </p>
+            <div className="flex flex-col gap-2 sm:flex-row">
+              {hasSource ? (
+                <Button variant="outline" onClick={() => setIsReplacingSource(false)}>
+                  Cancel
+                </Button>
+              ) : null}
+              <Button onClick={onNext} disabled={!hasSource}>
+                Continue to Goals
+                <ArrowRight className="ml-1.5 h-4 w-4" />
+              </Button>
+            </div>
           </div>
-        )}
-      </div>
+        </div>
+      ) : null}
     </StageShell>
   );
 }
@@ -670,129 +792,183 @@ function GoalsStage({
   onBack,
   onNext,
 }: any) {
+  const lengthOptions = [
+    { value: "short", title: "Short", body: "18-30s" },
+    { value: "balanced", title: "Balanced", body: "30-45s", badge: "Recommended" },
+    { value: "detailed", title: "Detailed", body: "45-58s" },
+  ];
+  const clipCountOptions = [3, 5, 8];
+
   return (
     <StageShell
       eyebrow="Stage 2"
-      title="Tell ViralSnipAI what to find"
-      description="You control the outcome. ViralSnipAI chooses the internal AI route automatically."
+      title="Choose your clip goals"
+      description="Pick the type and length of clips you want. ViralSnipAI handles the AI routing automatically."
     >
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_300px]">
-        <div className="space-y-5">
+      <div className="space-y-6">
+        <section className="space-y-3">
+          <div>
+            <h3 className="text-sm font-semibold">Clip length</h3>
+            <p className="mt-1 text-xs text-muted-foreground/65">Choose how much context each short clip should include.</p>
+          </div>
           <div className="grid gap-3 sm:grid-cols-3">
-            {[
-              { value: "short", title: "Short", body: "18-30s" },
-              { value: "balanced", title: "Balanced", body: "30-45s" },
-              { value: "detailed", title: "Detailed", body: "45-58s" },
-            ].map((option) => (
+            {lengthOptions.map((option) => (
               <button
                 key={option.value}
                 type="button"
                 onClick={() => setClipLengthPreset(option.value)}
                 className={cn(
-                  "rounded-2xl border p-4 text-left transition",
+                  "min-h-[104px] rounded-2xl border p-4 text-left transition hover:-translate-y-0.5 hover:shadow-sm",
                   clipLengthPreset === option.value
-                    ? "border-primary/45 bg-primary/10"
-                    : "border-border/60 bg-background/50 hover:border-border",
+                    ? "border-primary/55 bg-primary/10 shadow-sm shadow-primary/5"
+                    : "border-border/60 bg-background/55 hover:border-border/90",
                 )}
               >
-                <span className="text-sm font-semibold">{option.title}</span>
-                <span className="mt-1 block text-xs text-muted-foreground">{option.body}</span>
+                <span className="flex items-center justify-between gap-2">
+                  <span className="text-sm font-semibold">{option.title}</span>
+                  {option.badge ? (
+                    <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-bold text-emerald-500">
+                      {option.badge}
+                    </span>
+                  ) : null}
+                </span>
+                <span className="mt-2 block text-sm text-muted-foreground">{option.body}</span>
               </button>
             ))}
           </div>
+        </section>
 
-          <div className="grid gap-4 md:grid-cols-2">
-            <Field label="Clip count">
-              <Select value={String(targetClipCount)} onValueChange={(value) => setTargetClipCount(Number(value))}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {[3, 4, 5, 6, 7, 8].map((count) => (
-                    <SelectItem key={count} value={String(count)}>{count} clips</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </Field>
-            <Field label="Clipping quality">
-              <Select value={qualityMode} onValueChange={setQualityMode}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {QUALITY_MODE_OPTIONS.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <p className="mt-1.5 text-[11px] text-muted-foreground/55">
-                {QUALITY_MODE_OPTIONS.find((option) => option.value === qualityMode)?.description}
-              </p>
-            </Field>
-            <Field label="Clip intent">
-              <Select value={clipIntent} onValueChange={setClipIntent}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {CLIP_INTENT_OPTIONS.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </Field>
-            <Field label="Target platform">
-              <Select value={targetPlatform} onValueChange={setTargetPlatform}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {TARGET_PLATFORM_OPTIONS.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </Field>
+        <section className="space-y-3">
+          <div>
+            <h3 className="text-sm font-semibold">Clip type</h3>
+            <p className="mt-1 text-xs text-muted-foreground/65">Pick the kind of moments you want to surface.</p>
           </div>
+          <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+            {CLIP_INTENT_OPTIONS.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                onClick={() => setClipIntent(option.value)}
+                className={cn(
+                  "rounded-2xl border px-4 py-3 text-left text-sm font-semibold transition hover:-translate-y-0.5 hover:shadow-sm",
+                  clipIntent === option.value
+                    ? "border-primary/55 bg-primary/10 text-primary shadow-sm shadow-primary/5"
+                    : "border-border/60 bg-background/55 text-foreground/85 hover:border-border/90",
+                )}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+        </section>
 
-          <div className="rounded-2xl border border-border/60 bg-background/50 p-4">
-            <div className="mb-4 flex items-start justify-between gap-3">
+        <section className="space-y-3">
+          <div>
+            <h3 className="text-sm font-semibold">Number of clips</h3>
+            <p className="mt-1 text-xs text-muted-foreground/65">Start small for fast review, or generate a larger batch.</p>
+          </div>
+          <div className="inline-grid w-full gap-2 rounded-2xl border border-border/60 bg-background/55 p-1.5 sm:w-auto sm:grid-cols-3">
+            {clipCountOptions.map((count) => (
+              <button
+                key={count}
+                type="button"
+                onClick={() => setTargetClipCount(count)}
+                className={cn(
+                  "rounded-xl px-5 py-2.5 text-sm font-semibold transition",
+                  targetClipCount === count
+                    ? "bg-primary text-primary-foreground shadow-sm"
+                    : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
+                )}
+              >
+                {count} clips
+              </button>
+            ))}
+          </div>
+        </section>
+
+        <section className="rounded-3xl border border-violet-500/20 bg-violet-500/[0.045] p-4">
+          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+            <div className="flex gap-3">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-violet-500/10 text-violet-300">
+                <HelpCircle className="h-5 w-5" />
+              </span>
               <div>
-                <h3 className="text-sm font-semibold">Creative direction</h3>
-                <p className="mt-1 text-xs text-muted-foreground/60">
-                  Optional context helps avoid generic clips.
+                <h3 className="text-sm font-semibold">Not sure what to choose?</h3>
+                <p className="mt-1 max-w-xl text-xs leading-5 text-muted-foreground/70">
+                  Let ViralSnipAI analyze your transcript and suggest audience, tone, CTA, and brief.
                 </p>
               </div>
-              <AIPromptGeneratorDialog
-                transcript={primaryAssetTranscript}
-                videoTitle={projectTitle}
-                qualityMode={qualityMode}
-                clipIntent={clipIntent}
-                transcriptPrecision={transcriptPrecision}
-                videoDurationSec={primaryAssetDurationSec}
-                onPromptsGenerated={onPromptsGenerated}
-              />
             </div>
-            <div className="grid gap-3 md:grid-cols-3">
-              <TextInput label="Audience" value={highlightAudience} onChange={setHighlightAudience} />
-              <TextInput label="Tone" value={highlightTone} onChange={setHighlightTone} />
-              <TextInput label="Desired action" value={highlightCallToAction} onChange={setHighlightCallToAction} />
+            <AIPromptGeneratorDialog
+              transcript={primaryAssetTranscript}
+              videoTitle={projectTitle}
+              qualityMode={qualityMode}
+              clipIntent={clipIntent}
+              transcriptPrecision={transcriptPrecision}
+              videoDurationSec={primaryAssetDurationSec}
+              onPromptsGenerated={onPromptsGenerated}
+              triggerLabel="Suggest goals"
+              triggerClassName="h-10 shrink-0 rounded-xl border-violet-500/25 bg-violet-500/10 px-4 text-violet-200 hover:bg-violet-500/15"
+            />
+          </div>
+        </section>
+
+        <details className="rounded-3xl border border-border/55 bg-background/45 p-4">
+          <summary className="cursor-pointer text-sm font-semibold">Advanced goals</summary>
+          <div className="mt-4 space-y-4">
+            <div className="grid gap-4 md:grid-cols-2">
+              <Field label="AI quality">
+                <Select value={qualityMode} onValueChange={setQualityMode}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {QUALITY_MODE_OPTIONS.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="mt-1.5 text-[11px] leading-5 text-muted-foreground/60">
+                  {QUALITY_MODE_OPTIONS.find((option) => option.value === qualityMode)?.description}
+                </p>
+              </Field>
+              <Field label="Target platform">
+                <Select value={targetPlatform} onValueChange={setTargetPlatform}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {TARGET_PLATFORM_OPTIONS.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </Field>
             </div>
-            <Field label="Optional brief" className="mt-3">
+            <p className="rounded-2xl border border-cyan-500/15 bg-cyan-500/[0.04] px-3 py-2 text-xs leading-5 text-cyan-50/70">
+              ViralSnipAI automatically chooses the best AI route. You control the outcome, not the model.
+            </p>
+            <TextareaField label="Audience" value={highlightAudience} onChange={setHighlightAudience} rows={2} />
+            <TextareaField label="Tone" value={highlightTone} onChange={setHighlightTone} rows={2} />
+            <TextareaField label="Desired action" value={highlightCallToAction} onChange={setHighlightCallToAction} rows={2} />
+            <Field label="Optional brief">
               <textarea
                 value={highlightBrief}
                 onChange={(event) => setHighlightBrief(event.target.value)}
                 placeholder="What should the best clips emphasize?"
-                rows={4}
-                className="w-full resize-none rounded-xl border border-border/55 bg-background/70 px-3 py-2.5 text-sm outline-none transition focus:border-primary/45"
+                rows={5}
+                className="w-full resize-y rounded-xl border border-border/55 bg-background/70 px-3 py-2.5 text-sm leading-6 outline-none transition focus:border-primary/45"
               />
             </Field>
           </div>
-        </div>
-
-        <div className="rounded-2xl border border-cyan-500/15 bg-cyan-500/[0.04] p-4">
-          <p className="text-sm font-semibold text-cyan-200">Simple by design</p>
-          <p className="mt-2 text-xs leading-5 text-cyan-50/65">
-            ViralSnipAI analyzes your source, finds high-potential moments, and prepares clips for review.
-            You do not need to choose a raw AI model.
-          </p>
-        </div>
+        </details>
       </div>
       <StageActions>
         <Button variant="outline" onClick={onBack}><ChevronLeft className="mr-1.5 h-4 w-4" />Back</Button>
-        <Button onClick={onNext}>Continue to generate<ArrowRight className="ml-1.5 h-4 w-4" /></Button>
+        <div className="sticky bottom-3 z-20 rounded-2xl border border-border/60 bg-background/90 p-3 shadow-2xl shadow-black/10 backdrop-blur sm:static sm:border-0 sm:bg-transparent sm:p-0 sm:shadow-none">
+          <p className="mb-2 text-xs text-muted-foreground sm:text-right">
+            Next: ViralSnipAI will find and prepare your clips.
+          </p>
+          <Button onClick={onNext} size="lg" className="w-full sm:w-auto">
+            Continue to Generate<ArrowRight className="ml-1.5 h-4 w-4" />
+          </Button>
+        </div>
       </StageActions>
     </StageShell>
   );
@@ -1129,6 +1305,7 @@ function ProjectSummaryCard({
   approvedCount,
   exportCount,
   selectedCount,
+  compact = false,
 }: {
   hasSource: boolean;
   assetType?: string;
@@ -1137,24 +1314,115 @@ function ProjectSummaryCard({
   approvedCount: number;
   exportCount: number;
   selectedCount: number;
+  compact?: boolean;
 }) {
   return (
     <aside className="rounded-2xl border border-border/50 bg-card/70 p-4">
       <p className="text-sm font-semibold">Project Summary</p>
       <div className="mt-4 space-y-3">
         <SummaryRow label="Source" value={hasSource ? "Ready" : "Missing"} good={hasSource} />
-        {hasSource ? (
+        {hasSource && !compact ? (
           <SummaryRow
             label="Media"
             value={`${assetType ?? "source"} · ${durationSec ? formatDuration(durationSec * 1000) : "duration pending"}`}
           />
         ) : null}
         <SummaryRow label="Generated clips" value={String(clipCount)} />
-        <SummaryRow label="Approved" value={String(approvedCount)} good={approvedCount > 0} />
-        <SummaryRow label="Selected" value={String(selectedCount)} />
+        {!compact ? (
+          <>
+            <SummaryRow label="Approved" value={String(approvedCount)} good={approvedCount > 0} />
+            <SummaryRow label="Selected" value={String(selectedCount)} />
+          </>
+        ) : null}
         <SummaryRow label="Exports" value={String(exportCount)} />
       </div>
     </aside>
+  );
+}
+
+function BestResultsCard() {
+  const tips = [
+    "Use 1080p or higher source",
+    "Clear speech works best",
+    "Landscape videos can become Shorts/Reels",
+  ];
+  return (
+    <aside className="rounded-2xl border border-cyan-500/15 bg-cyan-500/[0.045] p-4">
+      <p className="text-sm font-semibold text-cyan-100">Best results</p>
+      <ul className="mt-3 space-y-2">
+        {tips.map((tip) => (
+          <li key={tip} className="flex items-start gap-2 text-xs leading-5 text-cyan-50/70">
+            <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-cyan-300" />
+            <span>{tip}</span>
+          </li>
+        ))}
+      </ul>
+    </aside>
+  );
+}
+
+function AdvancedDetailsPanel({
+  hasSource,
+  assetType,
+  durationSec,
+  clipCount,
+  approvedCount,
+  exportCount,
+  selectedCount,
+  analytics,
+  transcriptPreview,
+  transcriptPrecision,
+  modelDebugEnabled,
+  debugModelOverride,
+  setDebugModelOverride,
+  showProjectSummary = true,
+}: {
+  hasSource: boolean;
+  assetType?: string;
+  durationSec?: number | null;
+  clipCount: number;
+  approvedCount: number;
+  exportCount: number;
+  selectedCount: number;
+  analytics: AutoHighlightsAnalytics | null;
+  transcriptPreview: TranscriptPreview;
+  transcriptPrecision: string;
+  modelDebugEnabled: boolean;
+  debugModelOverride: string;
+  setDebugModelOverride: (value: string) => void;
+  showProjectSummary?: boolean;
+}) {
+  return (
+    <details className="rounded-2xl border border-border/50 bg-card/55 p-4">
+      <summary className="cursor-pointer text-sm font-semibold">Advanced details</summary>
+      <div className="mt-4 space-y-4">
+        {showProjectSummary ? (
+          <ProjectSummaryCard
+            hasSource={hasSource}
+            assetType={assetType}
+            durationSec={durationSec}
+            clipCount={clipCount}
+            approvedCount={approvedCount}
+            exportCount={exportCount}
+            selectedCount={selectedCount}
+          />
+        ) : null}
+        <TechnicalDetailsDrawer
+          analytics={analytics}
+          transcriptPreview={transcriptPreview}
+          transcriptPrecision={transcriptPrecision}
+          modelDebugEnabled={modelDebugEnabled}
+          debugModelOverride={debugModelOverride}
+          setDebugModelOverride={setDebugModelOverride}
+        />
+        <details className="rounded-2xl border border-border/50 bg-card/55 p-4">
+          <summary className="cursor-pointer text-sm font-semibold">Plan usage</summary>
+          <div className="mt-3">
+            <V1UsageLimitsCard />
+          </div>
+        </details>
+      </div>
+    </details>
   );
 }
 
@@ -1324,6 +1592,29 @@ function TextInput({ label, value, onChange }: { label: string; value: string; o
   );
 }
 
+function TextareaField({
+  label,
+  value,
+  onChange,
+  rows = 2,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  rows?: number;
+}) {
+  return (
+    <Field label={label}>
+      <textarea
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        rows={rows}
+        className="w-full resize-y rounded-xl border border-border/55 bg-background/70 px-3 py-2.5 text-sm leading-6 outline-none transition focus:border-primary/45"
+      />
+    </Field>
+  );
+}
+
 function SummaryRow({ label, value, good }: { label: string; value: string; good?: boolean }) {
   return (
     <div className="flex items-center justify-between gap-3 text-xs">
@@ -1418,10 +1709,18 @@ function resolveUserStatus(params: {
   approvedCount: number;
 }) {
   if (params.generating) return "Generating";
-  if (!params.hasSource) return "No source";
+  if (!params.hasSource) return "No video added yet";
   if (params.approvedCount > 0) return "Ready to export";
   if (params.clipCount > 0) return "Clips ready";
   return "Source ready";
+}
+
+function getAssetDisplayName(asset: any) {
+  if (!asset) return "Source video";
+  const candidate = asset.title ?? asset.name ?? asset.path ?? asset.storagePath ?? "";
+  if (typeof candidate !== "string" || !candidate.trim()) return "Source video";
+  const normalized = candidate.replace(/\\/g, "/");
+  return normalized.split("/").pop() || "Source video";
 }
 
 function formatLabel(value: string) {

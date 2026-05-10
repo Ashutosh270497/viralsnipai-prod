@@ -6,12 +6,17 @@ import { useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft,
   ArrowRight,
+  ChevronLeft,
+  ChevronRight,
   Check,
   CheckSquare,
+  Eye,
   FileText,
   Film,
   Flame,
   Loader2,
+  MessageSquareText,
+  Palette,
   RefreshCw,
   Scissors,
   AlertTriangle,
@@ -20,7 +25,7 @@ import {
   Type,
   Waves,
   SlidersHorizontal,
-  Sparkles,
+  PanelRightOpen,
 } from "lucide-react";
 
 import { TranscriptEditor } from "@/components/repurpose/transcript-editor";
@@ -64,6 +69,7 @@ type ReviewTab = "all" | ClipReviewStatus;
 type SortBy = "score" | "confidence" | "duration" | "candidateType" | "createdAt";
 type PlatformFilter = "all" | "youtubeShorts" | "instagramReels" | "tiktok" | "x";
 type PrecisionFilter = "all" | "word" | "segment" | "low";
+type WorkspaceTab = "preview" | "transcript" | "captions" | "style" | "advanced";
 
 const REVIEW_STATUSES: ClipReviewStatus[] = [
   "needs_review",
@@ -100,6 +106,7 @@ export default function RepurposeEditorPage() {
     {},
   );
   const [statusUpdating, setStatusUpdating] = useState<Record<string, boolean>>({});
+  const [workspaceTab, setWorkspaceTab] = useState<WorkspaceTab>("preview");
   const captionInFlightRef = useRef<Set<string>>(new Set());
 
   const clips = useMemo(() => project?.clips ?? [], [project?.clips]);
@@ -209,6 +216,11 @@ export default function RepurposeEditorPage() {
   const activePortraitPlan = activeClip?.viralityFactors?.reframePlans?.find(
     (plan) => plan.ratio === "9:16",
   );
+  const activeClipIndex = activeClip ? clips.findIndex((clip) => clip.id === activeClip.id) : -1;
+  const readyForExportCount = clips.filter((clip) => {
+    const status = getReviewStatus(clip);
+    return status === "approved" || status === "export_ready";
+  }).length;
   const mergeClipIntoProjectCache = useCallback(
     (clip: unknown) => {
       if (!project?.id || !clip || typeof clip !== "object" || !("id" in clip)) return;
@@ -312,6 +324,23 @@ export default function RepurposeEditorPage() {
         ? selectedClipIds.filter((x) => x !== id)
         : [...selectedClipIds, id],
     );
+  }
+
+  function navigateActiveClip(direction: -1 | 1) {
+    if (activeClipIndex < 0) return;
+    const nextClip = clips[activeClipIndex + direction];
+    if (nextClip) {
+      setActiveClipId(nextClip.id);
+      setWorkspaceTab("preview");
+    }
+  }
+
+  async function syncLatestChanges() {
+    await invalidate();
+    toast({
+      title: "Changes synced",
+      description: "The editor is showing the latest saved clip state.",
+    });
   }
 
   async function setReviewStatus(id: string, status: ClipReviewStatus) {
@@ -498,178 +527,328 @@ export default function RepurposeEditorPage() {
 
   // ── Render ──────────────────────────────────────────────────────────────────
   return (
-    <div className="space-y-5">
+    <div className="min-w-0 space-y-5 overflow-x-hidden">
       {/* Header row */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
+      <div className="flex flex-col gap-4 rounded-2xl border border-border/60 bg-card/55 p-4 shadow-sm shadow-black/10 lg:flex-row lg:items-center lg:justify-between">
+        <div className="min-w-0">
           <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-emerald-400/75">
-            AI clip review queue
+            Clip editing workspace
           </p>
-          <h2 className="mt-1 text-2xl font-bold">Edit & Enhance</h2>
-          <p className="text-sm text-muted-foreground mt-0.5">
-            Preview clips, inspect confidence signals, edit transcript timing, and approve
-            export-ready shorts.
+          <h2 className="mt-1 text-2xl font-bold">Edit clips</h2>
+          <p className="mt-0.5 max-w-2xl text-sm text-muted-foreground">
+            Choose a clip, make focused edits, preview the result, then mark it ready for export.
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          {clips.length > 1 && (
-            <button
-              onClick={() =>
-                setSelectedClipIds(
-                  selectedClipIds.length === visibleClips.length
-                    ? []
-                    : visibleClips.map((c) => c.id),
-                )
-              }
-              className="px-4 py-2 rounded-lg border border-border/50 bg-muted/40 hover:bg-muted/60 text-sm font-medium transition-colors text-foreground"
-            >
-              {selectedClipIds.length === visibleClips.length
-                ? "Deselect all"
-                : `Select visible (${visibleClips.length})`}
-            </button>
-          )}
-          {selectedClipIds.length > 0 && (
-            <Link
-              href={`/repurpose/export?projectId=${project.id}`}
-              className="flex items-center gap-1.5 px-5 py-2 rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground font-medium text-sm transition-colors shadow-sm shadow-primary/20"
-            >
-              Export {selectedClipIds.length} clip{selectedClipIds.length > 1 ? "s" : ""}
-              <ArrowRight className="h-3.5 w-3.5" />
-            </Link>
-          )}
+        <div className="grid grid-cols-3 gap-2 rounded-xl border border-border/50 bg-background/55 p-2 text-center sm:w-auto sm:min-w-[320px]">
+          <div className="rounded-lg bg-muted/25 px-3 py-2">
+            <p className="text-lg font-semibold text-foreground">{clips.length}</p>
+            <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/50">
+              Clips
+            </p>
+          </div>
+          <div className="rounded-lg bg-muted/25 px-3 py-2">
+            <p className="text-lg font-semibold text-emerald-300">{reviewCounts.approved}</p>
+            <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/50">
+              Approved
+            </p>
+          </div>
+          <div className="rounded-lg bg-muted/25 px-3 py-2">
+            <p className="text-lg font-semibold text-cyan-300">{readyForExportCount}</p>
+            <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/50">
+              Ready
+            </p>
+          </div>
         </div>
       </div>
 
-      <div className="grid gap-3 rounded-2xl border border-border/60 bg-card/50 p-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
-        <div className="flex flex-wrap items-center gap-2">
-          {(["all", ...REVIEW_STATUSES] as ReviewTab[]).map((status) => (
-            <button
-              key={status}
-              type="button"
-              onClick={() => setReviewTab(status)}
-              className={cn(
-                "h-9 rounded-lg border px-3 text-xs font-semibold capitalize transition-colors",
-                reviewTab === status
-                  ? "border-primary/40 bg-primary/15 text-primary"
-                  : "border-border/60 bg-background text-muted-foreground hover:text-foreground",
-              )}
-            >
-              {status === "all" ? "All" : status.replace(/_/g, " ")}
-              <span className="ml-1.5 text-[10px] opacity-60">{reviewCounts[status]}</span>
-            </button>
-          ))}
+      <section className="min-w-0 rounded-2xl border border-border/60 bg-card/55 p-3">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-foreground">Clip queue</p>
+            <p className="text-xs text-muted-foreground/60">
+              Select a clip to preview, edit, and mark ready.
+            </p>
+          </div>
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <div className="flex max-w-full gap-1 overflow-x-auto pb-1">
+              {(["all", ...REVIEW_STATUSES] as ReviewTab[]).map((status) => (
+                <button
+                  key={status}
+                  type="button"
+                  onClick={() => setReviewTab(status)}
+                  className={cn(
+                    "h-8 shrink-0 rounded-full border px-3 text-[11px] font-semibold capitalize transition-colors",
+                    reviewTab === status
+                      ? "border-primary/40 bg-primary/15 text-primary"
+                      : "border-border/60 bg-background text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  {status === "all" ? "All" : status.replace(/_/g, " ")}
+                  <span className="ml-1.5 opacity-55">{reviewCounts[status]}</span>
+                </button>
+              ))}
+            </div>
+            <details className="relative rounded-full border border-border/60 bg-background px-3 py-1.5 text-xs">
+              <summary className="cursor-pointer list-none font-semibold text-muted-foreground hover:text-foreground">
+                Filter
+              </summary>
+              <div className="mt-3 grid min-w-[260px] gap-2 rounded-xl border border-border/60 bg-card p-3 shadow-xl lg:absolute lg:right-8 lg:z-20">
+                <select
+                  value={sortBy}
+                  onChange={(event) => setSortBy(event.target.value as typeof sortBy)}
+                  className="h-9 rounded-lg border border-border/60 bg-background px-3 text-xs font-semibold text-foreground"
+                >
+                  <option value="score">Best first</option>
+                  <option value="confidence">Boundary confidence</option>
+                  <option value="duration">Longest first</option>
+                  <option value="candidateType">Clip type</option>
+                  <option value="createdAt">Newest first</option>
+                </select>
+                <select
+                  value={platformFilter}
+                  onChange={(event) => setPlatformFilter(event.target.value as typeof platformFilter)}
+                  className="h-9 rounded-lg border border-border/60 bg-background px-3 text-xs font-semibold text-foreground"
+                >
+                  <option value="all">All platforms</option>
+                  <option value="youtubeShorts">Shorts fit</option>
+                  <option value="instagramReels">Reels fit</option>
+                  <option value="tiktok">TikTok fit</option>
+                  <option value="x">X fit</option>
+                </select>
+                <select
+                  value={precisionFilter}
+                  onChange={(event) => setPrecisionFilter(event.target.value as PrecisionFilter)}
+                  className="h-9 rounded-lg border border-border/60 bg-background px-3 text-xs font-semibold text-foreground"
+                >
+                  <option value="all">All timing</option>
+                  <option value="word">Word-level</option>
+                  <option value="segment">Segment</option>
+                  <option value="low">Low precision</option>
+                </select>
+                <select
+                  value={candidateTypeFilter}
+                  onChange={(event) => setCandidateTypeFilter(event.target.value)}
+                  className="h-9 rounded-lg border border-border/60 bg-background px-3 text-xs font-semibold text-foreground"
+                >
+                  <option value="all">All clip types</option>
+                  {candidateTypes.map((type) => (
+                    <option key={type} value={type}>
+                      {type.replace(/_/g, " ")}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={() => setHideLowConfidence((value) => !value)}
+                  className={cn(
+                    "h-8 rounded-lg border px-3 text-xs font-semibold transition-colors",
+                    hideLowConfidence
+                      ? "border-amber-400/30 bg-amber-400/10 text-amber-300"
+                      : "border-border/60 bg-background text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  {hideLowConfidence ? "Showing stronger clips" : "Hide low confidence clips"}
+                </button>
+              </div>
+            </details>
+          </div>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <button
-            type="button"
-            onClick={() => batchSetReviewStatus("approved")}
-            disabled={selectedClipIds.length === 0}
-            className="h-9 rounded-lg border border-emerald-500/25 bg-emerald-500/10 px-3 text-xs font-semibold text-emerald-300 transition-colors hover:bg-emerald-500/15 disabled:opacity-40"
-          >
-            Approve selected
-          </button>
-          <button
-            type="button"
-            onClick={() => batchSetReviewStatus("rejected")}
-            disabled={selectedClipIds.length === 0}
-            className="h-9 rounded-lg border border-red-500/25 bg-red-500/10 px-3 text-xs font-semibold text-red-300 transition-colors hover:bg-red-500/15 disabled:opacity-40"
-          >
-            Reject selected
-          </button>
-          <button
-            type="button"
-            onClick={() => batchSetReviewStatus("export_ready")}
-            disabled={selectedClipIds.length === 0}
-            className="h-9 rounded-lg border border-cyan-500/25 bg-cyan-500/10 px-3 text-xs font-semibold text-cyan-300 transition-colors hover:bg-cyan-500/15 disabled:opacity-40"
-          >
-            Mark export ready
-          </button>
-          <button
-            type="button"
-            onClick={() => setSelectedClipIds([])}
-            disabled={selectedClipIds.length === 0}
-            className="h-9 rounded-lg border border-border/60 bg-background px-3 text-xs font-semibold text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40"
-          >
-            Clear selection
-          </button>
-        </div>
-      </div>
 
-      <div className="grid gap-3 rounded-2xl border border-border/60 bg-card/50 p-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-widest text-muted-foreground/55">
-            <SlidersHorizontal className="h-3.5 w-3.5" />
-            Filters
-          </span>
-          <select
-            value={sortBy}
-            onChange={(event) => setSortBy(event.target.value as typeof sortBy)}
-            className="h-9 rounded-lg border border-border/60 bg-background px-3 text-xs font-semibold text-foreground"
-          >
-            <option value="score">Sort by virality</option>
-            <option value="confidence">Sort by boundary confidence</option>
-            <option value="duration">Sort by duration</option>
-            <option value="candidateType">Sort by candidate type</option>
-            <option value="createdAt">Sort by created date</option>
-          </select>
-          <select
-            value={platformFilter}
-            onChange={(event) => setPlatformFilter(event.target.value as typeof platformFilter)}
-            className="h-9 rounded-lg border border-border/60 bg-background px-3 text-xs font-semibold text-foreground"
-          >
-            <option value="all">All platforms</option>
-            <option value="youtubeShorts">Shorts fit</option>
-            <option value="instagramReels">Reels fit</option>
-            <option value="tiktok">TikTok fit</option>
-            <option value="x">X fit</option>
-          </select>
-          <select
-            value={candidateTypeFilter}
-            onChange={(event) => setCandidateTypeFilter(event.target.value)}
-            className="h-9 rounded-lg border border-border/60 bg-background px-3 text-xs font-semibold text-foreground"
-          >
-            <option value="all">All clip types</option>
-            {candidateTypes.map((type) => (
-              <option key={type} value={type}>
-                {type.replace(/_/g, " ")}
-              </option>
-            ))}
-          </select>
-          <select
-            value={precisionFilter}
-            onChange={(event) => setPrecisionFilter(event.target.value as PrecisionFilter)}
-            className="h-9 rounded-lg border border-border/60 bg-background px-3 text-xs font-semibold text-foreground"
-          >
-            <option value="all">All precision</option>
-            <option value="word">Word-level timing</option>
-            <option value="segment">Segment-level timing</option>
-            <option value="low">Low precision</option>
-          </select>
-          <button
-            type="button"
-            onClick={() => setHideLowConfidence((value) => !value)}
-            className={cn(
-              "h-9 rounded-lg border px-3 text-xs font-semibold transition-colors",
-              hideLowConfidence
-                ? "border-amber-400/30 bg-amber-400/10 text-amber-300"
-                : "border-border/60 bg-background text-muted-foreground hover:text-foreground",
-            )}
-          >
-            Hide low confidence
-          </button>
+        <div className="mt-3 flex min-w-0 gap-3 overflow-x-auto pb-2">
+          {visibleClips.length === 0 ? (
+            <div className="min-w-full rounded-xl border border-dashed border-border/50 bg-muted/20 p-6 text-center">
+              <Scissors className="mx-auto mb-2 h-6 w-6 text-muted-foreground/25" />
+              <p className="text-sm font-semibold text-foreground">No clips match these filters</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Clear filters or return to Generate to create a different set.
+              </p>
+            </div>
+          ) : (
+            visibleClips.map((clip, index) => {
+              const isActive = activeClip?.id === clip.id;
+              const isSelected = selectedClipIds.includes(clip.id);
+              const duration = clip.endMs - clip.startMs;
+              const reviewStatus = getReviewStatus(clip);
+
+              return (
+                <button
+                  key={clip.id}
+                  type="button"
+                  onClick={() => {
+                    setActiveClipId(clip.id);
+                    setWorkspaceTab("preview");
+                  }}
+                  className={cn(
+                    "grid w-[260px] shrink-0 grid-cols-[88px_minmax(0,1fr)] gap-3 rounded-xl border p-2 text-left transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary",
+                    isActive
+                      ? "border-primary/45 bg-primary/10 shadow-sm shadow-primary/10"
+                      : "border-border/45 bg-background/45 hover:border-border hover:bg-muted/25",
+                  )}
+                  aria-label={`Select ${clip.title || `clip ${index + 1}`}`}
+                  title={clip.title || `Clip ${index + 1}`}
+                >
+                  <SafeThumbnailImage
+                    src={clip.thumbnail}
+                    alt={clip.title || `Clip ${index + 1}`}
+                    className="h-16 w-[88px] rounded-lg"
+                    fallbackIcon={<Film className="h-5 w-5 text-muted-foreground/25" />}
+                  />
+                  <div className="min-w-0">
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="line-clamp-2 text-xs font-semibold leading-4 text-foreground">
+                        {clip.title || `Clip ${index + 1}`}
+                      </p>
+                      {isSelected ? (
+                        <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
+                      ) : null}
+                    </div>
+                    <div className="mt-1.5 flex items-center gap-2 text-[10px] text-muted-foreground/60">
+                      <span className="font-mono">{formatDuration(duration)}</span>
+                      {clip.viralityScore != null ? <span>{clip.viralityScore}/100</span> : null}
+                    </div>
+                    <div className="mt-1.5 flex flex-wrap gap-1">
+                      <ReviewStatusBadge status={reviewStatus} />
+                    </div>
+                  </div>
+                </button>
+              );
+            })
+          )}
         </div>
-        <div className="flex flex-wrap gap-2">
-          {REVIEW_STATUSES.map((status) => (
-            <ReviewStatusBadge key={status} status={status} />
-          ))}
-        </div>
-      </div>
+      </section>
 
       {/* Main layout */}
-      <div className="grid gap-5 lg:grid-cols-[280px_minmax(0,1fr)]">
+      <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(280px,340px)]">
         {/* ── Clip sidebar ─────────────────────────────────────────────────── */}
-        <div className="space-y-2">
-          <div className="flex items-center justify-between px-0.5 mb-1">
+        <div className="hidden">
+          <div className="rounded-2xl border border-border/60 bg-card/60 p-3">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-foreground">Review queue</p>
+                <p className="text-[11px] text-muted-foreground/55">
+                  Pick a clip to preview or edit.
+                </p>
+              </div>
+              <span className="rounded-full border border-border/50 bg-background px-2 py-1 text-[10px] font-semibold text-muted-foreground/65">
+                {selectedClipIds.length}/{clips.length}
+              </span>
+            </div>
+
+            <div className="mt-3 flex gap-1 overflow-x-auto pb-1">
+              {(["all", ...REVIEW_STATUSES] as ReviewTab[]).map((status) => (
+                <button
+                  key={status}
+                  type="button"
+                  onClick={() => setReviewTab(status)}
+                  className={cn(
+                    "h-8 shrink-0 rounded-full border px-3 text-[11px] font-semibold capitalize transition-colors",
+                    reviewTab === status
+                      ? "border-primary/40 bg-primary/15 text-primary"
+                      : "border-border/60 bg-background text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  {status === "all" ? "All" : status.replace(/_/g, " ")}
+                  <span className="ml-1.5 opacity-55">{reviewCounts[status]}</span>
+                </button>
+              ))}
+            </div>
+
+            <details className="mt-2 rounded-xl border border-border/45 bg-background/45 p-2">
+              <summary className="flex cursor-pointer list-none items-center gap-1.5 text-[11px] font-semibold uppercase tracking-widest text-muted-foreground/55">
+                <SlidersHorizontal className="h-3.5 w-3.5" />
+                Filters and bulk actions
+              </summary>
+              <div className="mt-3 space-y-2">
+                <select
+                  value={sortBy}
+                  onChange={(event) => setSortBy(event.target.value as typeof sortBy)}
+                  className="h-9 w-full rounded-lg border border-border/60 bg-background px-3 text-xs font-semibold text-foreground"
+                >
+                  <option value="score">Best first</option>
+                  <option value="confidence">Boundary confidence</option>
+                  <option value="duration">Longest first</option>
+                  <option value="candidateType">Clip type</option>
+                  <option value="createdAt">Newest first</option>
+                </select>
+                <div className="grid grid-cols-2 gap-2">
+                  <select
+                    value={platformFilter}
+                    onChange={(event) =>
+                      setPlatformFilter(event.target.value as typeof platformFilter)
+                    }
+                    className="h-9 rounded-lg border border-border/60 bg-background px-2 text-xs font-semibold text-foreground"
+                  >
+                    <option value="all">All platforms</option>
+                    <option value="youtubeShorts">Shorts</option>
+                    <option value="instagramReels">Reels</option>
+                    <option value="tiktok">TikTok</option>
+                    <option value="x">X</option>
+                  </select>
+                  <select
+                    value={precisionFilter}
+                    onChange={(event) =>
+                      setPrecisionFilter(event.target.value as PrecisionFilter)
+                    }
+                    className="h-9 rounded-lg border border-border/60 bg-background px-2 text-xs font-semibold text-foreground"
+                  >
+                    <option value="all">All timing</option>
+                    <option value="word">Word-level</option>
+                    <option value="segment">Segment</option>
+                    <option value="low">Low precision</option>
+                  </select>
+                </div>
+                <select
+                  value={candidateTypeFilter}
+                  onChange={(event) => setCandidateTypeFilter(event.target.value)}
+                  className="h-9 w-full rounded-lg border border-border/60 bg-background px-3 text-xs font-semibold text-foreground"
+                >
+                  <option value="all">All clip types</option>
+                  {candidateTypes.map((type) => (
+                    <option key={type} value={type}>
+                      {type.replace(/_/g, " ")}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={() => setHideLowConfidence((value) => !value)}
+                  className={cn(
+                    "h-8 w-full rounded-lg border px-3 text-xs font-semibold transition-colors",
+                    hideLowConfidence
+                      ? "border-amber-400/30 bg-amber-400/10 text-amber-300"
+                      : "border-border/60 bg-background text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  {hideLowConfidence ? "Showing stronger clips" : "Hide low confidence clips"}
+                </button>
+                <div className="grid grid-cols-2 gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setSelectedClipIds(
+                        selectedClipIds.length === visibleClips.length
+                          ? []
+                          : visibleClips.map((c) => c.id),
+                      )
+                    }
+                    className="h-8 rounded-lg border border-border/60 bg-muted/30 px-2 text-[11px] font-semibold text-muted-foreground hover:text-foreground"
+                  >
+                    {selectedClipIds.length === visibleClips.length ? "Deselect" : "Select visible"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => batchSetReviewStatus("export_ready")}
+                    disabled={selectedClipIds.length === 0}
+                    className="h-8 rounded-lg border border-cyan-500/25 bg-cyan-500/10 px-2 text-[11px] font-semibold text-cyan-300 disabled:opacity-40"
+                  >
+                    Mark ready
+                  </button>
+                </div>
+              </div>
+            </details>
+          </div>
+
+          <div className="flex items-center justify-between px-0.5">
             <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground/60">
               Clips
             </p>
@@ -696,7 +875,6 @@ export default function RepurposeEditorPage() {
                 const isSelected = selectedClipIds.includes(clip.id);
                 const duration = clip.endMs - clip.startMs;
                 const quality = getCaptionQuality(clip.captionSrt);
-                const metadata = getClipMetadata(clip);
                 const reviewStatus = getReviewStatus(clip);
                 const isUpdating = Boolean(statusUpdating[clip.id]);
 
@@ -787,36 +965,23 @@ export default function RepurposeEditorPage() {
                         </button>
                       </div>
 
-                      {/* Caption status */}
+                      {/* Compact review details */}
                       <div className="mt-1.5">
                         <div className="mb-1.5 flex flex-wrap gap-1.5">
-                          <BoundaryConfidenceBadge confidence={metadata.boundaryConfidence} />
                           <ReviewStatusBadge status={reviewStatus} />
-                          <ClipTypeBadge type={metadata.candidateType} />
+                          {clip.captionSrt ? (
+                            <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 text-[9px] font-semibold text-emerald-300">
+                              <FileText className="h-2.5 w-2.5" />
+                              Captions
+                            </span>
+                          ) : null}
                         </div>
                         {clip.summary && (
-                          <p className="mb-2 line-clamp-2 text-[11px] leading-4 text-muted-foreground/65">
+                          <p className="mb-2 line-clamp-1 text-[11px] leading-4 text-muted-foreground/65">
                             {clip.summary}
                           </p>
                         )}
-                        {metadata.viralReason && (
-                          <p className="mb-2 line-clamp-2 text-[10px] leading-4 text-muted-foreground/45">
-                            {metadata.viralReason}
-                          </p>
-                        )}
-                        {clip.captionSrt && quality.tier === "transcript_ready" ? (
-                          <span className="inline-flex items-center gap-1 text-[9px] font-semibold text-emerald-400">
-                            <FileText className="h-2.5 w-2.5" /> Transcript ready
-                          </span>
-                        ) : clip.captionSrt && quality.tier === "needs_cleanup" ? (
-                          <span className="inline-flex items-center gap-1 text-[9px] font-semibold text-amber-400">
-                            <AlertTriangle className="h-2.5 w-2.5" /> Needs cleanup
-                          </span>
-                        ) : clip.captionSrt ? (
-                          <span className="inline-flex items-center gap-1 text-[9px] font-semibold text-orange-400">
-                            <AlertTriangle className="h-2.5 w-2.5" /> Low quality
-                          </span>
-                        ) : (
+                        {!clip.captionSrt ? (
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
@@ -832,8 +997,12 @@ export default function RepurposeEditorPage() {
                             )}
                             Generate captions
                           </button>
-                        )}
-                        <div className="mt-2 grid grid-cols-3 gap-1">
+                        ) : quality.tier !== "transcript_ready" ? (
+                          <span className="inline-flex items-center gap-1 text-[9px] font-semibold text-amber-400">
+                            <AlertTriangle className="h-2.5 w-2.5" /> Captions need review
+                          </span>
+                        ) : null}
+                        <div className="mt-2 grid grid-cols-3 gap-1 opacity-80 transition-opacity group-hover:opacity-100">
                           <button
                             type="button"
                             disabled={isUpdating}
@@ -878,13 +1047,19 @@ export default function RepurposeEditorPage() {
         </div>
 
         {/* ── Active clip editor ───────────────────────────────────────────── */}
-        <div>
+        <main className="min-w-0">
           {activeClip ? (
             <div className="rounded-2xl border border-border/60 bg-card/60 overflow-hidden">
               {/* Clip meta bar */}
-              <div className="flex items-center justify-between gap-3 px-5 py-4 border-b border-border/40">
+              <div className="flex flex-col gap-4 border-b border-border/40 px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
                 <div className="min-w-0 flex-1">
-                  <h3 className="text-base font-semibold truncate">
+                  <div className="mb-1 flex flex-wrap items-center gap-2">
+                    <span className="rounded-full border border-border/50 bg-muted/30 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">
+                      {activeClipIndex >= 0 ? `Clip ${activeClipIndex + 1} of ${clips.length}` : "Clip"}
+                    </span>
+                    <ReviewStatusBadge status={activeReviewStatus} />
+                  </div>
+                  <h3 className="truncate text-lg font-semibold">
                     {activeClip.title || "Untitled Clip"}
                   </h3>
                   <div className="flex items-center gap-2 mt-1 flex-wrap">
@@ -921,187 +1096,93 @@ export default function RepurposeEditorPage() {
                                   : activeClip.viralityScore >= 60
                                     ? "bg-amber-500"
                                     : "bg-orange-500",
-                              )}
-                              style={{ width: `${activeClip.viralityScore}%` }}
-                            />
-                          </div>
-                        </div>
-                      </>
-                    )}
-                    <BoundaryConfidenceBadge confidence={activeMetadata.boundaryConfidence} />
-                    <TranscriptPrecisionBadge precision={activeMetadata.boundaryPrecision} />
-                    <ClipTypeBadge type={activeMetadata.candidateType} />
-                    <ReviewStatusBadge status={activeReviewStatus} />
-                  </div>
-                </div>
-                <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
-                  <button
-                    onClick={() => setReviewStatus(activeClip.id, "approved")}
-                    disabled={Boolean(statusUpdating[activeClip.id])}
-                    className="rounded-lg border border-emerald-500/25 bg-emerald-500/10 px-3 py-2 text-xs font-semibold text-emerald-300 transition-colors hover:bg-emerald-500/15"
-                  >
-                    Approve
-                  </button>
-                  <button
-                    onClick={() => setReviewStatus(activeClip.id, "rejected")}
-                    disabled={Boolean(statusUpdating[activeClip.id])}
-                    className="rounded-lg border border-red-500/25 bg-red-500/10 px-3 py-2 text-xs font-semibold text-red-300 transition-colors hover:bg-red-500/15"
-                  >
-                    Reject
-                  </button>
-                  <button
-                    onClick={() => setReviewStatus(activeClip.id, "export_ready")}
-                    disabled={Boolean(statusUpdating[activeClip.id])}
-                    className="rounded-lg border border-cyan-500/25 bg-cyan-500/10 px-3 py-2 text-xs font-semibold text-cyan-300 transition-colors hover:bg-cyan-500/15"
-                  >
-                    Export ready
-                  </button>
-                  <button
-                    onClick={() => toggleClip(activeClip.id)}
-                    className={cn(
-                      "flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium transition-all",
-                      selectedClipIds.includes(activeClip.id)
-                        ? "bg-primary text-primary-foreground"
-                        : "border border-border/50 bg-muted/40 text-foreground hover:bg-muted/60",
-                    )}
-                  >
-                    <CheckSquare className="h-3.5 w-3.5" />
-                    {selectedClipIds.includes(activeClip.id) ? "Export ready" : "Select for export"}
-                  </button>
-                </div>
-              </div>
-
-              <div className="grid gap-3 border-b border-border/40 px-5 py-4 md:grid-cols-[minmax(0,1fr)_260px]">
-                <div className="rounded-xl border border-border/50 bg-muted/25 p-3">
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/45">
-                    Why this clip was selected
-                  </p>
-                  <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                    {activeMetadata.viralReason ||
-                      activeClip.viralityFactors?.reasoning ||
-                      "Selected by deterministic transcript quality, hook density, pacing, and OpenRouter ranking."}
-                  </p>
-                </div>
-                <div className="rounded-xl border border-border/50 bg-muted/25 p-3">
-                  <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-muted-foreground/45">
-                    Platform fit
-                  </p>
-                  <PlatformFitChips platformFit={activeMetadata.platformFit} />
-                </div>
-              </div>
-
-              <div className="border-b border-border/40 px-5 py-4">
-                <SourceQualityNotice
-                  sourceWidth={activeAsset?.sourceWidth}
-                  sourceHeight={activeAsset?.sourceHeight}
-                  targetWidth={1080}
-                  targetHeight={1920}
-                  compact
-                />
-              </div>
-
-              <div className="grid gap-3 border-b border-border/40 px-5 py-4 lg:grid-cols-[minmax(0,1fr)_320px]">
-                <div className="rounded-xl border border-border/50 bg-muted/25 p-4">
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/45">
-                    Quality breakdown
-                  </p>
-                  <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                    {[
-                      ["Deterministic", activeMetadata.deterministicScore],
-                      ["LLM score", activeMetadata.llmScore],
-                      ["AI virality", activeClip.viralityScore],
-                      ["Hook", activeClip.viralityFactors?.hookStrength],
-                      ["Pacing", activeClip.viralityFactors?.pacing],
-                      ["Story arc", activeClip.viralityFactors?.storyArc],
-                      ["Transcript", activeClip.viralityFactors?.transcriptQuality],
-                      ["Shareability", activeClip.viralityFactors?.shareability],
-                      ["Scene align", activeQualitySignals?.sceneAlignment],
-                      ["Cut clean", activeQualitySignals?.cutCleanliness],
-                    ].map(([label, value]) => (
-                      <div
-                        key={label}
-                        className="rounded-lg border border-border/40 bg-background/35 p-2.5"
-                      >
-                        <p className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground/40">
-                          {label}
-                        </p>
-                        <p className="mt-1 text-sm font-semibold text-foreground">
-                          {typeof value === "number" ? `${Math.round(value)}/100` : "N/A"}
-                        </p>
+                          )}
+                          style={{ width: `${activeClip.viralityScore}%` }}
+                        />
                       </div>
-                    ))}
+                    </div>
+                  </>
+                )}
                   </div>
                 </div>
-                <div className="space-y-3">
-                  <QualityList
-                    title="Candidate reasons"
-                    items={activeMetadata.candidateReasons}
-                    fallback="No candidate reasons were stored for this clip."
-                  />
-                  <QualityList
-                    title="Boundary reasons"
-                    items={activeMetadata.boundaryReasons}
-                    fallback="No boundary refinement notes were stored for this clip."
-                  />
-                  <QualityList
-                    title="Editing notes"
-                    items={activeMetadata.editingNotes}
-                    fallback="No editing notes were returned by the reranker."
-                  />
+                <div className="flex min-w-0 shrink-0 flex-wrap items-center justify-start gap-2 lg:justify-end">
+                  <button
+                    type="button"
+                    onClick={() => navigateActiveClip(-1)}
+                    disabled={activeClipIndex <= 0}
+                    className="inline-flex h-9 items-center gap-1 rounded-lg border border-border/50 bg-muted/35 px-3 text-xs font-semibold text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40"
+                  >
+                    <ChevronLeft className="h-3.5 w-3.5" />
+                    Prev
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => navigateActiveClip(1)}
+                    disabled={activeClipIndex < 0 || activeClipIndex >= clips.length - 1}
+                    className="inline-flex h-9 items-center gap-1 rounded-lg border border-border/50 bg-muted/35 px-3 text-xs font-semibold text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40"
+                  >
+                    Next
+                    <ChevronRight className="h-3.5 w-3.5" />
+                  </button>
+                  <details className="rounded-lg border border-border/50 bg-background px-3 py-2 text-xs">
+                    <summary className="cursor-pointer list-none font-semibold text-muted-foreground hover:text-foreground">
+                      More
+                    </summary>
+                    <div className="mt-3 grid min-w-[180px] gap-2">
+                      <button
+                        type="button"
+                        onClick={() => void syncLatestChanges()}
+                        className="rounded-lg border border-border/50 bg-muted/30 px-3 py-2 text-left text-xs font-semibold text-foreground transition-colors hover:border-border"
+                      >
+                        Save changes
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setReviewStatus(activeClip.id, "approved")}
+                        disabled={Boolean(statusUpdating[activeClip.id])}
+                        className="rounded-lg border border-emerald-500/25 bg-emerald-500/10 px-3 py-2 text-left text-xs font-semibold text-emerald-300 transition-colors hover:bg-emerald-500/15 disabled:opacity-50"
+                      >
+                        Approve
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setReviewStatus(activeClip.id, "rejected")}
+                        disabled={Boolean(statusUpdating[activeClip.id])}
+                        className="rounded-lg border border-red-500/25 bg-red-500/10 px-3 py-2 text-left text-xs font-semibold text-red-300 transition-colors hover:bg-red-500/15 disabled:opacity-50"
+                      >
+                        Reject
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => toggleClip(activeClip.id)}
+                        className="rounded-lg border border-border/50 bg-muted/30 px-3 py-2 text-left text-xs font-semibold text-foreground transition-colors hover:border-border"
+                      >
+                        {selectedClipIds.includes(activeClip.id)
+                          ? "Remove from export selection"
+                          : "Add to export selection"}
+                      </button>
+                    </div>
+                  </details>
+                  {activeReviewStatus === "export_ready" ? (
+                    <Link
+                      href={`/repurpose/export?projectId=${project.id}`}
+                      className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-primary px-4 text-xs font-semibold text-primary-foreground shadow-sm shadow-primary/20 transition-colors hover:bg-primary/90"
+                    >
+                      Export
+                      <ArrowRight className="h-3.5 w-3.5" />
+                    </Link>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setReviewStatus(activeClip.id, "export_ready")}
+                      disabled={Boolean(statusUpdating[activeClip.id])}
+                      className="h-9 rounded-lg bg-primary px-4 text-xs font-semibold text-primary-foreground shadow-sm shadow-primary/20 transition-colors hover:bg-primary/90 disabled:opacity-60"
+                    >
+                      Mark export ready
+                    </button>
+                  )}
                 </div>
               </div>
-
-              {(activeQualitySignals || activePortraitPlan) && (
-                <div className="grid gap-3 border-b border-border/40 px-5 py-4 md:grid-cols-3">
-                  <div className="rounded-xl border border-border/50 bg-muted/30 p-3">
-                    <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-widest text-muted-foreground/55">
-                      <Waves className="h-3.5 w-3.5 text-cyan-400" />
-                      Clip Quality
-                    </div>
-                    <p className="mt-2 text-lg font-semibold">
-                      {activeQualitySignals
-                        ? `${activeQualitySignals.overallScore}/100`
-                        : "Pending"}
-                    </p>
-                    <p className="mt-1 text-xs text-muted-foreground/60">
-                      {activeQualitySignals
-                        ? `${activeQualitySignals.contentDensity} pacing · ${activeQualitySignals.wordsPerMinute} WPM`
-                        : "Quality signals will appear after clip analysis."}
-                    </p>
-                  </div>
-
-                  <div className="rounded-xl border border-border/50 bg-muted/30 p-3">
-                    <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-widest text-muted-foreground/55">
-                      <AlertTriangle className="h-3.5 w-3.5 text-amber-400" />
-                      Cut Risk
-                    </div>
-                    <p className="mt-2 text-lg font-semibold capitalize">
-                      {activeQualitySignals?.hardCutRisk ?? "Unknown"}
-                    </p>
-                    <p className="mt-1 text-xs text-muted-foreground/60">
-                      {activeQualitySignals
-                        ? `Scene alignment ${activeQualitySignals.sceneAlignment}/100 · Cut cleanliness ${activeQualitySignals.cutCleanliness}/100`
-                        : "Boundary alignment is unavailable for this clip."}
-                    </p>
-                  </div>
-
-                  <div className="rounded-xl border border-border/50 bg-muted/30 p-3">
-                    <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-widest text-muted-foreground/55">
-                      <Crop className="h-3.5 w-3.5 text-primary" />
-                      9:16 Reframe
-                    </div>
-                    <p className="mt-2 text-lg font-semibold">
-                      {activePortraitPlan
-                        ? activePortraitPlan.mode.replace("_", " ")
-                        : "Source-first"}
-                    </p>
-                    <p className="mt-1 text-xs text-muted-foreground/60">
-                      {activePortraitPlan?.reasoning ??
-                        "Reframe guidance appears when source geometry is available."}
-                    </p>
-                  </div>
-                </div>
-              )}
 
               {/* ── Synthetic transcript recovery banner ──────────────────── */}
               {isSyntheticSrt(activeClip.captionSrt) && (
@@ -1127,43 +1208,133 @@ export default function RepurposeEditorPage() {
                 </div>
               )}
 
-              {/* ── Tabbed editor area ────────────────────────────────────── */}
-              <Tabs defaultValue="transcript" className="w-full">
+              {/* ── Focused editor workspace ──────────────────────────────── */}
+              <Tabs value={workspaceTab} onValueChange={(value) => setWorkspaceTab(value as WorkspaceTab)} className="w-full">
                 <div className="border-b border-border/40 px-5 pt-4">
-                  <TabsList className="h-8 w-auto gap-0 rounded-none border-0 bg-transparent p-0">
+                  <TabsList className="h-auto w-full justify-start gap-1 overflow-x-auto rounded-xl border border-border/45 bg-background/45 p-1">
                     <TabsTrigger
-                      value="transcript"
-                      className="h-8 rounded-none border-b-2 border-transparent px-4 text-xs font-semibold data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=inactive]:text-muted-foreground/60 data-[state=inactive]:hover:text-muted-foreground"
-                    >
-                      Transcript
-                    </TabsTrigger>
-                    <TabsTrigger
-                      value="framing"
-                      className="h-8 rounded-none border-b-2 border-transparent px-4 text-xs font-semibold data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=inactive]:text-muted-foreground/60 data-[state=inactive]:hover:text-muted-foreground"
-                    >
-                      Framing
-                    </TabsTrigger>
-                    <TabsTrigger
-                      value="enhance"
-                      className="h-8 rounded-none border-b-2 border-transparent px-4 text-xs font-semibold data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=inactive]:text-muted-foreground/60 data-[state=inactive]:hover:text-muted-foreground"
+                      value="preview"
+                      className="h-9 rounded-lg px-3 text-xs font-semibold data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
                     >
                       <span className="inline-flex items-center gap-1.5">
-                        <Sparkles className="h-3.5 w-3.5" />
-                        Enhance
+                        <Eye className="h-3.5 w-3.5" />
+                        Preview
                       </span>
                     </TabsTrigger>
                     <TabsTrigger
-                      value="export"
-                      className="h-8 rounded-none border-b-2 border-transparent px-4 text-xs font-semibold data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=inactive]:text-muted-foreground/60 data-[state=inactive]:hover:text-muted-foreground"
+                      value="transcript"
+                      className="h-9 rounded-lg px-3 text-xs font-semibold data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
                     >
-                      Export
+                      <span className="inline-flex items-center gap-1.5">
+                        <FileText className="h-3.5 w-3.5" />
+                        Transcript
+                      </span>
+                    </TabsTrigger>
+                    <TabsTrigger
+                      value="captions"
+                      className="h-9 rounded-lg px-3 text-xs font-semibold data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
+                    >
+                      <span className="inline-flex items-center gap-1.5">
+                        <MessageSquareText className="h-3.5 w-3.5" />
+                        Captions
+                      </span>
+                    </TabsTrigger>
+                    <TabsTrigger
+                      value="style"
+                      className="h-9 rounded-lg px-3 text-xs font-semibold data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
+                    >
+                      <span className="inline-flex items-center gap-1.5">
+                        <Palette className="h-3.5 w-3.5" />
+                        Style
+                      </span>
+                    </TabsTrigger>
+                    <TabsTrigger
+                      value="advanced"
+                      className="h-9 rounded-lg px-3 text-xs font-semibold data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
+                    >
+                      <span className="inline-flex items-center gap-1.5">
+                        <PanelRightOpen className="h-3.5 w-3.5" />
+                        Advanced
+                      </span>
                     </TabsTrigger>
                   </TabsList>
                 </div>
 
+                {/* Preview tab */}
+                <TabsContent value="preview" className="m-0 space-y-4 p-5">
+                  <div className="grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1fr)_280px]">
+                    <div className="flex min-h-[260px] max-h-[calc(100vh-280px)] min-w-0 items-center justify-center overflow-hidden rounded-2xl border border-border/50 bg-black">
+                      {activeClip.previewPath ? (
+                        <video
+                          src={activeClip.previewPath}
+                          className="h-auto max-h-[calc(100vh-300px)] w-full bg-black object-contain"
+                          controls
+                          playsInline
+                          preload="metadata"
+                        />
+                      ) : (
+                        <SafeThumbnailImage
+                          src={activeClip.thumbnail}
+                          alt={activeClip.title || "Clip preview"}
+                          className="aspect-video w-full"
+                          imageClassName="object-cover"
+                          fallbackIcon={<Film className="h-10 w-10 text-muted-foreground/25" />}
+                        />
+                      )}
+                    </div>
+                    <div className="space-y-3">
+                      <InsightCard
+                        title="Clip quality"
+                        value={
+                          activeQualitySignals
+                            ? `${activeQualitySignals.overallScore}/100`
+                            : activeClip.viralityScore != null
+                              ? `${activeClip.viralityScore}/100`
+                              : "Pending"
+                        }
+                        description={
+                          activeMetadata.viralReason ||
+                          activeClip.viralityFactors?.reasoning ||
+                          "Chosen for hook strength, pacing, and complete idea flow."
+                        }
+                        icon={<Waves className="h-4 w-4 text-cyan-300" />}
+                      />
+                      <div className="rounded-xl border border-border/50 bg-muted/20 p-3">
+                        <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/45">
+                          Next actions
+                        </p>
+                        <div className="mt-3 grid gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setWorkspaceTab("transcript")}
+                            className="rounded-lg border border-border/50 bg-background px-3 py-2 text-left text-xs font-semibold text-foreground hover:border-border"
+                          >
+                            Edit transcript
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setWorkspaceTab("captions")}
+                            className="rounded-lg border border-border/50 bg-background px-3 py-2 text-left text-xs font-semibold text-foreground hover:border-border"
+                          >
+                            Update captions
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setWorkspaceTab("style")}
+                            className="rounded-lg border border-border/50 bg-background px-3 py-2 text-left text-xs font-semibold text-foreground hover:border-border"
+                          >
+                            Choose style
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </TabsContent>
+
                 {/* Transcript tab */}
                 <TabsContent value="transcript" className="m-0 p-5">
                   <TranscriptEditor
+                    mode="transcript"
                     clipId={activeClip.id}
                     clipTitle={activeClip.title}
                     captionSrt={activeClip.captionSrt}
@@ -1188,53 +1359,211 @@ export default function RepurposeEditorPage() {
                     onSave={invalidate}
                     onGenerateCaptions={() => handleGenerateCaptions(activeClip.id)}
                     isGenerating={captionLoading === activeClip.id}
+                    showSourceQualityNotice={false}
                   />
                 </TabsContent>
 
-                {/* Framing tab */}
-                <TabsContent value="framing" className="m-0 p-5">
-                  <FramingPanel
+                {/* Captions tab */}
+                <TabsContent value="captions" className="m-0 p-5">
+                  <TranscriptEditor
+                    mode="captions"
                     clipId={activeClip.id}
+                    clipTitle={activeClip.title}
+                    captionSrt={activeClip.captionSrt}
+                    captionStyle={activeClip.captionStyle}
                     expectedVersion={activeClip.version}
-                    thumbnail={activeClip.thumbnail}
+                    startMs={activeClip.startMs}
+                    endMs={activeClip.endMs}
+                    previewPath={activeClip.previewPath}
                     sourceWidth={activeAsset?.sourceWidth}
                     sourceHeight={activeAsset?.sourceHeight}
+                    projectId={project.id}
+                    assetId={activeClip.assetId}
+                    assetTranscript={activeAsset?.transcript ?? null}
+                    selectedClipCount={selectedClipIds.length}
+                    onApplyCaptionStyleToSelected={applyCaptionStyleToSelected}
+                    onUpdateClip={(updates, options) => updateClip(activeClip.id, updates, options)}
                     smartReframePlan={
                       (activeClip.viralityFactors?.metadata?.smartReframe as
                         | import("@/lib/media/smart-reframe").SmartReframePlan
                         | undefined) ?? null
                     }
-                    layoutConfig={
-                      (activeClip.viralityFactors?.metadata?.layoutConfig as ClipLayoutConfig | undefined) ?? null
-                    }
-                    selectedClipCount={selectedClipIds.length}
-                    onApplyLayoutToSelected={applyLayoutToSelected}
-                    onUpdateClip={(updates, options) => updateClip(activeClip.id, updates, options)}
-                    onAnalysisComplete={invalidate}
+                    onSave={invalidate}
+                    onGenerateCaptions={() => handleGenerateCaptions(activeClip.id)}
+                    isGenerating={captionLoading === activeClip.id}
+                    showSourceQualityNotice={false}
                   />
                 </TabsContent>
 
-                {/* Creative enhancement tab */}
-                <TabsContent value="enhance" className="m-0 p-5">
+                {/* Style tab */}
+                <TabsContent value="style" className="m-0 p-5">
                   <div className="space-y-4">
-                    <BrandTemplateApplyPanel
-                      projectId={project.id}
-                      activeClipId={activeClip.id}
-                      selectedClipIds={selectedClipIds}
-                      onApplied={invalidate}
-                    />
-                    <CreativeEnhancementsPanel
+                    <TranscriptEditor
+                      mode="style"
                       clipId={activeClip.id}
-                      clipDurationMs={activeClip.endMs - activeClip.startMs}
-                      title={activeClip.title}
-                      summary={activeClip.summary}
-                      onChanged={invalidate}
+                      clipTitle={activeClip.title}
+                      captionSrt={activeClip.captionSrt}
+                      captionStyle={activeClip.captionStyle}
+                      expectedVersion={activeClip.version}
+                      startMs={activeClip.startMs}
+                      endMs={activeClip.endMs}
+                      previewPath={activeClip.previewPath}
+                      sourceWidth={activeAsset?.sourceWidth}
+                      sourceHeight={activeAsset?.sourceHeight}
+                      projectId={project.id}
+                      assetId={activeClip.assetId}
+                      assetTranscript={activeAsset?.transcript ?? null}
+                      selectedClipCount={selectedClipIds.length}
+                      onApplyCaptionStyleToSelected={applyCaptionStyleToSelected}
+                      onUpdateClip={(updates, options) => updateClip(activeClip.id, updates, options)}
+                      smartReframePlan={
+                        (activeClip.viralityFactors?.metadata?.smartReframe as
+                          | import("@/lib/media/smart-reframe").SmartReframePlan
+                          | undefined) ?? null
+                      }
+                      onSave={invalidate}
+                      onGenerateCaptions={() => handleGenerateCaptions(activeClip.id)}
+                      isGenerating={captionLoading === activeClip.id}
+                      showSourceQualityNotice={false}
                     />
+                    <details className="rounded-2xl border border-border/50 bg-muted/20 p-4">
+                      <summary className="cursor-pointer text-sm font-semibold text-foreground">
+                        Layout and brand styling
+                      </summary>
+                      <div className="mt-4 space-y-4">
+                        <FramingPanel
+                          clipId={activeClip.id}
+                          expectedVersion={activeClip.version}
+                          thumbnail={activeClip.thumbnail}
+                          sourceWidth={activeAsset?.sourceWidth}
+                          sourceHeight={activeAsset?.sourceHeight}
+                          smartReframePlan={
+                            (activeClip.viralityFactors?.metadata?.smartReframe as
+                              | import("@/lib/media/smart-reframe").SmartReframePlan
+                              | undefined) ?? null
+                          }
+                          layoutConfig={
+                            (activeClip.viralityFactors?.metadata?.layoutConfig as
+                              | ClipLayoutConfig
+                              | undefined) ?? null
+                          }
+                          selectedClipCount={selectedClipIds.length}
+                          onApplyLayoutToSelected={applyLayoutToSelected}
+                          onUpdateClip={(updates, options) => updateClip(activeClip.id, updates, options)}
+                          onAnalysisComplete={invalidate}
+                        />
+                        <BrandTemplateApplyPanel
+                          projectId={project.id}
+                          activeClipId={activeClip.id}
+                          selectedClipIds={selectedClipIds}
+                          onApplied={invalidate}
+                        />
+                      </div>
+                    </details>
                   </div>
                 </TabsContent>
 
-                {/* Export tab */}
-                <TabsContent value="export" className="m-0 p-5 space-y-4">
+                {/* Advanced tab */}
+                <TabsContent value="advanced" className="m-0 p-5 space-y-4">
+                  <div className="grid gap-3 md:grid-cols-3">
+                    <InsightCard
+                      title="Clip quality"
+                      value={
+                        activeQualitySignals
+                          ? `${activeQualitySignals.overallScore}/100`
+                          : activeClip.viralityScore != null
+                            ? `${activeClip.viralityScore}/100`
+                            : "Pending"
+                      }
+                      description={
+                        activeQualitySignals
+                          ? `${activeQualitySignals.contentDensity} pacing · ${activeQualitySignals.wordsPerMinute} WPM`
+                          : "Quality signals appear after clip analysis."
+                      }
+                      icon={<Waves className="h-4 w-4 text-cyan-300" />}
+                    />
+                    <InsightCard
+                      title="Cut risk"
+                      value={activeQualitySignals?.hardCutRisk ?? "Unknown"}
+                      description={
+                        activeQualitySignals
+                          ? `Scene alignment ${activeQualitySignals.sceneAlignment}/100 · cut cleanliness ${activeQualitySignals.cutCleanliness}/100`
+                          : "Boundary alignment is unavailable."
+                      }
+                      icon={<AlertTriangle className="h-4 w-4 text-amber-300" />}
+                    />
+                    <InsightCard
+                      title="9:16 reframe"
+                      value={activePortraitPlan ? activePortraitPlan.mode.replace("_", " ") : "Source-first"}
+                      description={
+                        activePortraitPlan?.reasoning ??
+                        "Reframe guidance appears when source geometry is available."
+                      }
+                      icon={<Crop className="h-4 w-4 text-primary" />}
+                    />
+                  </div>
+
+                  <div className="rounded-xl border border-border/50 bg-muted/25 p-4">
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/45">
+                      Quality breakdown
+                    </p>
+                    <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+                      {[
+                        ["Deterministic", activeMetadata.deterministicScore],
+                        ["LLM score", activeMetadata.llmScore],
+                        ["AI virality", activeClip.viralityScore],
+                        ["Hook", activeClip.viralityFactors?.hookStrength],
+                        ["Pacing", activeClip.viralityFactors?.pacing],
+                        ["Story arc", activeClip.viralityFactors?.storyArc],
+                        ["Transcript", activeClip.viralityFactors?.transcriptQuality],
+                        ["Shareability", activeClip.viralityFactors?.shareability],
+                        ["Scene align", activeQualitySignals?.sceneAlignment],
+                        ["Cut clean", activeQualitySignals?.cutCleanliness],
+                      ].map(([label, value]) => (
+                        <div key={label} className="rounded-lg border border-border/40 bg-background/35 p-2.5">
+                          <p className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground/40">
+                            {label}
+                          </p>
+                          <p className="mt-1 text-sm font-semibold text-foreground">
+                            {typeof value === "number" ? `${Math.round(value)}/100` : "N/A"}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="grid gap-3 lg:grid-cols-3">
+                    <QualityList
+                      title="Why this clip was selected"
+                      items={
+                        activeMetadata.viralReason
+                          ? [activeMetadata.viralReason]
+                          : activeClip.viralityFactors?.reasoning
+                            ? [activeClip.viralityFactors.reasoning]
+                            : null
+                      }
+                      fallback="Selected by transcript quality, hook density, pacing, and ranking."
+                    />
+                    <QualityList
+                      title="Candidate reasons"
+                      items={activeMetadata.candidateReasons}
+                      fallback="No candidate reasons were stored for this clip."
+                    />
+                    <QualityList
+                      title="Boundary reasons"
+                      items={activeMetadata.boundaryReasons}
+                      fallback="No boundary refinement notes were stored for this clip."
+                    />
+                  </div>
+
+                  <CreativeEnhancementsPanel
+                    clipId={activeClip.id}
+                    clipDurationMs={activeClip.endMs - activeClip.startMs}
+                    title={activeClip.title}
+                    summary={activeClip.summary}
+                    onChanged={invalidate}
+                  />
+
                   {/* Caption file downloads */}
                   {activeClip.captionSrt &&
                   !isSyntheticSrt(activeClip.captionSrt) &&
@@ -1267,11 +1596,11 @@ export default function RepurposeEditorPage() {
                 </TabsContent>
               </Tabs>
 
-              {/* AI summary — always visible below the tabs */}
+              {/* Compact summary below workspace */}
               {activeClip.summary && (
                 <div className="border-t border-border/40 px-5 py-4">
-                  <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/40 mb-1.5">
-                    AI Summary
+                  <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/40">
+                    Clip summary
                   </p>
                   <p className="text-sm leading-relaxed text-foreground/75">{activeClip.summary}</p>
                   {activeClip.callToAction && (
@@ -1291,7 +1620,120 @@ export default function RepurposeEditorPage() {
               </p>
             </div>
           )}
-        </div>
+        </main>
+
+        {/* ── Inspector ───────────────────────────────────────────────────── */}
+        <aside className="min-w-0 space-y-3 xl:sticky xl:top-24 xl:max-h-[calc(100vh-120px)] xl:self-start xl:overflow-y-auto xl:pr-1">
+          {activeClip ? (
+            <>
+              <details open className="rounded-2xl border border-border/60 bg-card/60 p-4">
+                <summary className="cursor-pointer list-none text-sm font-semibold text-foreground">
+                  Status
+                </summary>
+                <p className="mt-1 text-xs leading-5 text-muted-foreground/60">
+                  Key readiness signals for the selected clip.
+                </p>
+                <div className="mt-4 space-y-3">
+                  <InspectorRow label="Status" value={<ReviewStatusBadge status={activeReviewStatus} />} />
+                  <InspectorRow
+                    label="Duration"
+                    value={formatDuration(activeClip.endMs - activeClip.startMs)}
+                  />
+                  <InspectorRow
+                    label="Timing"
+                    value={<TranscriptPrecisionBadge precision={activeMetadata.boundaryPrecision} />}
+                  />
+                  <InspectorRow
+                    label="Clip type"
+                    value={<ClipTypeBadge type={activeMetadata.candidateType} />}
+                  />
+                  <InspectorRow
+                    label="Boundary"
+                    value={<BoundaryConfidenceBadge confidence={activeMetadata.boundaryConfidence} />}
+                  />
+                </div>
+              </details>
+
+              <SourceQualityNotice
+                sourceWidth={activeAsset?.sourceWidth}
+                sourceHeight={activeAsset?.sourceHeight}
+                targetWidth={1080}
+                targetHeight={1920}
+                compact
+              />
+
+              <details open className="rounded-2xl border border-border/60 bg-card/60 p-4">
+                <summary className="cursor-pointer list-none text-sm font-semibold text-foreground">
+                  Clip quality
+                </summary>
+                <p className="mt-2 text-2xl font-semibold text-foreground">
+                  {activeQualitySignals
+                    ? `${activeQualitySignals.overallScore}/100`
+                    : activeClip.viralityScore != null
+                      ? `${activeClip.viralityScore}/100`
+                      : "Pending"}
+                </p>
+                <p className="mt-1 line-clamp-4 text-xs leading-5 text-muted-foreground/65">
+                  {activeMetadata.viralReason ||
+                    activeClip.viralityFactors?.reasoning ||
+                    "Chosen for hook strength, pacing, and complete idea flow."}
+                </p>
+              </details>
+
+              <details className="rounded-2xl border border-border/60 bg-card/60 p-4">
+                <summary className="cursor-pointer list-none text-sm font-semibold text-foreground">
+                  Platform fit
+                </summary>
+                <div className="mt-3">
+                  <PlatformFitChips platformFit={activeMetadata.platformFit} />
+                </div>
+              </details>
+
+              <details open className="rounded-2xl border border-border/60 bg-card/60 p-4">
+                <summary className="cursor-pointer list-none text-sm font-semibold text-foreground">
+                  Export readiness
+                </summary>
+                <p className="mt-2 text-xs leading-5 text-muted-foreground/65">
+                  {activeReviewStatus === "export_ready"
+                    ? "This clip is ready. You can export it from the primary action or Export Center."
+                    : "Use the primary action when transcript, captions, and style look correct."}
+                </p>
+                <div className="mt-3">
+                  <Link
+                    href={`/repurpose/export?projectId=${project.id}`}
+                    className="rounded-lg border border-border/50 bg-background px-3 py-2 text-center text-xs font-semibold text-foreground hover:border-border"
+                  >
+                    Open Export Center
+                  </Link>
+                </div>
+              </details>
+
+              <details className="rounded-2xl border border-border/60 bg-card/60 p-4">
+                <summary className="cursor-pointer text-sm font-semibold text-foreground">
+                  Advanced insights
+                </summary>
+                <div className="mt-3 space-y-3">
+                  <QualityList
+                    title="Editing notes"
+                    items={activeMetadata.editingNotes}
+                    fallback="No editing notes were returned by the reranker."
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setWorkspaceTab("advanced")}
+                    className="w-full rounded-lg border border-border/50 bg-background px-3 py-2 text-xs font-semibold text-foreground hover:border-border"
+                  >
+                    Open Advanced tab
+                  </button>
+                </div>
+              </details>
+            </>
+          ) : (
+            <div className="rounded-2xl border border-dashed border-border/50 bg-muted/20 p-6 text-center text-sm text-muted-foreground">
+              Select a clip to see readiness details.
+            </div>
+          )}
+        </aside>
       </div>
 
       {/* Delete confirmation */}
@@ -1378,6 +1820,42 @@ function ClipCaptionDownloads({ srt, clipTitle }: { srt: string; clipTitle?: str
       <p className="mt-2.5 text-[10px] text-muted-foreground/40">
         Soft caption files — attach to any video player or upload to YouTube.
       </p>
+    </div>
+  );
+}
+
+function InsightCard({
+  title,
+  value,
+  description,
+  icon,
+}: {
+  title: string;
+  value: React.ReactNode;
+  description: string;
+  icon: React.ReactNode;
+}) {
+  return (
+    <div className="rounded-xl border border-border/50 bg-muted/25 p-3">
+      <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-muted-foreground/45">
+        {icon}
+        {title}
+      </div>
+      <p className="mt-2 text-lg font-semibold capitalize text-foreground">{value}</p>
+      <p className="mt-1 line-clamp-4 text-xs leading-5 text-muted-foreground/65">
+        {description}
+      </p>
+    </div>
+  );
+}
+
+function InspectorRow({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div className="flex items-center justify-between gap-3 rounded-xl border border-border/40 bg-muted/20 px-3 py-2">
+      <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/45">
+        {label}
+      </span>
+      <span className="min-w-0 text-right text-xs font-semibold text-foreground">{value}</span>
     </div>
   );
 }

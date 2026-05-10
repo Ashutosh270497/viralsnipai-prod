@@ -37,6 +37,8 @@ interface AIPromptGeneratorDialogProps {
   clipIntent?: string;
   transcriptPrecision?: string;
   videoDurationSec?: number | null;
+  triggerLabel?: string;
+  triggerClassName?: string;
 }
 
 const PLATFORMS = [
@@ -54,6 +56,8 @@ export function AIPromptGeneratorDialog({
   clipIntent,
   transcriptPrecision,
   videoDurationSec,
+  triggerLabel = "Suggest goals",
+  triggerClassName,
 }: AIPromptGeneratorDialogProps) {
   const { toast } = useToast();
   const [open, setOpen] = useState(false);
@@ -162,11 +166,14 @@ export function AIPromptGeneratorDialog({
         <Button
           variant="outline"
           size="sm"
-          className="h-9 rounded-xl border-violet-200 bg-gradient-to-r from-violet-50 to-purple-50 text-violet-700 hover:from-violet-100 hover:to-purple-100 dark:border-violet-800 dark:from-violet-950 dark:to-purple-950 dark:text-violet-300 shadow-sm"
+          className={
+            triggerClassName ??
+            "h-9 rounded-xl border-violet-200 bg-gradient-to-r from-violet-50 to-purple-50 text-violet-700 shadow-sm hover:from-violet-100 hover:to-purple-100 dark:border-violet-800 dark:from-violet-950 dark:to-purple-950 dark:text-violet-300"
+          }
           disabled={!hasTranscript}
         >
           <Sparkles className="mr-2 h-4 w-4" />
-          Auto-fill goals
+          {triggerLabel}
         </Button>
       </DialogTrigger>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
