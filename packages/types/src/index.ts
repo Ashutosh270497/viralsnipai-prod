@@ -1,31 +1,5 @@
 export type UploadStorageDriver = "local" | "s3";
 
-export interface HookGenerationPayload {
-  topic: string;
-  sourceUrl?: string;
-  audience?: string;
-  tone?: string;
-  projectId?: string;
-}
-
-export interface ScriptGenerationPayload {
-  hook: string;
-  audience?: string;
-  tone?: string;
-  durationSec?: number;
-  projectId: string;
-}
-
-export interface HighlightGenerationPayload {
-  assetId: string;
-  strategy?: string;
-  target?: number;
-}
-
-export interface CaptionGenerationPayload {
-  clipId: string;
-}
-
 export interface ExportPresetConfig {
   id: string;
   label: string;
