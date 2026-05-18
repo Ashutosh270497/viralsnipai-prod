@@ -1,4 +1,5 @@
 import { getCurrentUser } from "@/lib/auth";
+import { getSupportEmail, getSupportMailto } from "@/lib/support";
 
 export default async function SettingsPage() {
   const user = await getCurrentUser();
@@ -25,9 +26,23 @@ export default async function SettingsPage() {
             <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
               Email
             </p>
-            <p className="mt-1 text-sm">{user?.email ?? "Not set"}</p>
+            <p className="mt-1 break-words text-sm">{user?.email ?? "Not set"}</p>
           </div>
         </div>
+      </section>
+
+      <section className="rounded-xl border border-border bg-card p-5">
+        <h2 className="text-sm font-semibold">Help &amp; support</h2>
+        <p className="mt-2 text-sm text-muted-foreground">
+          Need help with uploads, clipping, exports, or billing? Contact support and include
+          your project name when possible.
+        </p>
+        <a
+          href={getSupportMailto("ViralSnipAI support")}
+          className="mt-4 inline-flex break-all text-sm font-semibold text-primary underline-offset-4 hover:underline"
+        >
+          {getSupportEmail()}
+        </a>
       </section>
 
       <section className="rounded-xl border border-border bg-card p-5">
@@ -41,4 +56,3 @@ export default async function SettingsPage() {
     </div>
   );
 }
-

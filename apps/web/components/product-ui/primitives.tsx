@@ -51,15 +51,15 @@ export function PageHeader({
             <Icon className="h-5 w-5" />
           </div>
         ) : null}
-        <div>
+        <div className="min-w-0">
           {eyebrow ? (
             <p className="mb-1 text-xs font-bold uppercase tracking-[0.2em] text-emerald-600 dark:text-emerald-300">
               {eyebrow}
             </p>
           ) : null}
-          <h1 className="text-3xl font-semibold tracking-tight text-foreground">{title}</h1>
+          <h1 className="break-words text-3xl font-semibold tracking-tight text-foreground">{title}</h1>
           {description ? (
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">{description}</p>
+            <p className="mt-2 max-w-2xl break-words text-sm leading-6 text-muted-foreground">{description}</p>
           ) : null}
         </div>
       </div>
@@ -99,8 +99,8 @@ export function EmptyState({
         <div className="flex h-16 w-16 items-center justify-center rounded-3xl bg-gradient-to-br from-emerald-500 to-cyan-500 text-white shadow-xl shadow-emerald-900/20">
           <Icon className="h-7 w-7" />
         </div>
-        <h2 className="mt-6 text-2xl font-semibold tracking-tight text-foreground">{title}</h2>
-        <p className="mt-3 text-sm leading-6 text-muted-foreground">{description}</p>
+        <h2 className="mt-6 break-words text-2xl font-semibold tracking-tight text-foreground">{title}</h2>
+        <p className="mt-3 break-words text-sm leading-6 text-muted-foreground">{description}</p>
         {(primary || secondary) && (
           <div className="mt-7 flex flex-wrap items-center justify-center gap-3">
             {primary?.href ? (

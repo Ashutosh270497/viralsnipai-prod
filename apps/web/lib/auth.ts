@@ -151,6 +151,7 @@ export const authOptions: NextAuthOptions = {
           user.id = dbUser.id;
           user.onboardingCompleted = dbUser.onboardingCompleted;
           user.youtubeChannelUrl = dbUser.youtubeChannelUrl;
+          user.sessionVersion = dbUser.sessionVersion;
 
           // Store OAuth account link
           await prisma.account.upsert({
@@ -201,17 +202,38 @@ export const authOptions: NextAuthOptions = {
         token.id = user.id;
         token.onboardingCompleted = user.onboardingCompleted ?? false;
         token.youtubeChannelUrl = user.youtubeChannelUrl ?? null;
+        token.sessionVersion = user.sessionVersion ?? 1;
+        token.error = undefined;
       }
 
-      if (trigger === "update") {
+      if (token.id) {
         const dbUser = await prisma.user.findUnique({
-          where: { id: token.id as string }
+          where: { id: token.id as string },
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            onboardingCompleted: true,
+            youtubeChannelUrl: true,
+            sessionVersion: true,
+          },
         });
         if (dbUser) {
+          if (
+            typeof token.sessionVersion === "number" &&
+            dbUser.sessionVersion !== token.sessionVersion
+          ) {
+            token.error = "SESSION_REVOKED";
+            return token;
+          }
+
           token.onboardingCompleted = dbUser.onboardingCompleted ?? false;
           token.youtubeChannelUrl = dbUser.youtubeChannelUrl ?? null;
+          token.sessionVersion = dbUser.sessionVersion;
           token.name = dbUser.name;
           token.email = dbUser.email;
+        } else {
+          token.error = "SESSION_REVOKED";
         }
       }
 
@@ -224,8 +246,12 @@ export const authOptions: NextAuthOptions = {
         session.user.id = token.id as string;
         session.user.onboardingCompleted = (token.onboardingCompleted as boolean) ?? false;
         session.user.youtubeChannelUrl = (token.youtubeChannelUrl as string | null) ?? null;
+        session.user.sessionVersion = (token.sessionVersion as number) ?? 1;
         session.user.name = token.name as string | null;
         session.user.email = token.email as string;
+        if (token.error === "SESSION_REVOKED") {
+          session.error = "SESSION_REVOKED";
+        }
       }
       return session;
     }
@@ -236,6 +262,9 @@ export const getCurrentSession = () => getServerSession(authOptions);
 
 export async function getCurrentUser() {
   const session = await getCurrentSession();
+  if (session?.error === "SESSION_REVOKED") {
+    return null;
+  }
   return session?.user ?? null;
 }
 

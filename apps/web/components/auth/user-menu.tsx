@@ -2,7 +2,7 @@
 
 import { User } from "next-auth";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { SignOutButton } from "@/components/auth/sign-out-button";
+import { SignOutAllDevicesButton, SignOutButton } from "@/components/auth/sign-out-button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 
@@ -34,6 +34,9 @@ export function UserMenu({ user }: { user: User }) {
         <DropdownMenuSeparator />
         <DropdownMenuItem asChild>
           <SignOutButton />
+        </DropdownMenuItem>
+        <DropdownMenuItem asChild>
+          <SignOutAllDevicesButton />
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

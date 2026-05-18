@@ -6,6 +6,7 @@ import { useToast } from "@/components/ui/use-toast";
 import { useProgress } from "@/hooks/use-progress";
 import type { AutoHighlightsAnalytics } from "@/components/repurpose/quality-indicators";
 import type { ClipIntent, QualityMode } from "@/lib/ai/model-routing-options";
+import { apiFetch, getFriendlyHttpErrorMessage } from "@/lib/http/client";
 
 type UseRepurposeIngestArgs = {
   projectId: string;
@@ -76,7 +77,7 @@ export function useRepurposeIngest({
     highlightProgress.setPhase("Analyzing transcript", 40);
 
     try {
-      const response = await fetch("/api/repurpose/auto-highlights", {
+      const payload = await apiFetch<any>("/api/repurpose/auto-highlights", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -96,12 +97,8 @@ export function useRepurposeIngest({
           clipLengthPreset,
         }),
         cache: "no-store",
-        next: { revalidate: 0 },
+        operation: "generation",
       });
-      if (!response.ok) {
-        throw new Error("Failed to generate highlights");
-      }
-      const payload = await response.json().catch(() => null);
       setLastHighlightAnalytics(payload?.data?.analytics ?? null);
       toast({ title: "Highlights detected", description: "Review clips in Editor." });
       await onProjectRefresh();
@@ -109,7 +106,11 @@ export function useRepurposeIngest({
       return true;
     } catch (error) {
       console.error(error);
-      toast({ variant: "destructive", title: "Could not detect highlights" });
+      toast({
+        variant: "destructive",
+        title: "Could not detect highlights",
+        description: getFriendlyHttpErrorMessage(error),
+      });
       highlightProgress.reset();
       return false;
     }
@@ -154,19 +155,13 @@ export function useRepurposeIngest({
     youtubeProgress.setPhase("Queuing", 8);
 
     try {
-      const response = await fetch("/api/repurpose/ingest", {
+      const data = await apiFetch<any>("/api/repurpose/ingest", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ projectId, sourceUrl }),
         cache: "no-store",
-        next: { revalidate: 0 },
+        operation: "generation",
       });
-
-      if (!response.ok) {
-        throw new Error("Failed to queue ingestion job");
-      }
-
-      const data = await response.json();
       const jobId = data.data.jobId;
 
       // Job accepted by backend.
@@ -183,15 +178,11 @@ export function useRepurposeIngest({
 
       pollTimerRef.current = setInterval(async () => {
         try {
-          const statusResponse = await fetch(`/api/repurpose/ingest/${jobId}`, {
+          const statusData = await apiFetch<any>(`/api/repurpose/ingest/${jobId}`, {
             cache: "no-store",
-            next: { revalidate: 0 },
+            operation: "normal",
+            retries: 1,
           });
-          if (!statusResponse.ok) {
-            throw new Error("Failed to check job status");
-          }
-
-          const statusData = await statusResponse.json();
           const payload = statusData.data ?? {};
           const status = String(payload.status || "").toLowerCase();
           const metadata = readJobMetadata(payload.metadata);
@@ -265,7 +256,7 @@ export function useRepurposeIngest({
       toast({
         variant: "destructive",
         title: "Unable to ingest URL",
-        description: "Check the link or try a different video.",
+        description: getFriendlyHttpErrorMessage(error) || "Check the link or try a different video.",
       });
       youtubeProgress.reset();
       clearPolling();

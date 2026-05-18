@@ -7,7 +7,9 @@ import { useSearchParams } from "next/navigation";
 import { Eye, EyeOff } from "lucide-react";
 
 import { Logo } from "@/components/marketing/logo";
+import { KeyboardSafeFormShell } from "@/components/ui/mobile-safe";
 import { useToast } from "@/components/ui/use-toast";
+import { getSupportEmail, getSupportMailto } from "@/lib/support";
 import { signupSchema } from "@/lib/validations";
 
 export default function SignUpPage() {
@@ -113,7 +115,7 @@ function SignUpPageInner() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-gray-50 px-4 py-12 dark:bg-black">
+    <KeyboardSafeFormShell>
       <div className="w-full max-w-md space-y-8">
         {/* Logo */}
         <div className="flex justify-center">
@@ -237,7 +239,7 @@ function SignUpPageInner() {
           <div className="text-sm">
             <span className="text-gray-600 dark:text-neutral-400">Already have an account? </span>
             <Link
-              href={`/signin${callbackUrl !== "/snipradar-onboarding" ? `?callbackUrl=${encodeURIComponent(callbackUrl)}` : ""}`}
+              href={`/signin${callbackUrl !== "/onboarding" ? `?callbackUrl=${encodeURIComponent(callbackUrl)}` : ""}`}
               className="font-semibold text-blue-600 underline hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
             >
               Sign in
@@ -257,23 +259,29 @@ function SignUpPageInner() {
               Privacy Policy
             </Link>
           </p>
+          <p>
+            Need help?{" "}
+            <a href={getSupportMailto("Signup help")} className="underline hover:text-gray-900 dark:hover:text-neutral-200">
+              {getSupportEmail()}
+            </a>
+          </p>
         </div>
       </div>
-    </div>
+    </KeyboardSafeFormShell>
   );
 }
 
 function SignupFallback() {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gray-50 px-4 py-12 dark:bg-black">
+    <KeyboardSafeFormShell>
       <div className="text-sm text-gray-600 dark:text-neutral-400">Loading signup...</div>
-    </div>
+    </KeyboardSafeFormShell>
   );
 }
 
 function sanitizeCallbackUrl(input: string | null) {
   if (!input || !input.startsWith("/")) {
-    return "/snipradar-onboarding";
+    return "/onboarding";
   }
   return input;
 }

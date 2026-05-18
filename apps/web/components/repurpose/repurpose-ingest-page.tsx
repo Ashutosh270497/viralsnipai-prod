@@ -45,6 +45,7 @@ import { useToast } from "@/components/ui/use-toast";
 import { useRepurposeIngest } from "@/components/repurpose/use-repurpose-ingest";
 import { CLIP_INTENT_OPTIONS, QUALITY_MODE_OPTIONS } from "@/lib/ai/model-routing-options";
 import { HIGHLIGHT_MODEL_OPTIONS } from "@/lib/constants/repurpose";
+import { apiFetch, getFriendlyHttpErrorMessage } from "@/lib/http/client";
 import { cn, formatDuration } from "@/lib/utils";
 
 type WizardStage = "source" | "goals" | "generate" | "review" | "export";
@@ -203,16 +204,12 @@ export function RepurposeIngestPage() {
     const formData = new FormData();
     formData.append("projectId", projectId);
     formData.append("file", file);
-    const res = await fetch("/api/upload", {
+    const data = await apiFetch<any>("/api/upload", {
       method: "POST",
       body: formData,
       cache: "no-store",
+      operation: "upload",
     });
-    if (!res.ok) {
-      const payload = await res.json().catch(() => null);
-      throw new Error(payload?.error?.message ?? payload?.message ?? "Upload failed");
-    }
-    const data = await res.json();
     toast({
       title: "Source ready",
       description: `${data.asset?.type ?? "Asset"} uploaded and ready for clipping.`,
@@ -221,13 +218,18 @@ export function RepurposeIngestPage() {
   }
 
   async function updateReviewStatus(clipId: string, reviewStatus: string) {
-    const response = await fetch(`/api/clips/${clipId}/review-status`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ reviewStatus }),
-    });
-    if (!response.ok) {
-      toast({ variant: "destructive", title: "Could not update clip status" });
+    try {
+      await apiFetch(`/api/clips/${clipId}/review-status`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reviewStatus }),
+      });
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        title: "Could not update clip status",
+        description: getFriendlyHttpErrorMessage(error),
+      });
       return;
     }
     await invalidate();

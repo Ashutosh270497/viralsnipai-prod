@@ -3,6 +3,7 @@ import { ReactNode } from "react";
 
 import { MarketingHeader } from "@/components/marketing/marketing-header";
 import { CookieBanner } from "@/components/marketing/cookie-banner";
+import { getSupportEmail, getSupportMailto } from "@/lib/support";
 
 export default function MarketingLayout({ children }: { children: ReactNode }) {
   return (
@@ -32,7 +33,7 @@ function Footer() {
         </div>
         <FooterColumn title="Product" links={[{ href: "/#features", label: "Features" }, { href: "/#how-it-works", label: "How it works" }, { href: "/pricing", label: "Pricing" }]} />
         <FooterColumn title="Workflow" links={[{ href: "/#pricing", label: "Free, Plus, Pro" }, { href: "/#faq", label: "FAQ" }, { href: "/signup", label: "Start free" }]} />
-        <FooterColumn title="Legal" links={[{ href: "/privacy", label: "Privacy" }, { href: "/terms", label: "Terms" }]} />
+        <FooterColumn title="Legal" links={[{ href: "/privacy", label: "Privacy" }, { href: "/terms", label: "Terms" }, { href: getSupportMailto("ViralSnipAI support"), label: getSupportEmail(), external: true }]} />
       </div>
       <div className="mx-auto flex w-full max-w-7xl flex-col items-start justify-between gap-4 pt-10 text-slate-500 sm:flex-row sm:items-center">
         <p>ViralSnipAI © {new Date().getFullYear()} - Long videos into viral-ready clips with AI precision.</p>
@@ -52,16 +53,22 @@ function Footer() {
   );
 }
 
-function FooterColumn({ title, links }: { title: string; links: Array<{ href: string; label: string }> }) {
+function FooterColumn({ title, links }: { title: string; links: Array<{ href: string; label: string; external?: boolean }> }) {
   return (
     <div>
       <h3 className="mb-3 text-sm font-semibold text-white">{title}</h3>
       <ul className="space-y-2 text-xs">
         {links.map((link) => (
           <li key={link.label}>
-            <Link href={link.href} className="transition hover:text-white">
-              {link.label}
-            </Link>
+            {link.external ? (
+              <a href={link.href} className="break-all transition hover:text-white">
+                {link.label}
+              </a>
+            ) : (
+              <Link href={link.href} className="transition hover:text-white">
+                {link.label}
+              </Link>
+            )}
           </li>
         ))}
       </ul>

@@ -6,7 +6,9 @@ declare module "next-auth" {
       id: string;
       onboardingCompleted?: boolean;
       youtubeChannelUrl?: string | null;
+      sessionVersion?: number;
     } & DefaultSession["user"];
+    error?: "SESSION_REVOKED";
   }
 
   interface User {
@@ -16,6 +18,7 @@ declare module "next-auth" {
     image?: string | null;
     onboardingCompleted?: boolean;
     youtubeChannelUrl?: string | null;
+    sessionVersion?: number;
   }
 }
 
@@ -24,5 +27,7 @@ declare module "next-auth/jwt" {
     id: string;
     onboardingCompleted?: boolean;
     youtubeChannelUrl?: string | null;
+    sessionVersion?: number;
+    error?: "SESSION_REVOKED";
   }
 }

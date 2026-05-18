@@ -181,9 +181,12 @@ export const AUTH_CONFIG = {
 
 export const EMAIL_CONFIG = {
   /** Default sender email address */
-  FROM_ADDRESS: process.env.EMAIL_FROM || 'ViralSnipAI <no-reply@clippers.dev>',
+  FROM_ADDRESS: process.env.EMAIL_FROM || 'ViralSnipAI <no-reply@viralsnipai.com>',
   /** Reply-to address */
-  REPLY_TO: process.env.EMAIL_REPLY_TO || 'support@clippers.dev',
+  REPLY_TO:
+    process.env.EMAIL_REPLY_TO ||
+    process.env.NEXT_PUBLIC_SUPPORT_EMAIL ||
+    'support@viralsnipai.com',
   /** Email subject for magic links */
   MAGIC_LINK_SUBJECT: 'Sign in to ViralSnipAI'
 } as const;
@@ -341,7 +344,7 @@ export const APP_CONFIG = {
   /** Application URL */
   URL: process.env.NEXTAUTH_URL || 'http://localhost:3000',
   /** Support email */
-  SUPPORT_EMAIL: 'support@clippers.dev',
+  SUPPORT_EMAIL: process.env.NEXT_PUBLIC_SUPPORT_EMAIL || 'support@viralsnipai.com',
   /** Default timezone */
   TIMEZONE: 'UTC',
   /** Items per page for pagination */

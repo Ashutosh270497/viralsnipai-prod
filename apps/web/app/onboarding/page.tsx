@@ -59,7 +59,7 @@ export default function OnboardingPage() {
 
   useEffect(() => {
     if (status === "authenticated" && session?.user?.onboardingCompleted) {
-      router.push("/dashboard");
+      router.push("/repurpose");
     }
   }, [status, session, router]);
 
@@ -106,7 +106,7 @@ export default function OnboardingPage() {
         description: "Your workspace is ready. Let's create your first clip.",
       });
       await update();
-      window.location.href = "/dashboard";
+      window.location.href = "/repurpose";
     } catch (error) {
       console.error("Onboarding error:", error);
       toast({
@@ -127,7 +127,7 @@ export default function OnboardingPage() {
   }
 
   if (status === "unauthenticated") {
-    router.push("/signin");
+    router.push("/signin?reason=session_expired&callbackUrl=/onboarding");
     return null;
   }
 

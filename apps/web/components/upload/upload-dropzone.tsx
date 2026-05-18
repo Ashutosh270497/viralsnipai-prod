@@ -46,9 +46,9 @@ const DEFAULT_ACCEPT: Record<string, string[]> = {
   "audio/*": [],
 };
 
-const DEFAULT_MAX_SIZE_MB = 4096;
+const DEFAULT_MAX_SIZE_MB = 500;
 const DEFAULT_FORMATS = ["MP4", "MOV", "WebM", "MP3", "WAV", "M4A"];
-const DEFAULT_RECOMMENDED_MINUTES = 180;
+const DEFAULT_RECOMMENDED_MINUTES = 60;
 
 export function UploadDropzone({
   projectId,
@@ -114,7 +114,10 @@ export function UploadDropzone({
         console.error(err);
         setState({
           kind: "error",
-          message: "Upload failed. Check your connection and try again.",
+          message:
+            err instanceof Error
+              ? err.message
+              : "Upload failed. Check your connection and try again.",
           file,
         });
       }

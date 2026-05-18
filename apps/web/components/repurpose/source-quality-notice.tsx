@@ -1,6 +1,7 @@
 "use client";
 
 import { AlertTriangle, Crop } from "lucide-react";
+import Link from "next/link";
 
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
@@ -96,6 +97,8 @@ export function SourceQualityNotice({
   targetHeight = 1920,
   compact = false,
   className,
+  replaceSourceHref,
+  detailsCollapsed = false,
 }: {
   sourceWidth?: number | null;
   sourceHeight?: number | null;
@@ -104,6 +107,8 @@ export function SourceQualityNotice({
   targetHeight?: number;
   compact?: boolean;
   className?: string;
+  replaceSourceHref?: string;
+  detailsCollapsed?: boolean;
 }) {
   const assessment = assessSourceQualityForUi({
     sourceWidth,
@@ -137,24 +142,22 @@ export function SourceQualityNotice({
         className,
       )}
     >
-      <div className="flex flex-wrap items-center gap-2">
-        <Badge variant="secondary" className="border-amber-500/30 bg-amber-500/15 text-amber-200">
-          Source quality: {assessment.level === "low" ? "Low" : "Medium"}
-        </Badge>
-        <Badge variant="secondary" className="border-cyan-500/25 bg-cyan-500/10 text-cyan-200">
-          Render mode: {assessment.renderMode === "blur_background" ? "Blur background" : "Crop"}
-        </Badge>
-        {assessment.upscaleFactor ? (
-          <Badge variant="secondary" className="border-border/50 bg-background/50 text-muted-foreground">
-            Upscale {assessment.upscaleFactor}x
-          </Badge>
-        ) : null}
-      </div>
-      <div className="mt-2 flex items-start gap-2 text-xs leading-5 text-amber-100/80">
+      <div className="flex items-start gap-2 text-xs leading-5 text-amber-100/80">
         <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-300" />
-        <div>
-          {assessment.message ? <p>{assessment.message}</p> : null}
-          {assessment.renderMessage ? (
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold text-amber-100">
+            {assessment.level === "low" ? "Source quality is low" : "Source will be enlarged"}
+          </p>
+          {assessment.message ? (
+            <p className="mt-1 break-words">
+              {detailsCollapsed && assessment.level === "low" && assessment.resolutionLabel
+                ? `This source is ${assessment.resolutionLabel}, so Shorts/Reels exports may look soft.${assessment.renderMode === "blur_background" ? " Blur background mode is applied to preserve quality." : ""}`
+                : assessment.level === "low" && assessment.resolutionLabel
+                  ? `This video is ${assessment.resolutionLabel}. Shorts/Reels export may look soft.`
+                : assessment.message}
+            </p>
+          ) : null}
+          {!detailsCollapsed && assessment.renderMessage ? (
             <p className="mt-1 flex items-start gap-1.5 text-cyan-100/75">
               <Crop className="mt-0.5 h-3 w-3 shrink-0" />
               {assessment.renderMessage}
@@ -162,6 +165,65 @@ export function SourceQualityNotice({
           ) : null}
         </div>
       </div>
+      <div className="mt-3 flex flex-wrap gap-2">
+        {replaceSourceHref ? (
+          <Link
+            href={replaceSourceHref}
+            className="rounded-lg border border-amber-400/30 bg-amber-400/10 px-3 py-1.5 text-xs font-semibold text-amber-100 transition hover:bg-amber-400/15"
+          >
+            Replace source
+          </Link>
+        ) : null}
+        {assessment.renderMode === "blur_background" ? (
+          <span className="rounded-lg border border-cyan-500/25 bg-cyan-500/10 px-3 py-1.5 text-xs font-semibold text-cyan-100">
+            Keep blur background mode
+          </span>
+        ) : null}
+      </div>
+      {detailsCollapsed ? (
+        <details className="mt-3">
+          <summary className="cursor-pointer text-xs font-semibold text-amber-100/85">
+            View details
+          </summary>
+          <SourceQualityChips
+            level={assessment.level}
+            renderMode={assessment.renderMode}
+            upscaleFactor={assessment.upscaleFactor}
+          />
+        </details>
+      ) : (
+        <SourceQualityChips
+          level={assessment.level}
+          renderMode={assessment.renderMode}
+          upscaleFactor={assessment.upscaleFactor}
+        />
+      )}
+    </div>
+  );
+}
+
+function SourceQualityChips({
+  level,
+  renderMode,
+  upscaleFactor,
+}: {
+  level: "low" | "medium" | "good";
+  renderMode: RecommendedRenderMode;
+  upscaleFactor: number | null;
+}) {
+  return (
+    <div className="mt-3 flex flex-wrap items-center gap-2">
+      <Badge variant="secondary" className="border-amber-500/30 bg-amber-500/15 text-amber-200">
+        Source quality: {level === "low" ? "Low" : "Medium"}
+      </Badge>
+      <Badge variant="secondary" className="border-cyan-500/25 bg-cyan-500/10 text-cyan-200">
+        Render mode: {renderMode === "blur_background" ? "Blur background" : renderMode === "original_aspect" ? "Original aspect" : "Crop"}
+      </Badge>
+      {upscaleFactor ? (
+        <Badge variant="secondary" className="border-border/50 bg-background/50 text-muted-foreground">
+          Upscale {upscaleFactor}x
+        </Badge>
+      ) : null}
     </div>
   );
 }

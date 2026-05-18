@@ -24,7 +24,7 @@ export default async function WorkspaceLayout({ children }: { children: ReactNod
   const user = await getCurrentUser();
 
   if (!user) {
-    redirect("/");
+    redirect("/signin?reason=session_expired");
   }
 
   const ecosystem = parseEcosystem(cookies().get(ECOSYSTEM_COOKIE_KEY)?.value);

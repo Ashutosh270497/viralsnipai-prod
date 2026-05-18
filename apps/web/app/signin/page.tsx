@@ -7,7 +7,9 @@ import Link from "next/link";
 import { Eye, EyeOff, Loader2, AlertCircle } from "lucide-react";
 
 import { Logo } from "@/components/marketing/logo";
+import { KeyboardSafeFormShell } from "@/components/ui/mobile-safe";
 import { useToast } from "@/components/ui/use-toast";
+import { getSupportEmail, getSupportMailto } from "@/lib/support";
 
 const ERROR_MESSAGES: Record<string, string> = {
   OAuthSignin: "Could not start sign in. Please try again.",
@@ -22,9 +24,9 @@ const ERROR_MESSAGES: Record<string, string> = {
 export default function SignInPage() {
   return (
     <Suspense fallback={
-      <div className="flex min-h-screen items-center justify-center bg-gray-50 dark:bg-black">
+      <KeyboardSafeFormShell>
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
-      </div>
+      </KeyboardSafeFormShell>
     }>
       <SignInContent />
     </Suspense>
@@ -45,6 +47,7 @@ function SignInContent() {
   const authError = errorType
     ? ERROR_MESSAGES[errorType] ?? ERROR_MESSAGES.default
     : null;
+  const sessionExpired = searchParams.get("reason") === "session_expired";
 
   const demoAvailable = process.env.NEXT_PUBLIC_ENABLE_DEMO_LOGIN === "true";
   const devBypass = demoAvailable && searchParams.get("dev-bypass") === "true";
@@ -74,24 +77,24 @@ function SignInContent() {
   // Show loading while checking auth status
   if (status === "loading") {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-gray-50 dark:bg-black">
+      <KeyboardSafeFormShell>
         <div className="text-center">
           <Loader2 className="mx-auto mb-4 h-8 w-8 animate-spin text-primary" />
           <p className="text-sm text-muted-foreground">Loading...</p>
         </div>
-      </div>
+      </KeyboardSafeFormShell>
     );
   }
 
   // Don't render form if authenticated (will redirect)
   if (status === "authenticated") {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-gray-50 dark:bg-black">
+      <KeyboardSafeFormShell>
         <div className="text-center">
           <Loader2 className="mx-auto mb-4 h-8 w-8 animate-spin text-primary" />
           <p className="text-sm text-muted-foreground">Redirecting to dashboard...</p>
         </div>
-      </div>
+      </KeyboardSafeFormShell>
     );
   }
 
@@ -144,7 +147,7 @@ function SignInContent() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-gray-50 px-4 py-12 dark:bg-black">
+    <KeyboardSafeFormShell>
       <div className="w-full max-w-md space-y-8">
         <div className="flex justify-center">
           <Link href="/" className="flex items-center gap-3">
@@ -156,10 +159,12 @@ function SignInContent() {
         <div className="space-y-8 text-center">
           <h1 className="text-4xl font-bold text-gray-900 dark:text-white">Welcome back</h1>
 
-          {authError && (
+          {(authError || sessionExpired) && (
             <div className="flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 p-4 text-left dark:border-red-900 dark:bg-red-950">
               <AlertCircle className="mt-0.5 h-5 w-5 flex-shrink-0 text-red-600 dark:text-red-400" />
-              <p className="text-sm text-red-700 dark:text-red-300">{authError}</p>
+              <p className="text-sm text-red-700 dark:text-red-300">
+                {sessionExpired ? "Your session expired. Please sign in again." : authError}
+              </p>
             </div>
           )}
 
@@ -232,9 +237,15 @@ function SignInContent() {
 
         <div className="space-y-4 text-center text-sm text-gray-600 dark:text-neutral-400">
           <p>By continuing, I agree to the <Link href="/terms" className="underline hover:text-gray-900 dark:hover:text-neutral-200">Terms of Service</Link> and <Link href="/privacy" className="underline hover:text-gray-900 dark:hover:text-neutral-200">Privacy Policy</Link></p>
+          <p>
+            Need help?{" "}
+            <a href={getSupportMailto("Sign in help")} className="underline hover:text-gray-900 dark:hover:text-neutral-200">
+              {getSupportEmail()}
+            </a>
+          </p>
         </div>
       </div>
-    </div>
+    </KeyboardSafeFormShell>
   );
 }
 

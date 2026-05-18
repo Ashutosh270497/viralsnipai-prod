@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Plus, Trash2, Type } from "lucide-react";
+import { Check, Plus, Trash2, Type } from "lucide-react";
 
 import { CAPTION_STYLES } from "@/lib/constants/caption-styles";
 import { applyCaptionPreset, PROFESSIONAL_CAPTION_PRESETS } from "@/lib/repurpose/caption-studio";
@@ -21,9 +21,13 @@ interface CaptionOverlayStudioProps {
   previewPath?: string | null;
   captionEntries?: CaptionEntry[];
   selectedClipCount?: number;
-  onApplyToSelected?: (style: ClipCaptionStyleConfig) => void;
+  totalClipCount?: number;
+  onApplyToSelected?: (style: ClipCaptionStyleConfig) => void | Promise<void>;
+  onApplyToAll?: (style: ClipCaptionStyleConfig) => void | Promise<void>;
   presetFirst?: boolean;
 }
+
+type ApplyScope = "clip" | "selected" | "all";
 
 const POSITION_OPTIONS = [
   { value: "top", label: "Top" },
@@ -58,6 +62,28 @@ const SPEED_OPTIONS = [
   { value: "fast", label: "Fast" },
 ] as const;
 
+const STYLE_PRESET_KEYS: Record<string, keyof typeof PROFESSIONAL_CAPTION_PRESETS> = {
+  modern: "minimal_clean",
+  viral: "hormozi_bold",
+  minimal: "podcast_subtitle",
+  gaming: "gaming_reaction",
+  business: "news_explainer",
+  karaoke: "karaoke_highlight",
+  creator_pop: "creator_pop",
+  none: "no_captions",
+};
+
+const STYLE_BENEFITS: Record<string, string> = {
+  modern: "Clean captions for professional clips",
+  viral: "High-contrast captions for strong hooks",
+  minimal: "Subtle captions for interviews and podcasts",
+  gaming: "Energetic captions for reactions and gameplay",
+  business: "Polished captions for explainers and updates",
+  karaoke: "Word-by-word emphasis for retention",
+  creator_pop: "Bright captions for creator-led clips",
+  none: "Keep downloadable SRT/VTT only",
+};
+
 export function CaptionOverlayStudio({
   value,
   onChange,
@@ -65,11 +91,14 @@ export function CaptionOverlayStudio({
   previewPath,
   captionEntries = [],
   selectedClipCount = 0,
+  totalClipCount = 0,
   onApplyToSelected,
+  onApplyToAll,
   presetFirst = false,
 }: CaptionOverlayStudioProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [currentMs, setCurrentMs] = useState(0);
+  const [applyScope, setApplyScope] = useState<ApplyScope>("clip");
   const safeValue = useMemo(() => normalizeClipCaptionStyle(value), [value]);
   const selectedStyle = CAPTION_STYLES.find((style) => style.id === safeValue.presetId) ?? CAPTION_STYLES[0];
   const activeHook = useMemo(
@@ -117,90 +146,170 @@ export function CaptionOverlayStudio({
     });
   };
 
+  const applyPreset = (styleId: string) => {
+    const presetKey = STYLE_PRESET_KEYS[styleId];
+    if (presetKey) {
+      onChange(applyCaptionPreset(presetKey, safeValue));
+      return;
+    }
+    const style = CAPTION_STYLES.find((item) => item.id === styleId);
+    onChange({
+      ...safeValue,
+      presetId: styleId as ClipCaptionStyleConfig["presetId"],
+      primaryColor: style?.colors.power === "#FFFFFF" ? safeValue.primaryColor : "#FFFFFF",
+      emphasisColor: style?.colors.emotion ?? safeValue.emphasisColor,
+    });
+  };
+
+  const handleApplyScope = async () => {
+    if (applyScope === "selected") {
+      await onApplyToSelected?.(safeValue);
+      return;
+    }
+    if (applyScope === "all") {
+      const confirmed = window.confirm(
+        "This will update caption styling for all generated clips in this project.",
+      );
+      if (!confirmed) return;
+      await onApplyToAll?.(safeValue);
+    }
+  };
+
+  const captionsEnabled = safeValue.presetId !== "none";
+
   return (
-    <div className="space-y-4">
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
-        <section className="rounded-xl border border-border/40 bg-muted/30 p-4">
-          <div className="mb-3 flex items-center gap-2">
-            <Type className="h-4 w-4 text-violet-400" />
+    <div className="space-y-4 overflow-hidden">
+      <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(320px,400px)]">
+        <section className="min-w-0 rounded-2xl border border-border/45 bg-muted/20 p-4 sm:p-5">
+          <div className="mb-4 flex items-center gap-2">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-violet-500/25 bg-violet-500/10">
+              <Type className="h-4 w-4 text-violet-300" />
+            </span>
             <div>
-              <p className="text-sm font-semibold text-foreground">Caption theme</p>
-              <p className="text-xs text-muted-foreground/55">
-                Style burned captions for exports and live preview.
+              <p className="text-base font-semibold text-foreground">Choose a caption style</p>
+              <p className="text-sm text-muted-foreground">
+                Pick a preset. Advanced styling stays hidden until you need it.
               </p>
             </div>
           </div>
 
-          <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+          <div className="grid gap-3 sm:grid-cols-2" role="listbox" aria-label="Caption style presets">
             {CAPTION_STYLES.map((style) => (
               <button
                 key={style.id}
                 type="button"
-                onClick={() =>
-                  onChange({
-                    ...safeValue,
-                    presetId: style.id,
-                    primaryColor: style.colors.power === "#FFFFFF" ? safeValue.primaryColor : "#FFFFFF",
-                    emphasisColor: style.colors.emotion,
-                  })
-                }
+                role="option"
+                aria-selected={safeValue.presetId === style.id}
+                onClick={() => applyPreset(style.id)}
                 className={cn(
-                  "rounded-lg border px-3 py-2 text-left transition-colors",
+                  "group rounded-2xl border p-3 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/50",
                   safeValue.presetId === style.id
-                    ? "border-violet-500/40 bg-violet-500/10"
-                    : "border-border/40 bg-muted/20 hover:bg-muted/40"
+                    ? "border-violet-500/65 bg-violet-500/[0.13] shadow-sm shadow-violet-500/10"
+                    : "border-border/45 bg-background/45 hover:border-border hover:bg-muted/25"
                 )}
               >
-                <p className="text-sm font-medium text-foreground">{style.name}</p>
-                <p className="mt-1 text-xs text-muted-foreground/55">{style.description}</p>
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="break-words text-sm font-semibold text-foreground">{style.name}</p>
+                    <p className="mt-1 line-clamp-2 break-words text-xs leading-5 text-muted-foreground">
+                      {STYLE_BENEFITS[style.id] ?? style.description}
+                    </p>
+                  </div>
+                  {safeValue.presetId === style.id ? (
+                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-violet-500 text-white">
+                      <Check className="h-3.5 w-3.5" />
+                    </span>
+                  ) : null}
+                </div>
+                <div className="mt-3 rounded-xl border border-border/35 bg-black/30 px-3 py-2">
+                  <span
+                    className="block text-center text-[11px] font-black leading-4"
+                    style={{
+                      color: style.id === "none" ? "#9CA3AF" : "#FFFFFF",
+                      textShadow: style.id === "minimal" ? "none" : "0 2px 10px rgba(0,0,0,0.75)",
+                    }}
+                  >
+                    {style.id === "none" ? "No burned captions" : style.preview}
+                  </span>
+                  {style.id !== "none" ? (
+                    <span
+                      className="mx-auto mt-1 block h-1.5 w-12 rounded-full"
+                      style={{ backgroundColor: style.colors.emotion }}
+                    />
+                  ) : null}
+                </div>
+                {style.id === "modern" ? (
+                  <span className="mt-3 inline-flex rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-bold text-emerald-300">
+                    Recommended
+                  </span>
+                ) : null}
               </button>
             ))}
           </div>
 
-          <div className="mt-4 rounded-lg border border-border/40 bg-background/40 p-3">
-            <div className="mb-2 flex items-center justify-between gap-3">
-              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground/55">
-                Fast templates
-              </p>
-              <button
-                type="button"
-                onClick={() => onChange(applyCaptionPreset("minimal_clean", safeValue))}
-                className="rounded-lg border border-border/50 bg-muted/30 px-2.5 py-1 text-[11px] font-medium text-muted-foreground hover:text-foreground"
-              >
-                Reset style
-              </button>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {Object.keys(PROFESSIONAL_CAPTION_PRESETS).map((presetKey) => (
-                <button
-                  key={presetKey}
-                  type="button"
-                  onClick={() => onChange(applyCaptionPreset(presetKey, safeValue))}
-                  className="rounded-full border border-border/45 bg-muted/20 px-3 py-1.5 text-xs font-medium text-foreground/75 transition-colors hover:bg-muted/45"
+          <div className="mt-4 rounded-xl border border-border/45 bg-background/45 p-3">
+            <div className="flex flex-col gap-3">
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-foreground">Apply style to</p>
+                <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                  This clip uses the style after you save. Bulk apply is optional.
+                </p>
+              </div>
+              <div className="grid gap-2 sm:grid-cols-3">
+                <ScopeButton active={applyScope === "clip"} onClick={() => setApplyScope("clip")}>
+                  This clip
+                </ScopeButton>
+                <ScopeButton
+                  active={applyScope === "selected"}
+                  disabled={selectedClipCount === 0 || !onApplyToSelected}
+                  onClick={() => setApplyScope("selected")}
                 >
-                  {presetKey.replace(/_/g, " ")}
-                </button>
-              ))}
+                  Selected clips{selectedClipCount > 0 ? ` (${selectedClipCount})` : ""}
+                </ScopeButton>
+                <ScopeButton
+                  active={applyScope === "all"}
+                  disabled={!onApplyToAll || totalClipCount === 0}
+                  onClick={() => setApplyScope("all")}
+                >
+                  All generated{totalClipCount > 0 ? ` (${totalClipCount})` : ""}
+                </ScopeButton>
+              </div>
             </div>
-            {onApplyToSelected ? (
+            {applyScope === "all" ? (
+              <p className="mt-3 rounded-lg border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-xs leading-5 text-amber-300">
+                This will update caption styling for all generated clips in this project.
+              </p>
+            ) : null}
+            {applyScope !== "clip" ? (
               <button
                 type="button"
-                onClick={() => onApplyToSelected(safeValue)}
-                disabled={selectedClipCount === 0}
-                className="mt-3 rounded-lg border border-violet-500/30 bg-violet-500/10 px-3 py-2 text-xs font-semibold text-violet-300 transition-colors hover:bg-violet-500/15 disabled:opacity-40"
+                onClick={() => void handleApplyScope()}
+                disabled={applyScope === "selected" && selectedClipCount === 0}
+                className="mt-3 rounded-lg border border-violet-500/30 bg-violet-500/10 px-3 py-2 text-xs font-semibold text-violet-200 transition-colors hover:bg-violet-500/15 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                Apply to selected clips{selectedClipCount > 0 ? ` (${selectedClipCount})` : ""}
+                Apply style
               </button>
             ) : null}
           </div>
 
           <details
             open={!presetFirst}
-            className="mt-4 rounded-lg border border-border/40 bg-background/35 p-3"
+            className="mt-4 rounded-xl border border-border/40 bg-background/35 p-3"
           >
-            <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wider text-muted-foreground/60">
-              Customize style
+            <summary
+              className="cursor-pointer list-none text-sm font-semibold text-foreground"
+              aria-label="Toggle advanced style tools"
+            >
+              <span className="flex items-center justify-between gap-3">
+                <span>Advanced style tools</span>
+                <span className="rounded-full border border-border/50 bg-muted/30 px-2 py-0.5 text-[10px] font-bold text-muted-foreground">
+                  {safeValue.hookOverlays.length} hook{safeValue.hookOverlays.length === 1 ? "" : "s"}
+                </span>
+              </span>
             </summary>
+            <p className="mt-2 text-xs leading-5 text-muted-foreground">
+              Customize typography, animation, hook overlays, and safe-zone behavior.
+            </p>
 
           <div className="mt-4 grid gap-3 md:grid-cols-2">
             <Field label="Font family">
@@ -397,16 +506,195 @@ export function CaptionOverlayStudio({
               </p>
             ) : null}
           </div>
+
+          <div className="mt-4 rounded-lg border border-border/40 bg-muted/20 p-3">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-foreground">Hook overlays</p>
+                <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                  {safeValue.hookOverlays.length > 0
+                    ? `${safeValue.hookOverlays.length} hook overlay${safeValue.hookOverlays.length === 1 ? "" : "s"} added`
+                    : "Optional timed text callouts for intros, quotes, and CTAs."}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() =>
+                  onChange({
+                    ...safeValue,
+                    hookOverlays: [...safeValue.hookOverlays, createDefaultHookOverlay()],
+                  })
+                }
+                className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-violet-500/25 bg-violet-500/10 px-3 py-2 text-xs font-medium text-violet-300 transition-colors hover:bg-violet-500/15"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                Add hook
+              </button>
+            </div>
+
+            {safeValue.hookOverlays.length === 0 ? (
+              <div className="mt-3 rounded-lg border border-dashed border-border/40 px-4 py-6 text-sm text-muted-foreground/45">
+                No hook overlay yet. Add one for intro punch, CTA, or quote emphasis.
+              </div>
+            ) : (
+              <div className="mt-3 space-y-3">
+                {safeValue.hookOverlays.map((overlay, index) => (
+                  <div key={overlay.id} className="rounded-lg border border-border/40 bg-background/45 p-3">
+                    <div className="mb-3 flex items-center justify-between gap-2">
+                      <p className="text-sm font-medium text-foreground">Hook {index + 1}</p>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          onChange({
+                            ...safeValue,
+                            hookOverlays: safeValue.hookOverlays.filter((item) => item.id !== overlay.id),
+                          })
+                        }
+                        className="rounded-md border border-red-500/20 bg-red-500/10 p-2 text-red-300 transition-colors hover:bg-red-500/15"
+                        aria-label={`Delete overlay ${index + 1}`}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+
+                    <div className="grid gap-3 lg:grid-cols-[minmax(0,1.4fr)_repeat(2,minmax(0,0.6fr))]">
+                      <Field label="Text">
+                        <input
+                          value={overlay.text}
+                          onChange={(event) => updateOverlay(overlay.id, { text: event.target.value })}
+                          className="h-10 w-full rounded-lg border border-border/50 bg-background px-3 text-sm outline-none focus:border-primary/50"
+                          placeholder="What should appear on screen?"
+                        />
+                      </Field>
+                      <Field label="Start time">
+                        <input
+                          type="number"
+                          min={0}
+                          step={100}
+                          value={overlay.startMs}
+                          onChange={(event) =>
+                            updateOverlay(overlay.id, { startMs: Number(event.target.value) || 0 })
+                          }
+                          className="h-10 w-full rounded-lg border border-border/50 bg-background px-3 text-sm outline-none focus:border-primary/50"
+                        />
+                      </Field>
+                      <Field label="End time">
+                        <input
+                          type="number"
+                          min={overlay.startMs + 100}
+                          step={100}
+                          value={overlay.endMs}
+                          onChange={(event) =>
+                            updateOverlay(overlay.id, { endMs: Number(event.target.value) || overlay.endMs })
+                          }
+                          className="h-10 w-full rounded-lg border border-border/50 bg-background px-3 text-sm outline-none focus:border-primary/50"
+                        />
+                      </Field>
+                    </div>
+
+                    <div className="mt-3 grid gap-3 md:grid-cols-4">
+                      <Field label="Vertical">
+                        <div className="flex gap-2">
+                          {OVERLAY_POSITION_OPTIONS.map((option) => (
+                            <TogglePill
+                              key={option.value}
+                              active={overlay.position === option.value}
+                              onClick={() => updateOverlay(overlay.id, { position: option.value })}
+                              label={option.label}
+                            />
+                          ))}
+                        </div>
+                      </Field>
+                      <Field label="Align">
+                        <div className="flex gap-2">
+                          {ALIGN_OPTIONS.map((option) => (
+                            <TogglePill
+                              key={option.value}
+                              active={overlay.align === option.value}
+                              onClick={() => updateOverlay(overlay.id, { align: option.value })}
+                              label={option.label}
+                            />
+                          ))}
+                        </div>
+                      </Field>
+                      <Field label={`Size ${overlay.fontSize}px`}>
+                        <input
+                          type="range"
+                          min={24}
+                          max={140}
+                          step={2}
+                          value={overlay.fontSize}
+                          onChange={(event) =>
+                            updateOverlay(overlay.id, { fontSize: Number(event.target.value) })
+                          }
+                          className="w-full accent-violet-500"
+                        />
+                      </Field>
+                      <Field label={`Background ${Math.round(overlay.backgroundOpacity * 100)}%`}>
+                        <input
+                          type="range"
+                          min={0}
+                          max={100}
+                          step={5}
+                          value={Math.round(overlay.backgroundOpacity * 100)}
+                          onChange={(event) =>
+                            updateOverlay(overlay.id, {
+                              backgroundOpacity: Number(event.target.value) / 100,
+                            })
+                          }
+                          className="w-full accent-violet-500"
+                        />
+                      </Field>
+                    </div>
+
+                    <div className="mt-3 grid gap-3 md:grid-cols-4">
+                      <ColorField
+                        label="Text color"
+                        value={overlay.textColor}
+                        onChange={(next) => updateOverlay(overlay.id, { textColor: next })}
+                      />
+                      <ColorField
+                        label="BG color"
+                        value={overlay.backgroundColor}
+                        onChange={(next) => updateOverlay(overlay.id, { backgroundColor: next })}
+                      />
+                      <Field label="Font weight">
+                        <TogglePill
+                          active={overlay.bold}
+                          onClick={() => updateOverlay(overlay.id, { bold: !overlay.bold })}
+                          label={overlay.bold ? "Bold" : "Regular"}
+                        />
+                      </Field>
+                      <Field label="Style">
+                        <TogglePill
+                          active={overlay.italic}
+                          onClick={() => updateOverlay(overlay.id, { italic: !overlay.italic })}
+                          label={overlay.italic ? "Italic" : "Normal"}
+                        />
+                      </Field>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
           </details>
         </section>
 
-        <section className="rounded-xl border border-border/40 bg-muted/30 p-4">
-          <p className="text-sm font-semibold text-foreground">Live preview</p>
-          <p className="mt-1 text-xs text-muted-foreground/55">
-            Real clip preview with live caption and hook overlay styling.
-          </p>
+        <section className="min-w-0 self-start rounded-2xl border border-border/45 bg-muted/20 p-4 sm:p-5 xl:sticky xl:top-4">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-base font-semibold text-foreground">Live preview</p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Previewing: {selectedStyle.name}
+              </p>
+            </div>
+            <span className="rounded-full border border-border/50 bg-background/60 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+              {captionsEnabled ? "Captions on" : "Captions off"}
+            </span>
+          </div>
 
-          <div className="relative mt-4 overflow-hidden rounded-xl border border-border/40 bg-zinc-950 aspect-[9/16]">
+          <div className="relative mx-auto mt-4 aspect-[9/16] w-full max-w-[340px] overflow-hidden rounded-2xl border border-border/40 bg-zinc-950 shadow-xl shadow-black/20">
             {previewPath ? (
               <video
                 ref={videoRef}
@@ -457,182 +745,59 @@ export function CaptionOverlayStudio({
             <div className="absolute inset-x-0 bottom-0 h-28 bg-gradient-to-t from-black/40 to-transparent" />
           </div>
 
-          <div className="mt-3 rounded-lg border border-border/40 bg-muted/20 px-3 py-2 text-xs text-muted-foreground/60">
-            {selectedStyle.name} preset · {safeValue.animation.type} animation · {safeValue.hookOverlays.length} hook overlay
-            {safeValue.hookOverlays.length === 1 ? "" : "s"}
+          <div className="mt-3 grid gap-2 text-xs text-muted-foreground sm:grid-cols-2">
+            <PreviewMeta label="Previewing" value={selectedStyle.name} />
+            <PreviewMeta label="Captions" value={captionsEnabled ? "On" : "Off"} />
+            <PreviewMeta
+              label="Hook overlays"
+              value={`${safeValue.hookOverlays.length}`}
+            />
+            <PreviewMeta
+              label="Layout"
+              value={safeValue.safeZoneAware ? "Safe-zone fit" : "Current layout"}
+            />
           </div>
         </section>
       </div>
 
-      <section className="rounded-xl border border-border/40 bg-muted/30 p-4">
-        <div className="mb-3 flex items-center justify-between gap-3">
-          <div>
-            <p className="text-sm font-semibold text-foreground">Hook overlays</p>
-            <p className="text-xs text-muted-foreground/55">
-              Timed text callouts that appear on top of the clip during export.
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={() =>
-              onChange({
-                ...safeValue,
-                hookOverlays: [...safeValue.hookOverlays, createDefaultHookOverlay()],
-              })
-            }
-            className="inline-flex items-center gap-1.5 rounded-lg border border-violet-500/25 bg-violet-500/10 px-3 py-2 text-xs font-medium text-violet-300 transition-colors hover:bg-violet-500/15"
-          >
-            <Plus className="h-3.5 w-3.5" />
-            Add hook
-          </button>
-        </div>
+    </div>
+  );
+}
 
-        {safeValue.hookOverlays.length === 0 ? (
-          <div className="rounded-lg border border-dashed border-border/40 px-4 py-6 text-sm text-muted-foreground/45">
-            No hook overlay yet. Add one for intro punch, CTA, or quote emphasis.
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {safeValue.hookOverlays.map((overlay, index) => (
-              <div key={overlay.id} className="rounded-lg border border-border/40 bg-muted/20 p-3">
-                <div className="mb-3 flex items-center justify-between gap-2">
-                  <p className="text-sm font-medium text-foreground">Hook {index + 1}</p>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      onChange({
-                        ...safeValue,
-                        hookOverlays: safeValue.hookOverlays.filter((item) => item.id !== overlay.id),
-                      })
-                    }
-                    className="rounded-md border border-red-500/20 bg-red-500/10 p-2 text-red-300 transition-colors hover:bg-red-500/15"
-                    aria-label={`Delete overlay ${index + 1}`}
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
-                </div>
+function ScopeButton({
+  active,
+  disabled,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  disabled?: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={cn(
+        "inline-flex min-h-9 w-full items-center justify-center rounded-full border px-3 py-1.5 text-center text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/50",
+        active
+          ? "border-violet-500/45 bg-violet-500/15 text-violet-200"
+          : "border-border/50 bg-muted/20 text-muted-foreground hover:bg-muted/40",
+        disabled && "cursor-not-allowed opacity-45 hover:bg-muted/20",
+      )}
+    >
+      {children}
+    </button>
+  );
+}
 
-                <div className="grid gap-3 lg:grid-cols-[minmax(0,1.4fr)_repeat(2,minmax(0,0.6fr))]">
-                  <Field label="Text">
-                    <input
-                      value={overlay.text}
-                      onChange={(event) => updateOverlay(overlay.id, { text: event.target.value })}
-                      className="h-10 w-full rounded-lg border border-border/50 bg-background px-3 text-sm outline-none focus:border-primary/50"
-                      placeholder="What should appear on screen?"
-                    />
-                  </Field>
-                  <Field label="Start ms">
-                    <input
-                      type="number"
-                      min={0}
-                      step={100}
-                      value={overlay.startMs}
-                      onChange={(event) =>
-                        updateOverlay(overlay.id, { startMs: Number(event.target.value) || 0 })
-                      }
-                      className="h-10 w-full rounded-lg border border-border/50 bg-background px-3 text-sm outline-none focus:border-primary/50"
-                    />
-                  </Field>
-                  <Field label="End ms">
-                    <input
-                      type="number"
-                      min={overlay.startMs + 100}
-                      step={100}
-                      value={overlay.endMs}
-                      onChange={(event) =>
-                        updateOverlay(overlay.id, { endMs: Number(event.target.value) || overlay.endMs })
-                      }
-                      className="h-10 w-full rounded-lg border border-border/50 bg-background px-3 text-sm outline-none focus:border-primary/50"
-                    />
-                  </Field>
-                </div>
-
-                <div className="mt-3 grid gap-3 md:grid-cols-4">
-                  <Field label="Vertical">
-                    <div className="flex gap-2">
-                      {OVERLAY_POSITION_OPTIONS.map((option) => (
-                        <TogglePill
-                          key={option.value}
-                          active={overlay.position === option.value}
-                          onClick={() => updateOverlay(overlay.id, { position: option.value })}
-                          label={option.label}
-                        />
-                      ))}
-                    </div>
-                  </Field>
-                  <Field label="Align">
-                    <div className="flex gap-2">
-                      {ALIGN_OPTIONS.map((option) => (
-                        <TogglePill
-                          key={option.value}
-                          active={overlay.align === option.value}
-                          onClick={() => updateOverlay(overlay.id, { align: option.value })}
-                          label={option.label}
-                        />
-                      ))}
-                    </div>
-                  </Field>
-                  <Field label={`Size ${overlay.fontSize}px`}>
-                    <input
-                      type="range"
-                      min={24}
-                      max={140}
-                      step={2}
-                      value={overlay.fontSize}
-                      onChange={(event) =>
-                        updateOverlay(overlay.id, { fontSize: Number(event.target.value) })
-                      }
-                      className="w-full accent-violet-500"
-                    />
-                  </Field>
-                  <Field label={`Background ${Math.round(overlay.backgroundOpacity * 100)}%`}>
-                    <input
-                      type="range"
-                      min={0}
-                      max={100}
-                      step={5}
-                      value={Math.round(overlay.backgroundOpacity * 100)}
-                      onChange={(event) =>
-                        updateOverlay(overlay.id, {
-                          backgroundOpacity: Number(event.target.value) / 100,
-                        })
-                      }
-                      className="w-full accent-violet-500"
-                    />
-                  </Field>
-                </div>
-
-                <div className="mt-3 grid gap-3 md:grid-cols-4">
-                  <ColorField
-                    label="Text color"
-                    value={overlay.textColor}
-                    onChange={(next) => updateOverlay(overlay.id, { textColor: next })}
-                  />
-                  <ColorField
-                    label="BG color"
-                    value={overlay.backgroundColor}
-                    onChange={(next) => updateOverlay(overlay.id, { backgroundColor: next })}
-                  />
-                  <Field label="Font weight">
-                    <TogglePill
-                      active={overlay.bold}
-                      onClick={() => updateOverlay(overlay.id, { bold: !overlay.bold })}
-                      label={overlay.bold ? "Bold" : "Regular"}
-                    />
-                  </Field>
-                  <Field label="Style">
-                    <TogglePill
-                      active={overlay.italic}
-                      onClick={() => updateOverlay(overlay.id, { italic: !overlay.italic })}
-                      label={overlay.italic ? "Italic" : "Normal"}
-                    />
-                  </Field>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </section>
+function PreviewMeta({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg border border-border/40 bg-muted/20 px-3 py-2">
+      <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground/50">{label}</p>
+      <p className="mt-1 truncate text-xs font-semibold text-foreground">{value}</p>
     </div>
   );
 }

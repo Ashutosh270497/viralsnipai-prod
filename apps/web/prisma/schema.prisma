@@ -38,6 +38,7 @@ model User {
 
   // Authentication & Onboarding Fields
   password          String?    // Optional for OAuth users
+  sessionVersion    Int        @default(1)
   goalSelection     String?    // Legacy YouTube goal — 'start_channel', 'grow_channel', 'monetization', 'professional'
   nicheInterests    String[]   @default([]) // Array of selected niches
   resetToken        String?

@@ -60,7 +60,9 @@ interface TranscriptEditorProps {
   assetId?: string | null;
   assetTranscript?: string | null;
   selectedClipCount?: number;
+  totalClipCount?: number;
   onApplyCaptionStyleToSelected?: (style: ClipCaptionStyleConfig) => Promise<void> | void;
+  onApplyCaptionStyleToAll?: (style: ClipCaptionStyleConfig) => Promise<void> | void;
   onUpdateClip?: (
     updates: ClipUpdatePayload,
     options?: { refresh?: boolean; retryOnConflict?: boolean; forcePreviewInvalidation?: boolean },
@@ -69,6 +71,11 @@ interface TranscriptEditorProps {
   onGenerateCaptions?: () => void;
   isGenerating?: boolean;
   showSourceQualityNotice?: boolean;
+  clipSummary?: string | null;
+  callToAction?: string | null;
+  onDirtyChange?: (dirty: boolean) => void;
+  onContinueToStyle?: () => void;
+  onContinueToExport?: () => void;
 }
 
 type TimedWord = {
@@ -119,6 +126,53 @@ function combineEntries(entries: CaptionEntry[]): string {
     .filter((text) => text.length > 0 && !isPlaceholderCaptionText(text))
     .join(" ")
     .trim();
+}
+
+function distributeTranscriptTextAcrossEntries(text: string, entries: CaptionEntry[]): CaptionEntry[] {
+  const normalized = normalizeEntryText(text);
+  if (!normalized || entries.length === 0) {
+    return entries;
+  }
+
+  if (entries.length === 1) {
+    return [{ ...entries[0], text: normalized }];
+  }
+
+  const words = normalized.split(/\s+/).filter(Boolean);
+  if (words.length === 0) {
+    return entries;
+  }
+
+  if (words.length < entries.length) {
+    const startMs = Math.min(...entries.map((entry) => entry.startMs));
+    const endMs = Math.max(...entries.map((entry) => entry.endMs));
+    return [{ ...entries[0], index: 1, startMs, endMs, text: normalized }];
+  }
+
+  const originalCounts = entries.map((entry) => Math.max(1, tokenizeWords(entry.text).length));
+  const originalTotal = originalCounts.reduce((sum, count) => sum + count, 0);
+  let cursor = 0;
+
+  return entries.map((entry, index) => {
+    const remainingWords = words.length - cursor;
+    const remainingEntries = entries.length - index;
+    const count =
+      index === entries.length - 1
+        ? remainingWords
+        : Math.max(
+            1,
+            Math.min(
+              remainingWords - (remainingEntries - 1),
+              Math.round((originalCounts[index] / originalTotal) * words.length),
+            ),
+          );
+    const nextWords = words.slice(cursor, cursor + count);
+    cursor += count;
+    return {
+      ...entry,
+      text: normalizeEntryText(nextWords.join(" ")) || entry.text,
+    };
+  });
 }
 
 function usesRelativeCueTimeline(entries: CaptionEntry[], clipDurationMs: number): boolean {
@@ -478,13 +532,20 @@ export function TranscriptEditor({
   projectId,
   assetId,
   assetTranscript,
-  selectedClipCount,
+  selectedClipCount = 0,
+  totalClipCount = 0,
   onApplyCaptionStyleToSelected,
+  onApplyCaptionStyleToAll,
   onUpdateClip,
   onSave,
   onGenerateCaptions,
   isGenerating,
   showSourceQualityNotice = true,
+  clipSummary,
+  callToAction,
+  onDirtyChange,
+  onContinueToStyle,
+  onContinueToExport,
 }: TranscriptEditorProps) {
   const { toast } = useToast();
   const remotionPreviewRef = useRef<RemotionClipPreviewHandle>(null);
@@ -508,6 +569,11 @@ export function TranscriptEditor({
   const [operationLoading, setOperationLoading] = useState(false);
   const [fullTranscriptSearchQuery, setFullTranscriptSearchQuery] = useState("");
   const [captionTranslateLanguage, setCaptionTranslateLanguage] = useState("hi");
+  const [readableTranscript, setReadableTranscript] = useState("");
+  const [assistAction, setAssistAction] = useState<string | null>(null);
+  const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
+  const [saveFailed, setSaveFailed] = useState(false);
+  const [captionAdvancedTiming, setCaptionAdvancedTiming] = useState(false);
   const safeCaptionStyle = captionStyleDraft;
 
   useEffect(() => {
@@ -525,6 +591,9 @@ export function TranscriptEditor({
     setSearchQuery("");
     setSelectedWordRange(null);
     setFullTranscriptSearchQuery("");
+    setReadableTranscript(combineEntries(clippedEntries));
+    setLastSavedAt(null);
+    setSaveFailed(false);
     setUndoKey(0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [captionSrt, clipId, startMs, endMs]); // captionStyle intentionally excluded — only reset on clip change
@@ -533,9 +602,14 @@ export function TranscriptEditor({
     () => JSON.stringify(entries) !== JSON.stringify(initialEntries),
     [entries, initialEntries]
   );
+  const currentEntriesText = useMemo(() => combineEntries(entries), [entries]);
+  const initialTranscriptText = useMemo(() => combineEntries(initialEntries), [initialEntries]);
+  const hasReadableTranscriptChanges =
+    mode === "transcript" &&
+    normalizeEntryText(readableTranscript) !== normalizeEntryText(currentEntriesText);
   const hasStyleChanges =
     JSON.stringify(safeCaptionStyle) !== JSON.stringify(initialCaptionStyle);
-  const hasChanges = hasEntryChanges || hasStyleChanges;
+  const hasChanges = hasEntryChanges || hasStyleChanges || hasReadableTranscriptChanges;
   const wordTimeline = useMemo(() => buildWordTimeline(entries), [entries]);
   const parsedTranscript = useMemo(() => parseCanonicalTranscript(assetTranscript), [assetTranscript]);
   const transcriptPrecision = useMemo(
@@ -588,9 +662,25 @@ export function TranscriptEditor({
 
   const durationMs = Math.max(1, endMs - startMs);
 
+  useEffect(() => {
+    if (mode === "transcript" || mode === "captions" || mode === "style") {
+      onDirtyChange?.(hasChanges);
+    }
+  }, [hasChanges, mode, onDirtyChange]);
+
+  useEffect(() => {
+    return () => {
+      if (mode === "transcript" || mode === "captions" || mode === "style") {
+        onDirtyChange?.(false);
+      }
+    };
+  }, [mode, onDirtyChange]);
+
   function handleUndo() {
     setEntries(initialEntries);
     setCaptionStyleDraft(initialCaptionStyle);
+    setReadableTranscript(initialTranscriptText);
+    setSaveFailed(false);
     onCaptionStyleChange?.(initialCaptionStyle);
     setUndoKey((k) => k + 1);
   }
@@ -747,6 +837,7 @@ export function TranscriptEditor({
     source: "fillers" | "pauses" | "selection",
   ) {
     if (ranges.length === 0) return;
+    setAssistAction(source === "fillers" ? "fillers" : source === "pauses" ? "pauses" : "selection");
     setOperationLoading(true);
     try {
       for (const range of ranges) {
@@ -772,6 +863,7 @@ export function TranscriptEditor({
         description: "Unable to save removal operations.",
       });
     } finally {
+      setAssistAction(null);
       setOperationLoading(false);
     }
   }
@@ -858,6 +950,8 @@ export function TranscriptEditor({
     options: { mode?: string; language?: string } = {},
   ) {
     if (entries.length === 0) return;
+    const action = endpoint === "translate" ? "translate" : options.mode ?? endpoint;
+    setAssistAction(action);
     setOperationLoading(true);
     try {
       const response = await fetch(`/api/repurpose/captions/${endpoint}`, {
@@ -879,14 +973,23 @@ export function TranscriptEditor({
         | null;
       const nextEntries = payload?.data?.cues;
       if (Array.isArray(nextEntries) && nextEntries.length > 0) {
-        setEntries(validateCaptionCues(nextEntries));
+        const validated = validateCaptionCues(nextEntries);
+        setEntries(validated);
+        setReadableTranscript(combineEntries(validated));
       }
       toast({
-        title: endpoint === "translate" ? "Caption track translated" : "Caption assist applied",
+        title:
+          endpoint === "translate"
+            ? "Caption track translated"
+            : mode === "captions"
+              ? "Caption text updated"
+              : "Transcript updated",
         description:
           endpoint === "translate"
             ? `${payload?.data?.track?.label ?? options.language ?? "Translated"} captions are now active in the editor.`
-            : "Cue timings were preserved while text was updated.",
+            : mode === "captions"
+              ? "Review the caption lines and save your changes."
+              : "Review the updated transcript and save your changes.",
       });
     } catch {
       toast({
@@ -895,6 +998,7 @@ export function TranscriptEditor({
         description: "Unable to update captions with AI. Timing was not changed.",
       });
     } finally {
+      setAssistAction(null);
       setOperationLoading(false);
     }
   }
@@ -945,7 +1049,10 @@ export function TranscriptEditor({
       return;
     }
 
-    const combinedText = entries.map((e) => e.text).join(" ").trim();
+    const entriesToSave = hasReadableTranscriptChanges
+      ? distributeTranscriptTextAcrossEntries(readableTranscript, entries)
+      : entries;
+    const combinedText = entriesToSave.map((e) => e.text).join(" ").trim();
     if (!combinedText) {
       toast({
         variant: "destructive",
@@ -956,6 +1063,7 @@ export function TranscriptEditor({
     }
 
     setIsSaving(true);
+    setSaveFailed(false);
 
     try {
       const normalizedCaptionStyle = normalizeClipCaptionStyle(safeCaptionStyle);
@@ -993,7 +1101,7 @@ export function TranscriptEditor({
 
       // Build SRT directly from current per-segment entries.
       const captionSrtToPersist = srtUtils.buildSRT(
-        entries.map((e, i) => ({ ...e, index: i + 1 }))
+        entriesToSave.map((e, i) => ({ ...e, index: i + 1 }))
       );
 
       const patchPayload: {
@@ -1081,17 +1189,23 @@ export function TranscriptEditor({
 
       toast({
         title: "Transcript updated",
-        description: hasInternalEditCuts
+        description: hasReadableTranscriptChanges
+          ? "Readable transcript changes were saved. Review captions next."
+          : hasInternalEditCuts
           ? "Saved. Internal transcript deletions will be applied in export render."
           : retimedFromTranscript
             ? "Transcript and clip timing are now synchronized."
-            : `Saved ${entries.length} segment${entries.length !== 1 ? "s" : ""}.`,
+            : `Saved ${entriesToSave.length} segment${entriesToSave.length !== 1 ? "s" : ""}.`,
       });
 
-      setInitialEntries(entries);
+      setEntries(entriesToSave);
+      setInitialEntries(entriesToSave);
+      setReadableTranscript(combineEntries(entriesToSave));
       setInitialCaptionStyle(normalizedCaptionStyle);
+      setLastSavedAt(new Date());
       await onSave();
     } catch {
+      setSaveFailed(true);
       toast({ variant: "destructive", title: "Save failed", description: "Unable to save transcript. Please retry." });
     } finally {
       setIsSaving(false);
@@ -1148,9 +1262,11 @@ export function TranscriptEditor({
   ) : null;
   const showVideoPlayer = mode === "full" || mode === "captions";
   const showWordEditor = mode === "full";
+  const showReadableTranscript = mode === "transcript";
   const showAdvancedTranscript = mode === "transcript";
-  const showCaptionTools = mode === "full" || mode === "captions";
-  const showSegmentEditor = mode !== "style";
+  const showCaptionsWorkspace = mode === "captions";
+  const showCaptionTools = mode === "full";
+  const showSegmentEditor = mode !== "style" && mode !== "transcript" && mode !== "captions";
   const showStyleStudio = mode === "full" || mode === "style";
 
   if ((!captionSrt || entries.length === 0) && clipWords.length === 0) {
@@ -1199,67 +1315,372 @@ export function TranscriptEditor({
 
   return (
     <div className="space-y-3">
-      {showVideoPlayer && videoPlayer}
+      {showVideoPlayer && !showCaptionsWorkspace && videoPlayer}
       {sourceQualityNotice}
       {generatingNotice}
       {missingPreviewNotice}
 
-      {mode === "transcript" && (
-        <div className="rounded-xl border border-border/40 bg-muted/20 p-3">
-          <p className="text-sm font-semibold text-foreground">Edit transcript</p>
-          <p className="mt-1 text-xs leading-5 text-muted-foreground/60">
-            Clean the readable transcript first. Use advanced word timing only when you need exact
-            start, end, or removal ranges.
-          </p>
-          <div className="mt-3 flex flex-wrap gap-2">
-            <Button
-              variant="secondary"
-              size="sm"
-              className="h-8 px-3 text-xs"
-              disabled={operationLoading}
-              onClick={() => void runCaptionAssist("cleanup", { mode: "cleanup" })}
-            >
-              Clean
-            </Button>
-            <Button
-              variant="secondary"
-              size="sm"
-              className="h-8 px-3 text-xs"
-              disabled={operationLoading}
-              onClick={() => void markRemoveRanges(fillerMatches, "fillers")}
-            >
-              Remove fillers
-            </Button>
-            <Button
-              variant="secondary"
-              size="sm"
-              className="h-8 px-3 text-xs"
-              disabled={operationLoading}
-              onClick={() => void markRemoveRanges(pauseMatches, "pauses")}
-            >
-              Shorten pauses
-            </Button>
-            <Button
-              variant="secondary"
-              size="sm"
-              className="h-8 px-3 text-xs"
-              disabled={operationLoading}
-              onClick={() => void runCaptionAssist("cleanup", { mode: "simplify" })}
-            >
-              Simplify
-            </Button>
-            <Button
-              variant="secondary"
-              size="sm"
-              className="h-8 px-3 text-xs"
-              disabled={operationLoading}
-              onClick={() =>
-                void runCaptionAssist("translate", { language: captionTranslateLanguage })
-              }
-            >
-              Translate
-            </Button>
-          </div>
+      {showCaptionsWorkspace && (
+        <div className="space-y-5">
+          <section className="rounded-2xl border border-border/50 bg-card/55 p-4 shadow-sm">
+            <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+              <div className="min-w-0">
+                <p className="text-base font-semibold text-foreground">Preview subtitles</p>
+                <p className="mt-1 max-w-2xl text-sm leading-6 text-muted-foreground">
+                  Recommended flow: Preview, improve, edit, save, then continue to Style.
+                </p>
+              </div>
+              <label className="flex w-fit items-center gap-2 rounded-full border border-border/50 bg-background/60 px-3 py-1.5 text-xs font-semibold text-muted-foreground">
+                Subtitle preview
+                <Switch
+                  checked={subtitlesPreviewEnabled}
+                  onCheckedChange={setSubtitlesPreviewEnabled}
+                  aria-label="Toggle subtitle preview"
+                />
+              </label>
+            </div>
+            <div className="mx-auto mt-4 w-full max-w-[340px]">{videoPlayer}</div>
+            {previewPath && entries.length > 0 ? (
+              <div className="mt-4 h-1 overflow-hidden rounded-full bg-muted/60">
+                <div
+                  className="h-full bg-primary transition-[width] duration-100"
+                  style={{ width: `${videoProgress}%` }}
+                />
+              </div>
+            ) : null}
+          </section>
+
+          <section className="rounded-2xl border border-border/50 bg-card/55 p-4 shadow-sm">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+              <div className="min-w-0">
+                <p className="text-base font-semibold text-foreground">Edit captions</p>
+                <p className="mt-1 max-w-2xl text-sm leading-6 text-muted-foreground">
+                  Edit subtitle text here. Styling is handled in the Style tab.
+                </p>
+              </div>
+              <CaptionSaveStatusBadge
+                hasChanges={hasChanges}
+                isSaving={isSaving}
+                saveFailed={saveFailed}
+                lastSavedAt={lastSavedAt}
+              />
+            </div>
+
+            <div className="mt-4 rounded-2xl border border-violet-500/20 bg-violet-500/[0.055] p-4">
+              <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-foreground">AI Caption Assist</p>
+                  <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                    Use AI Assist to improve text while keeping timing unchanged.
+                  </p>
+                </div>
+                <label className="flex w-full items-center gap-2 text-xs font-semibold text-muted-foreground sm:w-auto">
+                  Language
+                  <select
+                    value={captionTranslateLanguage}
+                    onChange={(event) => setCaptionTranslateLanguage(event.target.value)}
+                    className="h-9 min-w-0 flex-1 rounded-lg border border-border/50 bg-background px-2 text-xs text-foreground outline-none focus:border-primary/50 sm:w-36"
+                  >
+                    <option value="hi">Hindi</option>
+                    <option value="es">Spanish</option>
+                    <option value="fr">French</option>
+                    <option value="de">German</option>
+                    <option value="pt">Portuguese</option>
+                    <option value="ja">Japanese</option>
+                  </select>
+                </label>
+              </div>
+              <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
+                <AssistButton
+                  label="Clean grammar"
+                  loading={assistAction === "cleanup"}
+                  disabled={operationLoading}
+                  onClick={() => void runCaptionAssist("cleanup", { mode: "cleanup" })}
+                />
+                <AssistButton
+                  label="Simplify wording"
+                  loading={assistAction === "simplify"}
+                  disabled={operationLoading}
+                  onClick={() => void runCaptionAssist("cleanup", { mode: "simplify" })}
+                />
+                <AssistButton
+                  label="Add emojis"
+                  loading={assistAction === "add_emojis"}
+                  disabled={operationLoading}
+                  onClick={() => void runCaptionAssist("cleanup", { mode: "add_emojis" })}
+                />
+                <AssistButton
+                  label="Highlight keywords"
+                  loading={assistAction === "highlight-keywords"}
+                  disabled={operationLoading}
+                  onClick={() => void runCaptionAssist("highlight-keywords")}
+                />
+                <AssistButton
+                  label="Translate"
+                  loading={assistAction === "translate"}
+                  disabled={operationLoading}
+                  onClick={() =>
+                    void runCaptionAssist("translate", { language: captionTranslateLanguage })
+                  }
+                />
+              </div>
+            </div>
+
+            {(clipSummary || callToAction) ? (
+              <div className="mt-4 rounded-2xl border border-border/45 bg-muted/20 p-4">
+                <p className="text-sm font-semibold text-foreground">Clip summary</p>
+                {clipSummary ? (
+                  <p className="mt-2 line-clamp-4 whitespace-pre-wrap break-words text-sm leading-6 text-muted-foreground">
+                    {clipSummary}
+                  </p>
+                ) : null}
+                {callToAction ? (
+                  <p className="mt-3 break-words text-xs font-semibold text-muted-foreground">
+                    Suggested CTA: {callToAction}
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
+
+            <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+              <div className="flex min-w-0 flex-wrap items-center gap-2">
+                <div className="relative min-w-[180px] flex-1">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/45" />
+                  <input
+                    type="search"
+                    placeholder="Search captions..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="h-10 w-full rounded-xl border border-border/55 bg-background/70 pl-10 pr-3 text-sm outline-none transition placeholder:text-muted-foreground/45 focus:border-primary/50 focus:ring-2 focus:ring-primary/15"
+                  />
+                </div>
+                <span className="rounded-full border border-border/45 bg-muted/25 px-3 py-1 text-xs font-semibold text-muted-foreground">
+                  {displayEntries.length}
+                  {searchQuery.trim() ? `/${entries.length}` : ""} segment{entries.length !== 1 ? "s" : ""}
+                </span>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                {onGenerateCaptions ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-9 gap-1.5"
+                    onClick={onGenerateCaptions}
+                    disabled={isGenerating}
+                  >
+                    <RefreshCw className={cn("h-3.5 w-3.5", isGenerating && "animate-spin")} />
+                    {isGenerating ? "Regenerating..." : "Regenerate suggestions"}
+                  </Button>
+                ) : null}
+                {hasChanges ? (
+                  <Button variant="ghost" size="sm" className="h-9" onClick={handleUndo}>
+                    Undo
+                  </Button>
+                ) : null}
+                <Button
+                  size="sm"
+                  className="h-9 gap-1.5"
+                  onClick={handleSave}
+                  disabled={!hasChanges || isSaving || isGenerating}
+                >
+                  <Save className="h-3.5 w-3.5" />
+                  {isSaving ? "Saving..." : "Save changes"}
+                </Button>
+              </div>
+            </div>
+          </section>
+
+          {captionQuality.tier === "needs_cleanup" && (
+            <div className="flex items-center gap-2 rounded-xl border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
+              <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+              <span>
+                Some caption lines may be noisy ({captionQuality.validCount}/{captionQuality.totalCount} usable). Edit below or regenerate.
+              </span>
+            </div>
+          )}
+
+          <section className="rounded-2xl border border-border/50 bg-card/55 p-4 shadow-sm">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div className="min-w-0">
+                <p className="text-base font-semibold text-foreground">Caption lines</p>
+                <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                  Edit each subtitle line directly. Timing tools stay hidden unless you need them.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setCaptionAdvancedTiming((value) => !value)}
+                aria-expanded={captionAdvancedTiming}
+                className="w-fit rounded-lg border border-border/50 bg-background px-3 py-2 text-xs font-semibold text-foreground transition hover:border-border"
+              >
+                {captionAdvancedTiming ? "Hide advanced timing" : "Show advanced timing"}
+              </button>
+            </div>
+
+            <div className="mt-4 max-h-[min(720px,calc(100vh-260px))] space-y-2 overflow-y-auto pr-1">
+              {displayEntries.length === 0 ? (
+                <div className="flex items-center justify-center rounded-xl border border-dashed border-border/45 bg-muted/15 py-10 text-sm text-muted-foreground">
+                  {searchQuery.trim() ? "No captions match your search." : "No caption lines available."}
+                </div>
+              ) : (
+                displayEntries.map(({ entry, idx }) => (
+                  <SegmentRow
+                    key={`${undoKey}-${entry.index}`}
+                    entry={entry}
+                    originalIndex={idx}
+                    isLast={idx === entries.length - 1}
+                    isActive={currentMs >= entry.startMs && currentMs < entry.endMs}
+                    showAdvancedTiming={captionAdvancedTiming}
+                    onTextChange={updateEntryText}
+                    onTimingChange={adjustEntryTiming}
+                    onSplit={splitEntry}
+                    onMerge={mergeWithNext}
+                    onHide={hideEntry}
+                    onSeek={(ms) => {
+                      remotionPreviewRef.current?.seekToMs(ms);
+                      handlePreviewTimeUpdate(ms);
+                    }}
+                  />
+                ))
+              )}
+            </div>
+          </section>
+
+          <CaptionSaveBar
+            hasChanges={hasChanges}
+            isSaving={isSaving}
+            isGenerating={Boolean(isGenerating)}
+            saveFailed={saveFailed}
+            lastSavedAt={lastSavedAt}
+            onUndo={handleUndo}
+            onSave={handleSave}
+            onContinueToStyle={onContinueToStyle}
+          />
+        </div>
+      )}
+
+      {showReadableTranscript && (
+        <div className="space-y-4">
+          <section className="rounded-2xl border border-border/50 bg-card/55 p-4 shadow-sm">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div className="min-w-0">
+                <p className="text-base font-semibold text-foreground">Transcript editor</p>
+                <p className="mt-1 max-w-2xl text-sm leading-6 text-muted-foreground">
+                  Edit the readable transcript first. Use advanced timing only when you need precise
+                  word-level control.
+                </p>
+              </div>
+              <Badge
+                variant="outline"
+                className={cn(
+                  "w-fit shrink-0 border-border/50 bg-muted/30 text-xs",
+                  hasChanges && "border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-300",
+                )}
+              >
+                {isSaving
+                  ? "Saving..."
+                  : saveFailed
+                    ? "Save failed"
+                    : hasChanges
+                      ? "Unsaved changes"
+                      : lastSavedAt
+                        ? "Saved just now"
+                        : "Up to date"}
+              </Badge>
+            </div>
+
+            <textarea
+              value={readableTranscript}
+              onChange={(event) => setReadableTranscript(event.target.value)}
+              aria-label="Readable transcript"
+              spellCheck
+              className="mt-4 min-h-[220px] w-full resize-y rounded-xl border border-border/60 bg-background/70 p-4 text-sm leading-7 text-foreground outline-none transition focus:border-primary/60 focus:ring-2 focus:ring-primary/20"
+              placeholder="Transcript text appears here after captions are generated."
+            />
+            <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+              <span>{Math.max(0, tokenizeWords(readableTranscript).length)} words</span>
+              <span className="break-words">Next: review captions, choose a style, then mark this clip export ready.</span>
+            </div>
+          </section>
+
+          <section className="rounded-2xl border border-violet-500/20 bg-violet-500/[0.055] p-4">
+            <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+              <div className="min-w-0">
+                <p className="text-base font-semibold text-foreground">AI Assist</p>
+                <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                  Improve this transcript in one click. Review the result before saving.
+                </p>
+              </div>
+              {operationLoading ? (
+                <span className="inline-flex w-fit items-center gap-2 rounded-full border border-violet-500/25 bg-violet-500/10 px-3 py-1 text-xs font-semibold text-violet-200">
+                  <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                  Updating
+                </span>
+              ) : null}
+            </div>
+            <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+              <AssistButton
+                label="Clean grammar"
+                loading={assistAction === "cleanup"}
+                disabled={operationLoading}
+                onClick={() => void runCaptionAssist("cleanup", { mode: "cleanup" })}
+              />
+              <AssistButton
+                label="Remove filler words"
+                loading={assistAction === "fillers"}
+                disabled={operationLoading || fillerMatches.length === 0}
+                disabledReason={fillerMatches.length === 0 ? "No filler words detected." : undefined}
+                onClick={() => void markRemoveRanges(fillerMatches, "fillers")}
+              />
+              <AssistButton
+                label="Shorten pauses"
+                loading={assistAction === "pauses"}
+                disabled={operationLoading || pauseMatches.length === 0}
+                disabledReason={pauseMatches.length === 0 ? "No long pauses detected." : undefined}
+                onClick={() => void markRemoveRanges(pauseMatches, "pauses")}
+              />
+              <AssistButton
+                label="Simplify wording"
+                loading={assistAction === "simplify"}
+                disabled={operationLoading}
+                onClick={() => void runCaptionAssist("cleanup", { mode: "simplify" })}
+              />
+              <AssistButton
+                label="Translate"
+                loading={assistAction === "translate"}
+                disabled={operationLoading}
+                onClick={() =>
+                  void runCaptionAssist("translate", { language: captionTranslateLanguage })
+                }
+              />
+            </div>
+          </section>
+
+          {(clipSummary || callToAction) && (
+            <section className="rounded-2xl border border-border/50 bg-muted/20 p-4">
+              <p className="text-sm font-semibold text-foreground">Clip summary</p>
+              {clipSummary ? (
+                <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-6 text-muted-foreground">
+                  {clipSummary}
+                </p>
+              ) : null}
+              {callToAction ? (
+                <p className="mt-3 break-words text-xs font-semibold uppercase tracking-wide text-muted-foreground/70">
+                  CTA: {callToAction}
+                </p>
+              ) : null}
+            </section>
+          )}
+
+          <TranscriptSaveBar
+            hasChanges={hasChanges}
+            isSaving={isSaving}
+            isGenerating={Boolean(isGenerating)}
+            saveFailed={saveFailed}
+            lastSavedAt={lastSavedAt}
+            onUndo={handleUndo}
+            onSave={handleSave}
+          />
         </div>
       )}
 
@@ -1310,9 +1731,15 @@ export function TranscriptEditor({
 
       {showAdvancedTranscript && (
         <details className="rounded-xl border border-border/40 bg-background/55 p-3">
-          <summary className="cursor-pointer text-sm font-semibold text-foreground">
-            Advanced transcript mode
+          <summary
+            className="cursor-pointer text-sm font-semibold text-foreground outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
+            aria-label="Toggle advanced timing editor"
+          >
+            Advanced timing editor
           </summary>
+          <p className="mt-1 text-xs leading-5 text-muted-foreground/60">
+            Use this only when you need exact word timing, start/end ranges, or precise removal.
+          </p>
           <div className="mt-3">
             <WordLevelTranscriptPanel
               precision={transcriptPrecision}
@@ -1360,7 +1787,7 @@ export function TranscriptEditor({
         </details>
       )}
 
-      {captionQuality.tier === "needs_cleanup" && (
+      {!showCaptionsWorkspace && captionQuality.tier === "needs_cleanup" && (
         <div className="flex items-center gap-2 rounded-lg border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
           <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
           <span>Some transcript cues may be noisy ({captionQuality.validCount}/{captionQuality.totalCount} usable). Edit below or regenerate.</span>
@@ -1553,14 +1980,6 @@ export function TranscriptEditor({
 
       {showStyleStudio && (
         <>
-          {mode === "style" && (
-            <div className="rounded-xl border border-violet-500/20 bg-violet-500/10 p-3">
-              <p className="text-sm font-semibold text-violet-100">Choose a caption look</p>
-              <p className="mt-1 text-xs leading-5 text-violet-100/70">
-                Start with a preset. Open Customize style only when you need deeper controls.
-              </p>
-            </div>
-          )}
           <CaptionOverlayStudio
             value={safeCaptionStyle}
             onChange={handleCaptionStyleChange}
@@ -1568,24 +1987,22 @@ export function TranscriptEditor({
             previewPath={previewPath}
             captionEntries={entries}
             selectedClipCount={selectedClipCount}
+            totalClipCount={totalClipCount}
             onApplyToSelected={onApplyCaptionStyleToSelected}
+            onApplyToAll={onApplyCaptionStyleToAll}
             presetFirst={mode === "style"}
           />
           {mode === "style" && (
-            <div className="flex items-center justify-between gap-3 rounded-xl border border-border/40 bg-muted/20 px-3 py-2">
-              <p className="text-xs text-muted-foreground/65">
-                {hasStyleChanges ? "Caption style has unsaved changes." : "Caption style is saved."}
-              </p>
-              <Button
-                size="sm"
-                className="h-8 gap-1.5 px-3 text-xs"
-                onClick={handleSave}
-                disabled={!hasStyleChanges || isSaving || isGenerating}
-              >
-                <Save className="h-3.5 w-3.5" />
-                {isSaving ? "Saving..." : "Save style"}
-              </Button>
-            </div>
+            <StyleSaveBar
+              hasChanges={hasStyleChanges}
+              isSaving={isSaving}
+              isGenerating={Boolean(isGenerating)}
+              saveFailed={saveFailed}
+              lastSavedAt={lastSavedAt}
+              onUndo={handleUndo}
+              onSave={handleSave}
+              onContinueToExport={onContinueToExport}
+            />
           )}
         </>
       )}
@@ -1593,11 +2010,344 @@ export function TranscriptEditor({
   );
 }
 
+function AssistButton({
+  label,
+  loading,
+  disabled,
+  disabledReason,
+  onClick,
+}: {
+  label: string;
+  loading?: boolean;
+  disabled?: boolean;
+  disabledReason?: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      title={disabled && disabledReason ? disabledReason : label}
+      className={cn(
+        "flex min-h-11 items-center justify-center gap-2 rounded-xl border border-border/55 bg-background/70 px-3 py-2 text-sm font-semibold text-foreground transition hover:border-primary/35 hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/35",
+        disabled && "cursor-not-allowed opacity-55 hover:border-border/55 hover:bg-background/70",
+      )}
+    >
+      {loading ? <RefreshCw className="h-3.5 w-3.5 animate-spin" aria-hidden /> : null}
+      <span className="break-words text-center">{loading ? "Working..." : label}</span>
+    </button>
+  );
+}
+
+function StyleSaveBar({
+  hasChanges,
+  isSaving,
+  isGenerating,
+  saveFailed,
+  lastSavedAt,
+  onUndo,
+  onSave,
+  onContinueToExport,
+}: {
+  hasChanges: boolean;
+  isSaving: boolean;
+  isGenerating: boolean;
+  saveFailed: boolean;
+  lastSavedAt: Date | null;
+  onUndo: () => void;
+  onSave: () => void;
+  onContinueToExport?: () => void;
+}) {
+  const status = isSaving
+    ? "Saving style..."
+    : saveFailed
+      ? "Could not save style"
+      : hasChanges
+        ? "You have unsaved style changes"
+        : lastSavedAt
+          ? "Style saved"
+          : "Style is saved";
+
+  return (
+    <div className="sticky bottom-0 z-20 rounded-2xl border border-border/60 bg-background/95 p-3 shadow-xl shadow-black/10 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="min-w-0">
+          <p
+            className={cn(
+              "break-words text-sm font-semibold",
+              saveFailed
+                ? "text-destructive"
+                : hasChanges
+                  ? "text-amber-600 dark:text-amber-300"
+                  : "text-foreground",
+            )}
+          >
+            {status}
+          </p>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            {hasChanges ? "Save your style before exporting." : "Style looks ready. Continue to export."}
+          </p>
+        </div>
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
+          {hasChanges ? (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onUndo}
+              disabled={isSaving}
+              className="h-9"
+            >
+              Undo
+            </Button>
+          ) : null}
+          <Button
+            size="sm"
+            onClick={onSave}
+            disabled={!hasChanges || isSaving || isGenerating}
+            className="h-9 gap-2"
+          >
+            <Save className="h-3.5 w-3.5" aria-hidden />
+            {isSaving ? "Saving..." : saveFailed ? "Retry" : "Save style"}
+          </Button>
+          {onContinueToExport ? (
+            <Button
+              variant={hasChanges ? "outline" : "default"}
+              size="sm"
+              onClick={onContinueToExport}
+              disabled={hasChanges || isSaving || isGenerating}
+              className="h-9"
+            >
+              Continue to Export
+            </Button>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CaptionSaveStatusBadge({
+  hasChanges,
+  isSaving,
+  saveFailed,
+  lastSavedAt,
+}: {
+  hasChanges: boolean;
+  isSaving: boolean;
+  saveFailed: boolean;
+  lastSavedAt: Date | null;
+}) {
+  return (
+    <Badge
+      variant="outline"
+      className={cn(
+        "w-fit shrink-0 border-border/50 bg-muted/30 text-xs",
+        hasChanges && "border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-300",
+        saveFailed && "border-destructive/30 bg-destructive/10 text-destructive",
+      )}
+    >
+      {isSaving
+        ? "Saving..."
+        : saveFailed
+          ? "Failed to save"
+          : hasChanges
+            ? "Unsaved changes"
+            : lastSavedAt
+              ? "Saved"
+              : "No changes"}
+    </Badge>
+  );
+}
+
+function CaptionSaveBar({
+  hasChanges,
+  isSaving,
+  isGenerating,
+  saveFailed,
+  lastSavedAt,
+  onUndo,
+  onSave,
+  onContinueToStyle,
+}: {
+  hasChanges: boolean;
+  isSaving: boolean;
+  isGenerating: boolean;
+  saveFailed: boolean;
+  lastSavedAt: Date | null;
+  onUndo: () => void;
+  onSave: () => void;
+  onContinueToStyle?: () => void;
+}) {
+  const status = isSaving
+    ? "Saving captions..."
+    : saveFailed
+      ? "Caption save failed. Please try again."
+      : hasChanges
+        ? "You have unsaved caption changes"
+        : lastSavedAt
+          ? "Captions saved"
+          : "Captions are up to date";
+
+  return (
+    <div className="sticky bottom-0 z-20 rounded-2xl border border-border/60 bg-background/95 p-3 shadow-xl shadow-black/10 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="min-w-0">
+          <p
+            className={cn(
+              "break-words text-sm font-semibold",
+              saveFailed
+                ? "text-destructive"
+                : hasChanges
+                  ? "text-amber-600 dark:text-amber-300"
+                  : "text-foreground",
+            )}
+          >
+            {status}
+          </p>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            {hasChanges
+              ? "Save your caption changes before continuing."
+              : "Next: choose the visual caption style for this clip."}
+          </p>
+        </div>
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onUndo}
+            disabled={!hasChanges || isSaving}
+            className="h-9"
+          >
+            Undo
+          </Button>
+          <Button
+            size="sm"
+            onClick={onSave}
+            disabled={!hasChanges || isSaving || isGenerating}
+            className="h-9 gap-2"
+          >
+            <Save className="h-3.5 w-3.5" aria-hidden />
+            {isSaving ? "Saving..." : "Save changes"}
+          </Button>
+          {onContinueToStyle ? (
+            <Button
+              variant={hasChanges ? "outline" : "default"}
+              size="sm"
+              onClick={onContinueToStyle}
+              disabled={hasChanges || isSaving || isGenerating}
+              className="h-9"
+            >
+              Continue to Style
+            </Button>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function TranscriptSaveBar({
+  hasChanges,
+  isSaving,
+  isGenerating,
+  saveFailed,
+  lastSavedAt,
+  onUndo,
+  onSave,
+}: {
+  hasChanges: boolean;
+  isSaving: boolean;
+  isGenerating: boolean;
+  saveFailed: boolean;
+  lastSavedAt: Date | null;
+  onUndo: () => void;
+  onSave: () => void;
+}) {
+  const status = isSaving
+    ? "Saving transcript..."
+    : saveFailed
+      ? "Save failed. Please try again."
+      : hasChanges
+        ? "You have unsaved transcript changes"
+        : lastSavedAt
+          ? "Saved just now"
+          : "Transcript is up to date";
+
+  return (
+    <div className="sticky bottom-0 z-20 rounded-2xl border border-border/60 bg-background/95 p-3 shadow-xl shadow-black/10 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <p
+            className={cn(
+              "break-words text-sm font-semibold",
+              saveFailed
+                ? "text-destructive"
+                : hasChanges
+                  ? "text-amber-600 dark:text-amber-300"
+                  : "text-foreground",
+            )}
+          >
+            {status}
+          </p>
+          {isGenerating ? (
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              Captions or preview are refreshing. Wait for that to finish before saving.
+            </p>
+          ) : null}
+        </div>
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onUndo}
+            disabled={!hasChanges || isSaving}
+            className="h-9"
+          >
+            Undo
+          </Button>
+          <Button
+            size="sm"
+            onClick={onSave}
+            disabled={!hasChanges || isSaving || isGenerating}
+            className="h-9 gap-2"
+          >
+            <Save className="h-3.5 w-3.5" aria-hidden />
+            {isSaving ? "Saving..." : "Save changes"}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Per-segment row ────────────────────────────────────────────────────────────
 
 function msToMinSec(ms: number): string {
-  const s = Math.floor(ms / 1000);
-  return `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
+  const totalMs = Math.max(0, Math.round(ms));
+  const minutes = Math.floor(totalMs / 60_000);
+  const seconds = Math.floor((totalMs % 60_000) / 1000);
+  const millis = totalMs % 1000;
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}.${String(millis).padStart(3, "0")}`;
+}
+
+function msToShortTime(ms: number): string {
+  const totalMs = Math.max(0, Math.round(ms));
+  const minutes = Math.floor(totalMs / 60_000);
+  const seconds = Math.floor((totalMs % 60_000) / 1000);
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+
+function parseTimeInputToMs(value: string): number | null {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  if (/^\d+$/.test(trimmed)) return Number(trimmed);
+  const match = trimmed.match(/^(\d{1,3}):([0-5]?\d)(?:\.(\d{1,3}))?$/);
+  if (!match) return null;
+  const minutes = Number(match[1]);
+  const seconds = Number(match[2]);
+  const millis = Number((match[3] ?? "0").padEnd(3, "0").slice(0, 3));
+  return minutes * 60_000 + seconds * 1000 + millis;
 }
 
 function WordLevelTranscriptPanel({
@@ -1665,10 +2415,10 @@ function WordLevelTranscriptPanel({
     <div className="rounded-xl border border-border/40 bg-background/65">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/35 px-3 py-2.5">
         <div>
-          <p className="text-xs font-semibold text-foreground">Transcript word editor</p>
+          <p className="text-xs font-semibold text-foreground">Precise word timing</p>
           <p className="text-[11px] text-muted-foreground/60">
             {hasWordTiming
-              ? "Click a word to seek, Shift-click to select a range, then apply precise local edits."
+              ? "Select words only when you need exact starts, endings, or non-destructive removals."
               : "Word-level timing unavailable. Re-transcribe for precise editing."}
           </p>
         </div>
@@ -1711,12 +2461,22 @@ function WordLevelTranscriptPanel({
         </div>
       ) : (
         <div className="space-y-3 px-3 py-3">
+          {selectedCount === 0 ? (
+            <div className="rounded-lg border border-border/45 bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+              Select words in the transcript to enable start, end, new clip, remove, and copy actions.
+            </div>
+          ) : (
+            <div className="rounded-lg border border-primary/25 bg-primary/10 px-3 py-2 text-xs font-medium text-primary">
+              {selectedCount} word{selectedCount === 1 ? "" : "s"} selected. Choose an action below.
+            </div>
+          )}
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
               onClick={onSetStart}
               disabled={selectedCount === 0 || isBusy}
-              className="h-7 rounded-lg border border-border/50 bg-muted/30 px-2.5 text-[11px] font-semibold text-foreground disabled:opacity-40"
+              title={selectedCount === 0 ? "Select words in the transcript to enable this action." : "Set clip start to the first selected word."}
+              className="h-7 rounded-lg border border-border/50 bg-muted/30 px-2.5 text-[11px] font-semibold text-foreground disabled:cursor-not-allowed disabled:opacity-45"
             >
               Set start here
             </button>
@@ -1724,7 +2484,8 @@ function WordLevelTranscriptPanel({
               type="button"
               onClick={onSetEnd}
               disabled={selectedCount === 0 || isBusy}
-              className="h-7 rounded-lg border border-border/50 bg-muted/30 px-2.5 text-[11px] font-semibold text-foreground disabled:opacity-40"
+              title={selectedCount === 0 ? "Select words in the transcript to enable this action." : "Set clip end to the last selected word."}
+              className="h-7 rounded-lg border border-border/50 bg-muted/30 px-2.5 text-[11px] font-semibold text-foreground disabled:cursor-not-allowed disabled:opacity-45"
             >
               Set end here
             </button>
@@ -1732,7 +2493,8 @@ function WordLevelTranscriptPanel({
               type="button"
               onClick={onCreateClip}
               disabled={selectedCount === 0 || isBusy}
-              className="inline-flex h-7 items-center gap-1 rounded-lg border border-primary/30 bg-primary/10 px-2.5 text-[11px] font-semibold text-primary disabled:opacity-40"
+              title={selectedCount === 0 ? "Select words in the transcript to enable this action." : "Create a new clip from the selected words."}
+              className="inline-flex h-7 items-center gap-1 rounded-lg border border-primary/30 bg-primary/10 px-2.5 text-[11px] font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-45"
             >
               <Plus className="h-3 w-3" />
               New clip
@@ -1741,7 +2503,8 @@ function WordLevelTranscriptPanel({
               type="button"
               onClick={onRemoveSelected}
               disabled={selectedCount === 0 || isBusy}
-              className="inline-flex h-7 items-center gap-1 rounded-lg border border-red-500/25 bg-red-500/10 px-2.5 text-[11px] font-semibold text-red-300 disabled:opacity-40"
+              title={selectedCount === 0 ? "Select words in the transcript to enable this action." : "Remove the selected words during export rendering."}
+              className="inline-flex h-7 items-center gap-1 rounded-lg border border-red-500/25 bg-red-500/10 px-2.5 text-[11px] font-semibold text-red-300 disabled:cursor-not-allowed disabled:opacity-45"
             >
               <XCircle className="h-3 w-3" />
               Remove selected
@@ -1750,7 +2513,8 @@ function WordLevelTranscriptPanel({
               type="button"
               onClick={onCopyQuote}
               disabled={selectedCount === 0 || isBusy}
-              className="inline-flex h-7 items-center gap-1 rounded-lg border border-border/50 bg-muted/30 px-2.5 text-[11px] font-semibold text-muted-foreground disabled:opacity-40"
+              title={selectedCount === 0 ? "Select words in the transcript to enable this action." : "Copy selected words."}
+              className="inline-flex h-7 items-center gap-1 rounded-lg border border-border/50 bg-muted/30 px-2.5 text-[11px] font-semibold text-muted-foreground disabled:cursor-not-allowed disabled:opacity-45"
             >
               <Copy className="h-3 w-3" />
               Copy quote
@@ -1759,7 +2523,8 @@ function WordLevelTranscriptPanel({
               type="button"
               onClick={onClearSelection}
               disabled={selectedCount === 0 || isBusy}
-              className="h-7 rounded-lg border border-border/50 bg-background px-2.5 text-[11px] font-semibold text-muted-foreground disabled:opacity-40"
+              title={selectedCount === 0 ? "No selection to clear." : "Clear selected words."}
+              className="h-7 rounded-lg border border-border/50 bg-background px-2.5 text-[11px] font-semibold text-muted-foreground disabled:cursor-not-allowed disabled:opacity-45"
             >
               Clear
             </button>
@@ -1879,6 +2644,7 @@ function SegmentRow({
   originalIndex,
   isLast,
   isActive,
+  showAdvancedTiming = true,
   onTextChange,
   onTimingChange,
   onSplit,
@@ -1890,6 +2656,7 @@ function SegmentRow({
   originalIndex: number;
   isLast: boolean;
   isActive: boolean;
+  showAdvancedTiming?: boolean;
   onTextChange: (idx: number, text: string) => void;
   onTimingChange: (idx: number, key: "startMs" | "endMs", value: number) => void;
   onSplit: (idx: number) => void;
@@ -1898,62 +2665,73 @@ function SegmentRow({
   onSeek: (ms: number) => void;
 }) {
   const canSplit = entry.text.trim().split(/\s+/).filter(Boolean).length > 1;
+  const handleTimeChange = (key: "startMs" | "endMs", value: string) => {
+    const parsed = parseTimeInputToMs(value);
+    if (parsed == null) return;
+    onTimingChange(originalIndex, key, parsed);
+  };
 
   return (
     <div className={cn(
-      "group flex items-start gap-3 px-4 py-2.5 transition-colors",
-      isActive ? "bg-primary/8" : "hover:bg-muted/20"
+      "group grid gap-3 rounded-xl border px-3 py-3 transition-colors sm:grid-cols-[96px_minmax(0,1fr)_auto]",
+      isActive
+        ? "border-primary/35 bg-primary/10 shadow-sm shadow-primary/10"
+        : "border-border/45 bg-background/50 hover:border-border hover:bg-muted/15"
     )}>
-      {/* Timestamp — click to seek */}
       <button
         onClick={() => onSeek(entry.startMs)}
         className={cn(
-          "shrink-0 w-[92px] pt-0.5 font-mono text-[10px] tabular-nums text-left transition-colors hover:text-primary",
-          isActive ? "text-primary font-semibold" : "text-muted-foreground/50"
+          "w-fit rounded-lg border border-border/45 bg-muted/20 px-2.5 py-1.5 font-mono text-[11px] tabular-nums text-left transition-colors hover:border-primary/35 hover:text-primary sm:w-full",
+          isActive ? "text-primary font-semibold" : "text-muted-foreground"
         )}
         title="Seek to this segment"
       >
-        {msToMinSec(entry.startMs)} → {msToMinSec(entry.endMs)}
+        {msToShortTime(entry.startMs)}-{msToShortTime(entry.endMs)}
       </button>
 
-      <div className="grid w-[88px] shrink-0 gap-1">
-        <input
-          type="number"
-          value={entry.startMs}
-          min={0}
-          step={50}
-          onChange={(event) => onTimingChange(originalIndex, "startMs", Number(event.target.value))}
-          className="h-6 rounded border border-border/40 bg-background px-1.5 font-mono text-[10px] text-muted-foreground outline-none focus:border-primary/50"
-          title="Cue start milliseconds"
-        />
-        <input
-          type="number"
-          value={entry.endMs}
-          min={entry.startMs + 1}
-          step={50}
-          onChange={(event) => onTimingChange(originalIndex, "endMs", Number(event.target.value))}
-          className="h-6 rounded border border-border/40 bg-background px-1.5 font-mono text-[10px] text-muted-foreground outline-none focus:border-primary/50"
-          title="Cue end milliseconds"
-        />
+      <div className="min-w-0 space-y-2">
+        <div
+          contentEditable
+          suppressContentEditableWarning
+          onBlur={(e) => onTextChange(originalIndex, e.currentTarget.textContent ?? "")}
+          className="min-h-9 cursor-text break-words rounded-lg border border-transparent px-2 py-1.5 text-sm leading-6 text-foreground outline-none transition focus:border-primary/35 focus:bg-background focus:ring-2 focus:ring-primary/15"
+          aria-label={`Caption line ${originalIndex + 1}`}
+        >
+          {entry.text}
+        </div>
+
+        {showAdvancedTiming ? (
+          <div className="grid gap-2 rounded-lg border border-border/40 bg-muted/15 p-2 sm:grid-cols-2">
+            <label className="grid gap-1 text-[11px] font-semibold text-muted-foreground">
+              Start time
+              <input
+                type="text"
+                value={msToMinSec(entry.startMs)}
+                onChange={(event) => handleTimeChange("startMs", event.target.value)}
+                className="h-8 rounded-md border border-border/45 bg-background px-2 font-mono text-xs text-foreground outline-none focus:border-primary/50"
+                title="Cue start time"
+              />
+            </label>
+            <label className="grid gap-1 text-[11px] font-semibold text-muted-foreground">
+              End time
+              <input
+                type="text"
+                value={msToMinSec(entry.endMs)}
+                onChange={(event) => handleTimeChange("endMs", event.target.value)}
+                className="h-8 rounded-md border border-border/45 bg-background px-2 font-mono text-xs text-foreground outline-none focus:border-primary/50"
+                title="Cue end time"
+              />
+            </label>
+          </div>
+        ) : null}
       </div>
 
-      {/* Editable text */}
-      <div
-        contentEditable
-        suppressContentEditableWarning
-        onBlur={(e) => onTextChange(originalIndex, e.currentTarget.textContent ?? "")}
-        className="flex-1 min-w-0 text-sm leading-relaxed text-foreground/80 outline-none focus:text-foreground cursor-text py-0.5"
-      >
-        {entry.text}
-      </div>
-
-      {/* Actions — visible on hover */}
-      <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0 pt-0.5">
+      <div className="flex items-center gap-1 opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100">
         <button
           onClick={() => onSplit(originalIndex)}
           disabled={!canSplit}
           title="Split at midpoint"
-          className="h-5 w-5 flex items-center justify-center rounded text-muted-foreground/40 hover:text-foreground hover:bg-muted/60 transition-colors disabled:opacity-20 disabled:pointer-events-none"
+          className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground/60 transition-colors hover:bg-muted/60 hover:text-foreground disabled:pointer-events-none disabled:opacity-25"
         >
           <Scissors className="h-3 w-3" />
         </button>
@@ -1961,7 +2739,7 @@ function SegmentRow({
           <button
             onClick={() => onMerge(originalIndex)}
             title="Merge with next segment"
-            className="h-5 w-5 flex items-center justify-center rounded text-muted-foreground/40 hover:text-foreground hover:bg-muted/60 transition-colors text-[11px] font-bold"
+            className="flex h-8 w-8 items-center justify-center rounded-lg text-[12px] font-bold text-muted-foreground/60 transition-colors hover:bg-muted/60 hover:text-foreground"
           >
             ↓
           </button>
@@ -1969,7 +2747,7 @@ function SegmentRow({
         <button
           onClick={() => onHide(originalIndex)}
           title="Hide this cue"
-          className="h-5 w-5 flex items-center justify-center rounded text-muted-foreground/40 hover:text-red-300 hover:bg-red-500/10 transition-colors"
+          className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground/60 transition-colors hover:bg-red-500/10 hover:text-red-300"
         >
           ×
         </button>

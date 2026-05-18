@@ -205,6 +205,16 @@ export function PlatformFitChips({
     ["x", "X"],
   ] as const;
 
+  const hasFitData = platforms.some(([key]) => typeof platformFit?.[key] === "number");
+
+  if (!hasFitData) {
+    return (
+      <p className="break-words rounded-lg border border-border/45 bg-muted/20 px-3 py-2 text-xs leading-5 text-muted-foreground">
+        Platform fit will appear after captions and style are reviewed.
+      </p>
+    );
+  }
+
   return (
     <div className="flex flex-wrap gap-1.5">
       {platforms.map(([key, label]) => {

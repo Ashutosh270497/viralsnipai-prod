@@ -107,6 +107,7 @@ export default function RepurposeEditorPage() {
   );
   const [statusUpdating, setStatusUpdating] = useState<Record<string, boolean>>({});
   const [workspaceTab, setWorkspaceTab] = useState<WorkspaceTab>("preview");
+  const [editorDirtyByClip, setEditorDirtyByClip] = useState<Record<string, boolean>>({});
   const captionInFlightRef = useRef<Set<string>>(new Set());
 
   const clips = useMemo(() => project?.clips ?? [], [project?.clips]);
@@ -212,11 +213,33 @@ export default function RepurposeEditorPage() {
   );
   const activeMetadata = getClipMetadata(activeClip);
   const activeReviewStatus = activeClip ? getReviewStatus(activeClip) : "needs_review";
+  const activeEditorDirty = activeClip ? Boolean(editorDirtyByClip[activeClip.id]) : false;
   const activeQualitySignals = activeClip?.viralityFactors?.qualitySignals;
   const activePortraitPlan = activeClip?.viralityFactors?.reframePlans?.find(
     (plan) => plan.ratio === "9:16",
   );
   const activeClipIndex = activeClip ? clips.findIndex((clip) => clip.id === activeClip.id) : -1;
+  const activeCaptionReady = Boolean(
+    activeClip?.captionSrt &&
+      !isSyntheticSrt(activeClip.captionSrt) &&
+      !activeClip.captionSrt.includes("[Transcript unavailable]"),
+  );
+  const activeStyleReady = Boolean(activeClip?.captionStyle);
+  const activeSourceLowQuality = Boolean(
+    activeAsset?.sourceWidth &&
+      activeAsset?.sourceHeight &&
+      (activeAsset.sourceWidth < 1280 || activeAsset.sourceHeight < 720),
+  );
+  const handleActiveEditorDirtyChange = useCallback(
+    (dirty: boolean) => {
+      if (!activeClip?.id) return;
+      setEditorDirtyByClip((prev) => {
+        if (prev[activeClip.id] === dirty) return prev;
+        return { ...prev, [activeClip.id]: dirty };
+      });
+    },
+    [activeClip?.id],
+  );
   const readyForExportCount = clips.filter((clip) => {
     const status = getReviewStatus(clip);
     return status === "approved" || status === "export_ready";
@@ -406,6 +429,18 @@ export default function RepurposeEditorPage() {
     toast({
       title: "Caption style applied",
       description: `Updated ${selected.length} selected clip${selected.length === 1 ? "" : "s"}.`,
+    });
+    await invalidate();
+  }
+
+  async function applyCaptionStyleToAll(style: ClipCaptionStyleConfig) {
+    if (clips.length === 0) return;
+    await Promise.all(
+      clips.map((clip) => updateClip(clip.id, { captionStyle: style }, { refresh: false })),
+    );
+    toast({
+      title: "Caption style applied",
+      description: `Updated ${clips.length} generated clip${clips.length === 1 ? "" : "s"}.`,
     });
     await invalidate();
   }
@@ -718,7 +753,14 @@ export default function RepurposeEditorPage() {
       </section>
 
       {/* Main layout */}
-      <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(280px,340px)]">
+      <div
+        className={cn(
+          "grid min-w-0 gap-5",
+          workspaceTab === "style"
+            ? "min-[1720px]:grid-cols-[minmax(0,1fr)_minmax(280px,320px)]"
+            : "xl:grid-cols-[minmax(0,1fr)_minmax(280px,340px)]",
+        )}
+      >
         {/* ── Clip sidebar ─────────────────────────────────────────────────── */}
         <div className="hidden">
           <div className="rounded-2xl border border-border/60 bg-card/60 p-3">
@@ -1175,7 +1217,8 @@ export default function RepurposeEditorPage() {
                     <button
                       type="button"
                       onClick={() => setReviewStatus(activeClip.id, "export_ready")}
-                      disabled={Boolean(statusUpdating[activeClip.id])}
+                      disabled={Boolean(statusUpdating[activeClip.id]) || activeEditorDirty}
+                      title={activeEditorDirty ? "Save changes before marking export ready." : "Mark this clip ready for export."}
                       className="h-9 rounded-lg bg-primary px-4 text-xs font-semibold text-primary-foreground shadow-sm shadow-primary/20 transition-colors hover:bg-primary/90 disabled:opacity-60"
                     >
                       Mark export ready
@@ -1360,6 +1403,9 @@ export default function RepurposeEditorPage() {
                     onGenerateCaptions={() => handleGenerateCaptions(activeClip.id)}
                     isGenerating={captionLoading === activeClip.id}
                     showSourceQualityNotice={false}
+                    clipSummary={activeClip.summary}
+                    callToAction={activeClip.callToAction}
+                    onDirtyChange={handleActiveEditorDirtyChange}
                   />
                 </TabsContent>
 
@@ -1392,75 +1438,49 @@ export default function RepurposeEditorPage() {
                     onGenerateCaptions={() => handleGenerateCaptions(activeClip.id)}
                     isGenerating={captionLoading === activeClip.id}
                     showSourceQualityNotice={false}
+                    clipSummary={activeClip.summary}
+                    callToAction={activeClip.callToAction}
+                    onDirtyChange={handleActiveEditorDirtyChange}
+                    onContinueToStyle={() => setWorkspaceTab("style")}
                   />
                 </TabsContent>
 
                 {/* Style tab */}
                 <TabsContent value="style" className="m-0 p-5">
-                  <div className="space-y-4">
-                    <TranscriptEditor
-                      mode="style"
-                      clipId={activeClip.id}
-                      clipTitle={activeClip.title}
-                      captionSrt={activeClip.captionSrt}
-                      captionStyle={activeClip.captionStyle}
-                      expectedVersion={activeClip.version}
-                      startMs={activeClip.startMs}
-                      endMs={activeClip.endMs}
-                      previewPath={activeClip.previewPath}
-                      sourceWidth={activeAsset?.sourceWidth}
-                      sourceHeight={activeAsset?.sourceHeight}
-                      projectId={project.id}
-                      assetId={activeClip.assetId}
-                      assetTranscript={activeAsset?.transcript ?? null}
-                      selectedClipCount={selectedClipIds.length}
-                      onApplyCaptionStyleToSelected={applyCaptionStyleToSelected}
-                      onUpdateClip={(updates, options) => updateClip(activeClip.id, updates, options)}
-                      smartReframePlan={
-                        (activeClip.viralityFactors?.metadata?.smartReframe as
-                          | import("@/lib/media/smart-reframe").SmartReframePlan
-                          | undefined) ?? null
-                      }
-                      onSave={invalidate}
-                      onGenerateCaptions={() => handleGenerateCaptions(activeClip.id)}
-                      isGenerating={captionLoading === activeClip.id}
-                      showSourceQualityNotice={false}
-                    />
-                    <details className="rounded-2xl border border-border/50 bg-muted/20 p-4">
-                      <summary className="cursor-pointer text-sm font-semibold text-foreground">
-                        Layout and brand styling
-                      </summary>
-                      <div className="mt-4 space-y-4">
-                        <FramingPanel
-                          clipId={activeClip.id}
-                          expectedVersion={activeClip.version}
-                          thumbnail={activeClip.thumbnail}
-                          sourceWidth={activeAsset?.sourceWidth}
-                          sourceHeight={activeAsset?.sourceHeight}
-                          smartReframePlan={
-                            (activeClip.viralityFactors?.metadata?.smartReframe as
-                              | import("@/lib/media/smart-reframe").SmartReframePlan
-                              | undefined) ?? null
-                          }
-                          layoutConfig={
-                            (activeClip.viralityFactors?.metadata?.layoutConfig as
-                              | ClipLayoutConfig
-                              | undefined) ?? null
-                          }
-                          selectedClipCount={selectedClipIds.length}
-                          onApplyLayoutToSelected={applyLayoutToSelected}
-                          onUpdateClip={(updates, options) => updateClip(activeClip.id, updates, options)}
-                          onAnalysisComplete={invalidate}
-                        />
-                        <BrandTemplateApplyPanel
-                          projectId={project.id}
-                          activeClipId={activeClip.id}
-                          selectedClipIds={selectedClipIds}
-                          onApplied={invalidate}
-                        />
-                      </div>
-                    </details>
-                  </div>
+                  <TranscriptEditor
+                    mode="style"
+                    clipId={activeClip.id}
+                    clipTitle={activeClip.title}
+                    captionSrt={activeClip.captionSrt}
+                    captionStyle={activeClip.captionStyle}
+                    expectedVersion={activeClip.version}
+                    startMs={activeClip.startMs}
+                    endMs={activeClip.endMs}
+                    previewPath={activeClip.previewPath}
+                    sourceWidth={activeAsset?.sourceWidth}
+                    sourceHeight={activeAsset?.sourceHeight}
+                    projectId={project.id}
+                    assetId={activeClip.assetId}
+                    assetTranscript={activeAsset?.transcript ?? null}
+                    selectedClipCount={selectedClipIds.length}
+                    totalClipCount={clips.length}
+                    onApplyCaptionStyleToSelected={applyCaptionStyleToSelected}
+                    onApplyCaptionStyleToAll={applyCaptionStyleToAll}
+                    onUpdateClip={(updates, options) => updateClip(activeClip.id, updates, options)}
+                    smartReframePlan={
+                      (activeClip.viralityFactors?.metadata?.smartReframe as
+                        | import("@/lib/media/smart-reframe").SmartReframePlan
+                        | undefined) ?? null
+                    }
+                    onSave={invalidate}
+                    onGenerateCaptions={() => handleGenerateCaptions(activeClip.id)}
+                    isGenerating={captionLoading === activeClip.id}
+                    showSourceQualityNotice={false}
+                    onDirtyChange={handleActiveEditorDirtyChange}
+                    onContinueToExport={() => {
+                      window.location.href = `/repurpose/export?projectId=${project.id}`;
+                    }}
+                  />
                 </TabsContent>
 
                 {/* Advanced tab */}
@@ -1502,6 +1522,47 @@ export default function RepurposeEditorPage() {
                       icon={<Crop className="h-4 w-4 text-primary" />}
                     />
                   </div>
+
+                  <details className="rounded-2xl border border-border/50 bg-muted/20 p-4">
+                    <summary
+                      className="cursor-pointer text-sm font-semibold text-foreground"
+                      aria-label="Toggle layout and brand styling"
+                    >
+                      Layout and brand styling
+                    </summary>
+                    <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                      Use these controls when you need reframe layout, manual crop, or saved brand template styling.
+                    </p>
+                    <div className="mt-4 space-y-4">
+                      <FramingPanel
+                        clipId={activeClip.id}
+                        expectedVersion={activeClip.version}
+                        thumbnail={activeClip.thumbnail}
+                        sourceWidth={activeAsset?.sourceWidth}
+                        sourceHeight={activeAsset?.sourceHeight}
+                        smartReframePlan={
+                          (activeClip.viralityFactors?.metadata?.smartReframe as
+                            | import("@/lib/media/smart-reframe").SmartReframePlan
+                            | undefined) ?? null
+                        }
+                        layoutConfig={
+                          (activeClip.viralityFactors?.metadata?.layoutConfig as
+                            | ClipLayoutConfig
+                            | undefined) ?? null
+                        }
+                        selectedClipCount={selectedClipIds.length}
+                        onApplyLayoutToSelected={applyLayoutToSelected}
+                        onUpdateClip={(updates, options) => updateClip(activeClip.id, updates, options)}
+                        onAnalysisComplete={invalidate}
+                      />
+                      <BrandTemplateApplyPanel
+                        projectId={project.id}
+                        activeClipId={activeClip.id}
+                        selectedClipIds={selectedClipIds}
+                        onApplied={invalidate}
+                      />
+                    </div>
+                  </details>
 
                   <div className="rounded-xl border border-border/50 bg-muted/25 p-4">
                     <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/45">
@@ -1597,7 +1658,7 @@ export default function RepurposeEditorPage() {
               </Tabs>
 
               {/* Compact summary below workspace */}
-              {activeClip.summary && (
+              {activeClip.summary && workspaceTab !== "style" && (
                 <div className="border-t border-border/40 px-5 py-4">
                   <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/40">
                     Clip summary
@@ -1623,15 +1684,88 @@ export default function RepurposeEditorPage() {
         </main>
 
         {/* ── Inspector ───────────────────────────────────────────────────── */}
-        <aside className="min-w-0 space-y-3 xl:sticky xl:top-24 xl:max-h-[calc(100vh-120px)] xl:self-start xl:overflow-y-auto xl:pr-1">
+        <aside
+          className={cn(
+            "min-w-0 space-y-3",
+            workspaceTab === "style"
+              ? "min-[1720px]:sticky min-[1720px]:top-24 min-[1720px]:max-h-[calc(100vh-120px)] min-[1720px]:self-start min-[1720px]:overflow-y-auto min-[1720px]:pr-1"
+              : "xl:sticky xl:top-24 xl:max-h-[calc(100vh-120px)] xl:self-start xl:overflow-y-auto xl:pr-1",
+          )}
+        >
           {activeClip ? (
             <>
+              {workspaceTab === "style" ? (
+                <details open className="rounded-2xl border border-primary/20 bg-primary/5 p-4">
+                  <summary className="cursor-pointer list-none text-sm font-semibold text-foreground">
+                    Style readiness
+                  </summary>
+                  <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                    Save the selected caption look before exporting.
+                  </p>
+                  <div className="mt-4 space-y-2">
+                    <ReadinessItem
+                      label="Caption theme selected"
+                      status={activeStyleReady ? "done" : "pending"}
+                      helper={activeStyleReady ? undefined : "Choose a caption style."}
+                    />
+                    <ReadinessItem
+                      label="Subtitle preview available"
+                      status={activeClip.previewPath ? "done" : "pending"}
+                      helper={activeClip.previewPath ? undefined : "Regenerate captions to refresh preview."}
+                    />
+                    <ReadinessItem
+                      label="Source quality checked"
+                      status={activeSourceLowQuality ? "warning" : "done"}
+                      helper={activeSourceLowQuality ? "Blur background may preserve quality better." : undefined}
+                    />
+                    <ReadinessItem
+                      label="Export ready"
+                      status={activeReviewStatus === "export_ready" ? "done" : "pending"}
+                    />
+                  </div>
+                  {activeEditorDirty ? (
+                    <p className="mt-3 rounded-lg border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-xs leading-5 text-amber-700 dark:text-amber-300">
+                      Save your style before exporting.
+                    </p>
+                  ) : null}
+                  <div className="mt-4 grid gap-2">
+                    <Link
+                      href={`/repurpose/export?projectId=${project.id}`}
+                      aria-disabled={activeEditorDirty}
+                      className={cn(
+                        "rounded-lg bg-primary px-3 py-2 text-center text-xs font-semibold text-primary-foreground transition hover:bg-primary/90",
+                        activeEditorDirty && "pointer-events-none opacity-55",
+                      )}
+                    >
+                      Continue to Export
+                    </Link>
+                    <button
+                      type="button"
+                      onClick={() => setReviewStatus(activeClip.id, "export_ready")}
+                      disabled={activeEditorDirty || Boolean(statusUpdating[activeClip.id])}
+                      className="rounded-lg border border-border/50 bg-background px-3 py-2 text-center text-xs font-semibold text-foreground hover:border-border disabled:cursor-not-allowed disabled:opacity-55"
+                    >
+                      Mark export ready
+                    </button>
+                    <Link
+                      href={`/repurpose/export?projectId=${project.id}`}
+                      className="rounded-lg border border-border/50 bg-background px-3 py-2 text-center text-xs font-semibold text-foreground hover:border-border"
+                    >
+                      Open Export Center
+                    </Link>
+                  </div>
+                </details>
+              ) : null}
+
+              {workspaceTab !== "style" ? (
               <details open className="rounded-2xl border border-border/60 bg-card/60 p-4">
                 <summary className="cursor-pointer list-none text-sm font-semibold text-foreground">
-                  Status
+                  {workspaceTab === "captions" ? "Caption status" : "Status"}
                 </summary>
                 <p className="mt-1 text-xs leading-5 text-muted-foreground/60">
-                  Key readiness signals for the selected clip.
+                  {workspaceTab === "captions"
+                    ? "Key subtitle and timing signals for this clip."
+                    : "Key readiness signals for the selected clip."}
                 </p>
                 <div className="mt-4 space-y-3">
                   <InspectorRow label="Status" value={<ReviewStatusBadge status={activeReviewStatus} />} />
@@ -1653,6 +1787,7 @@ export default function RepurposeEditorPage() {
                   />
                 </div>
               </details>
+              ) : null}
 
               <SourceQualityNotice
                 sourceWidth={activeAsset?.sourceWidth}
@@ -1660,8 +1795,28 @@ export default function RepurposeEditorPage() {
                 targetWidth={1080}
                 targetHeight={1920}
                 compact
+                replaceSourceHref={`/repurpose?projectId=${project.id}`}
+                detailsCollapsed={workspaceTab === "style"}
               />
 
+              {workspaceTab === "style" && activeClip.summary ? (
+                <details className="rounded-2xl border border-border/60 bg-card/60 p-4">
+                  <summary className="cursor-pointer list-none text-sm font-semibold text-foreground">
+                    Clip details
+                  </summary>
+                  <p className="mt-3 line-clamp-5 break-words text-xs leading-5 text-muted-foreground">
+                    {activeClip.summary}
+                  </p>
+                  {activeClip.callToAction ? (
+                    <p className="mt-3 break-words text-[11px] font-semibold text-muted-foreground">
+                      CTA: {activeClip.callToAction}
+                    </p>
+                  ) : null}
+                </details>
+              ) : null}
+
+              {workspaceTab !== "style" ? (
+              <>
               <details open className="rounded-2xl border border-border/60 bg-card/60 p-4">
                 <summary className="cursor-pointer list-none text-sm font-semibold text-foreground">
                   Clip quality
@@ -1691,14 +1846,69 @@ export default function RepurposeEditorPage() {
 
               <details open className="rounded-2xl border border-border/60 bg-card/60 p-4">
                 <summary className="cursor-pointer list-none text-sm font-semibold text-foreground">
-                  Export readiness
+                  {workspaceTab === "captions" ? "Next step" : "Clip readiness"}
                 </summary>
-                <p className="mt-2 text-xs leading-5 text-muted-foreground/65">
-                  {activeReviewStatus === "export_ready"
-                    ? "This clip is ready. You can export it from the primary action or Export Center."
-                    : "Use the primary action when transcript, captions, and style look correct."}
-                </p>
-                <div className="mt-3">
+                <div className="mt-4 space-y-2">
+                  <ReadinessItem
+                    label="Transcript reviewed"
+                    status={activeEditorDirty ? "warning" : activeCaptionReady ? "done" : "pending"}
+                    helper={activeEditorDirty ? "Save current changes first." : undefined}
+                  />
+                  <ReadinessItem
+                    label="Captions ready"
+                    status={activeCaptionReady ? "done" : "pending"}
+                    helper={activeCaptionReady ? undefined : "Generate or review captions."}
+                  />
+                  <ReadinessItem
+                    label="Style selected"
+                    status={activeStyleReady ? "done" : "pending"}
+                    helper={activeStyleReady ? undefined : "Choose a caption style."}
+                  />
+                  <ReadinessItem
+                    label="Source quality"
+                    status={activeSourceLowQuality ? "warning" : "done"}
+                    helper={activeSourceLowQuality ? "Low source resolution may export soft." : undefined}
+                  />
+                  <ReadinessItem
+                    label="Export ready"
+                    status={activeReviewStatus === "export_ready" ? "done" : "pending"}
+                  />
+                </div>
+                {activeEditorDirty ? (
+                  <p className="mt-3 rounded-lg border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-xs leading-5 text-amber-700 dark:text-amber-300">
+                    Save your current edits before marking this clip export ready.
+                  </p>
+                ) : null}
+                <div className="mt-4 grid gap-2">
+                  {workspaceTab === "captions" ? (
+                    <button
+                      type="button"
+                      onClick={() => setWorkspaceTab("style")}
+                      disabled={activeEditorDirty}
+                      className="rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-55"
+                    >
+                      Continue to Style
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setReviewStatus(activeClip.id, "export_ready")}
+                      disabled={activeEditorDirty || Boolean(statusUpdating[activeClip.id])}
+                      className="rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-55"
+                    >
+                      Mark export ready
+                    </button>
+                  )}
+                  {workspaceTab === "captions" ? (
+                    <button
+                      type="button"
+                      onClick={() => setReviewStatus(activeClip.id, "export_ready")}
+                      disabled={activeEditorDirty || Boolean(statusUpdating[activeClip.id])}
+                      className="rounded-lg border border-border/50 bg-background px-3 py-2 text-center text-xs font-semibold text-foreground hover:border-border disabled:cursor-not-allowed disabled:opacity-55"
+                    >
+                      Mark export ready
+                    </button>
+                  ) : null}
                   <Link
                     href={`/repurpose/export?projectId=${project.id}`}
                     className="rounded-lg border border-border/50 bg-background px-3 py-2 text-center text-xs font-semibold text-foreground hover:border-border"
@@ -1727,6 +1937,8 @@ export default function RepurposeEditorPage() {
                   </button>
                 </div>
               </details>
+              </>
+              ) : null}
             </>
           ) : (
             <div className="rounded-2xl border border-dashed border-border/50 bg-muted/20 p-6 text-center text-sm text-muted-foreground">
@@ -1791,6 +2003,35 @@ function safeStem(title: string | null | undefined): string {
       .replace(/\s+/g, "-")
       .slice(0, 64)
       .toLowerCase() || "captions"
+  );
+}
+
+function ReadinessItem({
+  label,
+  status,
+  helper,
+}: {
+  label: string;
+  status: "done" | "warning" | "pending";
+  helper?: string;
+}) {
+  const tone =
+    status === "done"
+      ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-600 dark:text-emerald-300"
+      : status === "warning"
+        ? "border-amber-500/25 bg-amber-500/10 text-amber-700 dark:text-amber-300"
+        : "border-border/50 bg-muted/20 text-muted-foreground";
+
+  return (
+    <div className="rounded-lg border border-border/45 bg-background/35 px-3 py-2">
+      <div className="flex items-center justify-between gap-3">
+        <span className="min-w-0 break-words text-xs font-semibold text-foreground">{label}</span>
+        <span className={cn("shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-bold", tone)}>
+          {status === "done" ? "Done" : status === "warning" ? "Check" : "Pending"}
+        </span>
+      </div>
+      {helper ? <p className="mt-1 break-words text-[11px] leading-4 text-muted-foreground">{helper}</p> : null}
+    </div>
   );
 }
 
