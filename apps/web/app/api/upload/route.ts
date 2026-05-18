@@ -13,6 +13,7 @@ import { ApiResponseBuilder, ErrorCodes } from "@/lib/api/response";
 import { logger } from "@/lib/logger";
 import {
   assertMediaUsageAllowed,
+  assertV1UploadRuntimeConfig,
   getMaxUploadBytes,
   getMaxVideoDurationSeconds,
   recordMediaUsage,
@@ -20,16 +21,33 @@ import {
   V1_UPLOAD_EXTENSIONS,
   V1_UPLOAD_MIME_TYPES,
 } from "@/lib/media/v1-media-policy";
+import { assertSameOriginRequest } from "@/lib/security/origin";
+import { consumeV1RateLimit, rateLimitResponse, V1_RATE_LIMITS } from "@/lib/security/rate-limit";
 
 export async function POST(request: Request) {
+  const originError = assertSameOriginRequest(request);
+  if (originError) return originError;
+
   const user = await getCurrentUser();
   if (!user) {
     return ApiResponseBuilder.unauthorized("Authentication required");
   }
 
+  const rateLimit = await consumeV1RateLimit({
+    request,
+    userId: user.id,
+    routeKey: "upload",
+    rules: V1_RATE_LIMITS.UPLOAD,
+  });
+  if (!rateLimit.allowed) {
+    return rateLimitResponse(rateLimit, "Too many upload attempts. Please wait and try again.");
+  }
+
   logger.info("Upload started", { userId: user.id });
 
   try {
+    assertV1UploadRuntimeConfig();
+
     const formData = await request.formData();
     const projectId = formData.get("projectId");
     const file = formData.get("file");

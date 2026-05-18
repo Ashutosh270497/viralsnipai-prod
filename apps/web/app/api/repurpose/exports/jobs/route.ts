@@ -8,7 +8,7 @@ import { prisma } from "@/lib/prisma";
 import { container } from "@/lib/infrastructure/di/container";
 import { TYPES } from "@/lib/infrastructure/di/types";
 import { QueueExportUseCase } from "@/lib/application/use-cases/QueueExportUseCase";
-import { ApiResponseBuilder } from "@/lib/api/response";
+import { ApiResponseBuilder, ErrorCodes } from "@/lib/api/response";
 import {
   PLATFORM_EXPORT_PRESET_VALUES,
   resolvePlatformExportPreset,
@@ -16,6 +16,13 @@ import {
 } from "@/lib/repurpose/export-presets";
 import { createCompletedAssetExportJob, serializeExportJob } from "@/lib/repurpose/export-jobs";
 import { getDefaultExportClipIds } from "@/lib/repurpose/review-workflow";
+import {
+  assertMediaUsageAllowed,
+  recordMediaUsage,
+  resolveUserPlanForMedia,
+} from "@/lib/media/v1-media-policy";
+import { assertSameOriginRequest } from "@/lib/security/origin";
+import { consumeV1RateLimit, rateLimitResponse, V1_RATE_LIMITS } from "@/lib/security/rate-limit";
 
 const jobSchema = z.object({
   projectId: z.string().min(1),
@@ -33,9 +40,22 @@ const jobSchema = z.object({
 });
 
 export async function POST(request: Request) {
+  const originError = assertSameOriginRequest(request);
+  if (originError) return originError;
+
   const user = await getCurrentUser();
   if (!user) {
     return ApiResponseBuilder.unauthorized("Authentication required");
+  }
+
+  const rateLimit = await consumeV1RateLimit({
+    request,
+    userId: user.id,
+    routeKey: "export",
+    rules: V1_RATE_LIMITS.EXPORT,
+  });
+  if (!rateLimit.allowed) {
+    return rateLimitResponse(rateLimit, "Exports are being requested too quickly. Please wait and try again.");
   }
 
   const json = await request.json().catch(() => null);
@@ -94,6 +114,30 @@ export async function POST(request: Request) {
     }
   }
 
+  const billingUser = await prisma.user.findUnique({
+    where: { id: user.id },
+    select: { plan: true, subscriptionTier: true },
+  });
+  const plan = resolveUserPlanForMedia(billingUser ?? {});
+  const usageGate = await assertMediaUsageAllowed({
+    userId: user.id,
+    plan,
+    feature: "video_export",
+  });
+
+  if (!usageGate.allowed) {
+    return ApiResponseBuilder.errorResponse(
+      ErrorCodes.RATE_LIMIT_EXCEEDED,
+      `Monthly export limit reached for your ${plan} plan.`,
+      429,
+      {
+        limit: usageGate.limit,
+        used: usageGate.used,
+        remaining: 0,
+      },
+    );
+  }
+
   const useCase = container.get<QueueExportUseCase>(TYPES.QueueExportUseCase);
   const output = await useCase.execute({
     projectId: project.id,
@@ -109,6 +153,22 @@ export async function POST(request: Request) {
     allowRejected: input.allowRejected,
     outputFormat: "mp4",
     userId: user.id,
+  });
+
+  // TODO: Replace simple check + record with transactional quota reservation
+  // before scaling concurrent export workers.
+  await recordMediaUsage({
+    userId: user.id,
+    feature: "video_export",
+    metadata: {
+      projectId: project.id,
+      exportId: output.export.id,
+      clipIds,
+      clipCount: clipIds.length,
+      platformPreset: platform.id,
+      exportQuality: input.exportQuality,
+      includeCaptions: input.includeCaptions,
+    },
   });
 
   return ApiResponseBuilder.success(

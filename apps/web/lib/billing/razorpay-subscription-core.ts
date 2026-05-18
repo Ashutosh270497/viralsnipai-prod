@@ -14,6 +14,15 @@ import {
 } from "@/lib/billing/service";
 import { markEventProcessed } from "@/lib/billing/webhook-idempotency";
 
+type RazorpaySubscriptionEntity = {
+  id: string;
+  status: string;
+  current_start?: number | null;
+  current_end?: number | null;
+  customer_id?: string | null;
+  notes?: Record<string, unknown> | null;
+};
+
 export class BillingCoreError extends Error {
   status: number;
 
@@ -132,7 +141,7 @@ export async function processRazorpayWebhook(params: {
     return { duplicate: true };
   }
 
-  let subscription = null;
+  let subscription: RazorpaySubscriptionEntity | null = null;
   const subscriptionEntity = getSubscriptionEntity(payload);
   if (subscriptionEntity?.id) {
     subscription = {

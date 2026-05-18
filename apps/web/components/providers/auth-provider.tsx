@@ -43,8 +43,9 @@ function SessionExpiryWatcher() {
 
   useEffect(() => {
     if (hasRedirected.current) return;
+    const currentPath = pathname ?? "/";
     const isProtected = PROTECTED_PREFIXES.some(
-      (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
+      (prefix) => currentPath === prefix || currentPath.startsWith(`${prefix}/`),
     );
     if (!isProtected) return;
 
@@ -56,7 +57,7 @@ function SessionExpiryWatcher() {
         description: "Your session expired. Please sign in again.",
       });
       router.replace(
-        `/signin?reason=session_expired&callbackUrl=${encodeURIComponent(pathname)}`,
+        `/signin?reason=session_expired&callbackUrl=${encodeURIComponent(currentPath)}`,
       );
     }
   }, [pathname, router, session?.error, status, toast]);

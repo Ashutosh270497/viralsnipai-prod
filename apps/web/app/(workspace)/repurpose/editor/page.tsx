@@ -390,7 +390,7 @@ export default function RepurposeEditorPage() {
         cache: "no-store",
       });
       if (!response.ok) {
-        const body = await response.json().catch(() => null);
+        const body = await response.json().catch((): null => null);
         throw new Error(body?.error?.message ?? "Failed to update review status");
       }
       await invalidate();
@@ -485,7 +485,7 @@ export default function RepurposeEditorPage() {
         cache: "no-store",
       });
       if (!res.ok) throw new Error();
-      const body = await res.json().catch(() => null);
+      const body = await res.json().catch((): null => null);
       const nextClip = body?.data?.clip;
       if (nextClip) {
         mergeClipIntoProjectCache(nextClip);
@@ -520,7 +520,7 @@ export default function RepurposeEditorPage() {
         cache: "no-store",
       });
       if (!rtRes.ok) {
-        const body = await rtRes.json().catch(() => null);
+        const body = await rtRes.json().catch((): null => null);
         throw new Error(body?.message ?? "Re-transcription failed");
       }
       // Step 2 — regenerate captions for this clip from the fresh transcript.

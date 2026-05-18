@@ -256,7 +256,7 @@ export async function generateThumbnailVariations(
   count: number = 3
 ): Promise<Array<{ imageUrl: string; revisedPrompt: string; analysis: ThumbnailAnalysis }>> {
   console.log(`[Thumbnail Generator] Starting generation of ${count} variations...`);
-  const variations = [];
+  const variations: Array<{ imageUrl: string; revisedPrompt: string; analysis: ThumbnailAnalysis }> = [];
 
   for (let i = 0; i < count; i++) {
     console.log(`[Thumbnail Generator] Generating variation ${i + 1}/${count}...`);

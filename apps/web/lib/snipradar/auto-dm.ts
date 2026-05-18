@@ -400,7 +400,7 @@ export async function processAutoDmAutomations(params: {
       continue;
     }
 
-    const usersById = new Map(
+    const usersById = new Map<string, { id: string; username?: string | null; name?: string | null }>(
       (searchResponse.includes?.users ?? []).map((user) => [user.id, user] as const)
     );
     const replies = (searchResponse.data ?? [])

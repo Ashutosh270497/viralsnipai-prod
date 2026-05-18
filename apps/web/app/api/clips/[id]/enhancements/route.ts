@@ -8,10 +8,19 @@ import { withErrorHandling } from "@/lib/utils/error-handler";
 import {
   buildEnhancementRenderPlan,
   clampEnhancementToClip,
+  type ClipEnhancementType,
   clipEnhancementSchema,
   normalizeEnhancementPayload,
   serializeEnhancement,
 } from "@/lib/repurpose/creative-enhancements";
+
+type ParsedClipEnhancement = {
+  type: ClipEnhancementType;
+  startMs: number;
+  endMs: number;
+  payload: Record<string, unknown>;
+  enabled: boolean;
+};
 
 async function getAuthorizedClip(clipId: string, userId: string) {
   const clip = await prisma.clip.findUnique({
@@ -69,7 +78,8 @@ export const POST = withErrorHandling(
     if (authorization.error) return authorization.error;
     const clip = authorization.clip!;
     const clipDurationMs = clip.endMs - clip.startMs;
-    const clamped = clampEnhancementToClip(parsed.data, clipDurationMs);
+    const enhancement = parsed.data as ParsedClipEnhancement;
+    const clamped = clampEnhancementToClip(enhancement, clipDurationMs);
     if (!clamped) {
       return ApiResponseBuilder.badRequest("Enhancement timing is outside the clip duration");
     }
@@ -77,11 +87,11 @@ export const POST = withErrorHandling(
     const row = await (prisma as any).clipEnhancement.create({
       data: {
         clipId: params.id,
-        type: parsed.data.type,
+        type: enhancement.type,
         startMs: clamped.startMs,
         endMs: clamped.endMs,
-        payload: normalizeEnhancementPayload(parsed.data.type, parsed.data.payload),
-        enabled: parsed.data.enabled,
+        payload: normalizeEnhancementPayload(enhancement.type, enhancement.payload),
+        enabled: enhancement.enabled,
       },
     });
 

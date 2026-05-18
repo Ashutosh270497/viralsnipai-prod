@@ -11,8 +11,14 @@ import { logger } from "@/lib/logger";
 import { autoHighlightsRequestSchema } from "@/app/api/repurpose/auto-highlights/schema";
 import { canUseModelDebug } from "@/lib/ai/model-policy";
 import { prisma } from "@/lib/prisma";
+import { assertSameOriginRequest } from "@/lib/security/origin";
+import { consumeV1RateLimit, rateLimitResponse, V1_RATE_LIMITS } from "@/lib/security/rate-limit";
+import { sanitizeForLog } from "@/lib/logger/redact";
 
 export const POST = withErrorHandling(async (request: Request) => {
+  const originError = assertSameOriginRequest(request);
+  if (originError) return originError;
+
   // Step 1: Authenticate user
   const user = await getCurrentUser();
   if (!user) {
@@ -24,13 +30,23 @@ export const POST = withErrorHandling(async (request: Request) => {
     );
   }
 
+  const rateLimit = await consumeV1RateLimit({
+    request,
+    userId: user.id,
+    routeKey: "auto-highlights",
+    rules: V1_RATE_LIMITS.AUTO_HIGHLIGHTS,
+  });
+  if (!rateLimit.allowed) {
+    return rateLimitResponse(rateLimit, "Clip generation is being requested too quickly. Please wait and try again.");
+  }
+
   // Step 2: Parse and validate request body
   let parsedData;
   try {
     const body = await request.json();
     parsedData = autoHighlightsRequestSchema.parse(body);
   } catch (error) {
-    logger.error("Auto-highlights validation failed", { error });
+    logger.error("Auto-highlights validation failed", sanitizeForLog({ error }) as Record<string, unknown>);
     throw AppError.validation(
       "Invalid request data",
       error instanceof Error ? error.message : undefined,
@@ -96,7 +112,7 @@ export const POST = withErrorHandling(async (request: Request) => {
     logger.error("Clip generation failed", {
       userId: user.id,
       assetId: parsedData.assetId,
-      error: error instanceof Error ? error.message : String(error),
+      error: sanitizeForLog(error),
     });
     throw error;
   }

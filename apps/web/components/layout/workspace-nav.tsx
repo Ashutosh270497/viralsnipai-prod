@@ -208,10 +208,12 @@ export function WorkspaceNav({ user, ecosystem, onNavigate }: WorkspaceNavProps)
                 {section.links.map((link) => {
                   const isActive =
                     pathname === link.href ||
-                    link.activePaths?.some((activePath) => pathname === activePath) ||
-                    (link.href !== "/dashboard" &&
-                      link.href !== "/repurpose" &&
-                      pathname?.startsWith(`${link.href}/`));
+                    Boolean(link.activePaths?.some((activePath) => pathname === activePath)) ||
+                    Boolean(
+                      link.href !== "/dashboard" &&
+                        link.href !== "/repurpose" &&
+                        pathname?.startsWith(`${link.href}/`),
+                    );
                   return (
                     <NavLink
                       key={link.href}

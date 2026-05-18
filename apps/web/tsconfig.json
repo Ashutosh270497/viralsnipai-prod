@@ -15,6 +15,7 @@
     ],
     "incremental": true,
     "isolatedModules": true,
+    "strict": false,
     "jsx": "preserve",
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true,
@@ -22,7 +23,8 @@
       {
         "name": "next"
       }
-    ]
+    ],
+    "strictNullChecks": true
   },
   "include": [
     "next-env.d.ts",

@@ -16,6 +16,7 @@ import type { IProjectRepository } from '@/lib/domain/repositories/IProjectRepos
 import { logger } from '@/lib/logger';
 import { AppError } from '@/lib/utils/error-handler';
 import type { Clip } from '@/lib/types';
+import { sanitizeForLog } from '@/lib/logger/redact';
 import {
   normalizeTranscriptEditRanges,
   type TranscriptEditRange,
@@ -70,7 +71,13 @@ export class UpdateClipUseCase {
   async execute(input: UpdateClipInput): Promise<UpdateClipOutput> {
     const { clipId, userId, expectedVersion, updates } = input;
 
-    logger.info('Starting clip update', { clipId, userId, expectedVersion, updates });
+    logger.info('Starting clip update', {
+      clipId,
+      userId,
+      expectedVersion,
+      updateKeys: Object.keys(updates),
+      updateSummary: sanitizeForLog(updates),
+    });
 
     // Step 1: Validate clip and user permissions
     const clip = await this.clipRepo.findById(clipId);

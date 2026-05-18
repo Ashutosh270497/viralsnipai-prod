@@ -4,6 +4,7 @@ import { Prisma } from "@prisma/client";
 
 import { prisma } from "@/lib/prisma";
 import { resolvePlanTier, type PlanTier } from "@/lib/billing/plans";
+import { getStorageDriver } from "@/lib/storage";
 
 export const V1_UPLOAD_MIME_TYPES = new Set([
   "video/mp4",
@@ -37,6 +38,55 @@ const DEFAULT_EXPORT_LIMITS: Record<PlanTier, number> = {
 
 export function getMaxUploadBytes() {
   return readPositiveInt("MAX_UPLOAD_MB", 500) * 1024 * 1024;
+}
+
+export function assertV1UploadRuntimeConfig() {
+  const maxUploadMb = readPositiveInt("MAX_UPLOAD_MB", 500);
+  const storageDriver = getStorageDriver();
+
+  if (process.env.NODE_ENV === "production" && storageDriver === "local") {
+    throw new Error("Production uploads require STORAGE_DRIVER=s3.");
+  }
+
+  if (maxUploadMb > 500) {
+    throw new Error(
+      "MAX_UPLOAD_MB cannot exceed 500 while the upload route buffers files in memory.",
+    );
+  }
+
+  if (
+    process.env.NODE_ENV === "production" &&
+    process.env.VERCEL &&
+    maxUploadMb > 100 &&
+    process.env.DIRECT_TO_S3_UPLOAD_ENABLED !== "true"
+  ) {
+    throw new Error(
+      "Vercel/serverless uploads above 100 MB require DIRECT_TO_S3_UPLOAD_ENABLED=true.",
+    );
+  }
+}
+
+export function getV1UploadConfigWarnings() {
+  const warnings: string[] = [];
+  const maxUploadMb = readPositiveInt("MAX_UPLOAD_MB", 500);
+  const storageDriver = getStorageDriver();
+
+  if (process.env.NODE_ENV === "production" && storageDriver === "local") {
+    warnings.push("Production uploads require STORAGE_DRIVER=s3.");
+  }
+  if (maxUploadMb > 500) {
+    warnings.push("MAX_UPLOAD_MB is above 500 while uploads are buffered in memory.");
+  }
+  if (process.env.VERCEL && maxUploadMb > 100 && process.env.DIRECT_TO_S3_UPLOAD_ENABLED !== "true") {
+    warnings.push("Serverless uploads above 100 MB require direct-to-S3 upload.");
+  }
+
+  return {
+    storageDriver,
+    maxUploadMb,
+    directToS3Enabled: process.env.DIRECT_TO_S3_UPLOAD_ENABLED === "true",
+    warnings,
+  };
 }
 
 export function getMaxVideoDurationSeconds() {

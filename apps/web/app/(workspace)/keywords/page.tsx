@@ -306,7 +306,7 @@ export default function KeywordResearchPage() {
         }),
       });
 
-      const payload = (await res.json().catch(() => null)) as
+      const payload = (await res.json().catch((): null => null)) as
         | (KeywordResult & KeywordApiResponseEnvelope)
         | null;
 
@@ -352,7 +352,7 @@ export default function KeywordResearchPage() {
     try {
       const params = new URLSearchParams({ country, language });
       const res = await fetch(`/api/keywords/recommendations?${params.toString()}`);
-      const payload = (await res.json().catch(() => null)) as
+      const payload = (await res.json().catch((): null => null)) as
         | (KeywordRecommendationResponse & KeywordApiResponseEnvelope)
         | null;
 
@@ -407,7 +407,7 @@ export default function KeywordResearchPage() {
 
       const payload = (await response
         .json()
-        .catch(() => null)) as KeywordApiResponseEnvelope | null;
+        .catch((): null => null)) as KeywordApiResponseEnvelope | null;
 
       if (!response.ok) {
         if (payload?.usage) {

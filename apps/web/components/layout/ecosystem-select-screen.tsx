@@ -20,7 +20,7 @@ export function EcosystemSelectScreen({ userName }: EcosystemSelectScreenProps) 
   const [pending, setPending] = useState<Ecosystem | null>(null);
 
   const nextPath = useMemo(() => {
-    const raw = searchParams.get("next");
+    const raw = searchParams?.get("next");
     if (!raw || !raw.startsWith("/")) {
       return null;
     }

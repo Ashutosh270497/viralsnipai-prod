@@ -9,6 +9,7 @@ import {
   createPasswordResetToken,
   sendPasswordResetEmail,
 } from "@/lib/auth/password-reset";
+import { assertSameOriginRequest } from "@/lib/security/origin";
 
 const IP_LIMIT = { id: "password-reset-ip", limit: 8, windowSec: 15 * 60 };
 const EMAIL_LIMIT = { id: "password-reset-email", limit: 3, windowSec: 15 * 60 };
@@ -22,6 +23,9 @@ function requestIp(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  const originError = assertSameOriginRequest(request);
+  if (originError) return originError;
+
   const ipLimit = checkRateLimit(requestIp(request), IP_LIMIT);
   if (!ipLimit.allowed) {
     return NextResponse.json(

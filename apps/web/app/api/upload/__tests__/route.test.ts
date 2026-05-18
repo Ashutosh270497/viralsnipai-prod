@@ -29,6 +29,7 @@ jest.mock("@/lib/ffmpeg", () => ({
 
 jest.mock("@/lib/storage", () => ({
   __esModule: true,
+  getStorageDriver: jest.fn(() => "local"),
   saveBuffer: jest.fn(),
 }));
 

@@ -13,6 +13,8 @@ import {
 import { withErrorHandling } from '@/lib/utils/error-handler';
 import { ApiResponseBuilder } from '@/lib/api/response';
 import { logger } from '@/lib/logger';
+import { assertSameOriginRequest } from '@/lib/security/origin';
+import { consumeV1RateLimit, rateLimitResponse, V1_RATE_LIMITS } from '@/lib/security/rate-limit';
 
 const schema = z.object({
   clipId: z.string(),
@@ -35,10 +37,23 @@ const inFlightCaptionJobs = new Map<string, Promise<GenerateCaptionsOutput>>();
  * - Repositories handle data persistence
  */
 export const POST = withErrorHandling(async (request: Request) => {
+  const originError = assertSameOriginRequest(request);
+  if (originError) return originError;
+
   // Step 1: Validate authentication
   const user = await getCurrentUser();
   if (!user) {
     return ApiResponseBuilder.unauthorized('Authentication required');
+  }
+
+  const rateLimit = await consumeV1RateLimit({
+    request,
+    userId: user.id,
+    routeKey: 'captions',
+    rules: V1_RATE_LIMITS.CAPTIONS,
+  });
+  if (!rateLimit.allowed) {
+    return rateLimitResponse(rateLimit, 'Caption generation is being requested too quickly. Please wait and try again.');
   }
 
   // Step 2: Validate request body

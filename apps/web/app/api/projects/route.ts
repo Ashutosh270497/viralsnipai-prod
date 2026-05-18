@@ -6,6 +6,7 @@ import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { createProjectSchema } from "@/lib/validations";
+import { assertSameOriginRequest } from "@/lib/security/origin";
 
 export async function GET() {
   const user = await getCurrentUser();
@@ -66,6 +67,9 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  const originError = assertSameOriginRequest(request);
+  if (originError) return originError;
+
   const user = await getCurrentUser();
   if (!user) {
     return NextResponse.json(

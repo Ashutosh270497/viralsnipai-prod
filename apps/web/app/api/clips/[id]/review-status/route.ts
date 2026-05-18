@@ -10,9 +10,13 @@ import type { IProjectRepository } from "@/lib/domain/repositories/IProjectRepos
 import { withErrorHandling } from "@/lib/utils/error-handler";
 import { logger } from "@/lib/logger";
 import { clipReviewStatusRequestSchema } from "@/app/api/clips/[id]/review-status/schema";
+import { assertSameOriginRequest } from "@/lib/security/origin";
 
 export const PATCH = withErrorHandling(
   async (request: Request, { params }: { params: { id: string } }) => {
+    const originError = assertSameOriginRequest(request);
+    if (originError) return originError;
+
     const user = await getCurrentUser();
     if (!user) {
       return ApiResponseBuilder.unauthorized("Authentication required");

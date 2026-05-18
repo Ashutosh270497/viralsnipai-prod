@@ -9,6 +9,9 @@ import { logger } from "@/lib/logger";
 import { canUseModelDebug } from "@/lib/ai/model-policy";
 import { CLIP_INTENT_VALUES, QUALITY_MODE_VALUES } from "@/lib/ai/model-routing-options";
 import { prisma } from "@/lib/prisma";
+import { assertSameOriginRequest } from "@/lib/security/origin";
+import { consumeV1RateLimit, rateLimitResponse, V1_RATE_LIMITS } from "@/lib/security/rate-limit";
+import { sanitizeForLog } from "@/lib/logger/redact";
 
 const MAX_PROMPT_TRANSCRIPT_CHARS = 1_500_000;
 
@@ -41,9 +44,22 @@ const schema = z.object({
 });
 
 export async function POST(request: Request) {
+  const originError = assertSameOriginRequest(request);
+  if (originError) return originError;
+
   const user = await getCurrentUser();
   if (!user) {
     return fail(401, "Unauthorized");
+  }
+
+  const rateLimit = await consumeV1RateLimit({
+    request,
+    userId: user.id,
+    routeKey: "generate-prompts",
+    rules: V1_RATE_LIMITS.GENERATE_PROMPTS,
+  });
+  if (!rateLimit.allowed) {
+    return rateLimitResponse(rateLimit, "Prompt helper is being used too quickly. Please wait and try again.");
   }
 
   const parsed = await parseJson(request, schema);
@@ -99,7 +115,7 @@ export async function POST(request: Request) {
 
     return ok(result);
   } catch (error) {
-    logger.error('Failed to generate prompts', error instanceof Error ? error : { error });
+    logger.error('Failed to generate prompts', sanitizeForLog(error) as Record<string, unknown>);
     if (error instanceof Error && /transcript is empty/i.test(error.message)) {
       return fail(400, "Transcript is empty.");
     }

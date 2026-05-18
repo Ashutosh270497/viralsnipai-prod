@@ -250,7 +250,7 @@ function VideoList({
 export default function CompetitorDetailPage() {
   const params = useParams();
   const router = useRouter();
-  const competitorId = params.id as string;
+  const competitorId = typeof params?.id === "string" ? params.id : "";
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   const { data, isLoading, error, refetch } = useQuery<AnalyticsData>({

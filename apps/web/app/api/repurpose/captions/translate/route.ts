@@ -55,7 +55,7 @@ export const POST = withErrorHandling(async (request: Request) => {
   const cues = mergeTransformedCueText(parsed.data.cues, result.data.cues);
   const srt = srtUtils.buildSRT(cues);
   const vtt = buildWebVTT(cues);
-  let track = null;
+  let track: unknown = null;
 
   if (parsed.data.clipId) {
     track = await prisma.captionTranslation.upsert({

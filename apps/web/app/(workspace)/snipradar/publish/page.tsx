@@ -39,7 +39,7 @@ import { trackSnipRadarEvent } from "@/lib/snipradar/events";
 function useUrlTab(defaultTab: PublishTab, tabOverride?: PublishTab) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const tabParam = searchParams.get("tab");
+  const tabParam = searchParams?.get("tab");
   const tab = tabOverride ?? (isPublishTab(tabParam) ? tabParam : defaultTab);
 
   const setTab = (nextTab: PublishTab) => {

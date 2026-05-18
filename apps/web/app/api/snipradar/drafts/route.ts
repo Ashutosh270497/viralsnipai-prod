@@ -195,7 +195,7 @@ export async function POST() {
         },
       });
 
-      const created = [];
+      const created: any[] = [];
       for (const tweet of generatedTweets) {
         const draft = await tx.tweetDraft.create({
           data: {

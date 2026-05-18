@@ -82,7 +82,7 @@ interface FetchViralResponse {
 function useUrlTab(defaultTab: DiscoverTab, tabOverride?: DiscoverTab) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const tabParam = searchParams.get("tab");
+  const tabParam = searchParams?.get("tab");
   const tab = tabOverride ?? (isDiscoverTab(tabParam) ? tabParam : defaultTab);
 
   const setTab = (nextTab: DiscoverTab) => {
@@ -190,9 +190,9 @@ export default function SnipRadarDiscoverPage({
   const [didAutoFetchStarterFeed, setDidAutoFetchStarterFeed] = useState(false);
 
   const { tab, setTab } = useUrlTab("tracker", tabOverride);
-  const justConnected = searchParams.get("connected") === "true";
-  const seededCount = Number(searchParams.get("seeded") ?? "0");
-  const showStarterBanner = searchParams.get("welcome") === "1" || justConnected;
+  const justConnected = searchParams?.get("connected") === "true";
+  const seededCount = Number(searchParams?.get("seeded") ?? "0");
+  const showStarterBanner = searchParams?.get("welcome") === "1" || justConnected;
 
   const fetchViralMutation = useMutation<
     FetchViralResponse,

@@ -428,7 +428,7 @@ export async function POST(request: Request) {
     };
 
     // Try to save to database
-    let savedRecord = null;
+    let savedRecord: { id?: string } | null = null;
     try {
       if ((prisma as any).keywordResearch) {
         savedRecord = await prisma.keywordResearch.create({

@@ -11,6 +11,15 @@ import { suggestBrollMoments } from "@/lib/ai/providers/openrouter-reasoning-pro
 import { clampEnhancementToClip } from "@/lib/repurpose/creative-enhancements";
 import { srtUtils } from "@/lib/srt-utils";
 
+type ParsedBrollSuggestion = {
+  searchQuery: string;
+  startMs: number;
+  endMs: number;
+  reason: string;
+  visualStyle: string;
+  priority: number;
+};
+
 const requestSchema = z.object({
   platform: z.string().max(80).nullable().optional(),
   tone: z.string().max(120).nullable().optional(),
@@ -23,7 +32,7 @@ export const POST = withErrorHandling(
     const user = await getCurrentUser();
     if (!user) return ApiResponseBuilder.unauthorized("Authentication required");
 
-    const json = await request.json().catch(() => ({}));
+    const json = await request.json().catch((): Record<string, never> => ({}));
     const parsed = requestSchema.safeParse(json);
     if (!parsed.success) {
       return ApiResponseBuilder.badRequest("Invalid request body", {
@@ -70,7 +79,9 @@ export const POST = withErrorHandling(
     });
 
     const suggestions = result.suggestions
-      .map((suggestion) => clampEnhancementToClip(suggestion, clipDurationMs))
+      .map((suggestion) =>
+        clampEnhancementToClip(suggestion as ParsedBrollSuggestion, clipDurationMs),
+      )
       .filter((suggestion): suggestion is NonNullable<typeof suggestion> => Boolean(suggestion));
 
     return ApiResponseBuilder.success({

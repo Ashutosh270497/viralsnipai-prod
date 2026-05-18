@@ -161,7 +161,7 @@ function buildCaptionSrtForWords(
   words: Array<{ word: string; startMs: number; endMs: number }>,
   clipStartMs: number,
 ) {
-  const entries = [];
+  const entries: Array<{ index: number; startMs: number; endMs: number; text: string }> = [];
   for (let index = 0; index < words.length; index += 5) {
     const chunk = words.slice(index, index + 5);
     if (chunk.length === 0) {

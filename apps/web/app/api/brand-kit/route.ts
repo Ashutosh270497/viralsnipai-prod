@@ -38,7 +38,10 @@ export async function POST(request: Request) {
   const canToggleWatermark = isPaidPlan(dbUser?.plan);
 
   const payload = {
-    ...result.data,
+    fontFamily: result.data.fontFamily,
+    logoPath: result.data.logoPath,
+    logoStoragePath: result.data.logoStoragePath,
+    captionStyle: result.data.captionStyle,
     watermark: canToggleWatermark ? result.data.watermark : true,
     primaryHex: result.data.primaryHex.startsWith("#")
       ? result.data.primaryHex
@@ -49,7 +52,7 @@ export async function POST(request: Request) {
     where: { userId: user.id },
     update: payload,
     create: {
-      userId: user.id,
+      user: { connect: { id: user.id } },
       ...payload
     }
   });

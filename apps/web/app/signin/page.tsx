@@ -10,6 +10,7 @@ import { Logo } from "@/components/marketing/logo";
 import { KeyboardSafeFormShell } from "@/components/ui/mobile-safe";
 import { useToast } from "@/components/ui/use-toast";
 import { getSupportEmail, getSupportMailto } from "@/lib/support";
+import { sanitizeInternalRedirect } from "@/lib/security/safe-redirect";
 
 const ERROR_MESSAGES: Record<string, string> = {
   OAuthSignin: "Could not start sign in. Please try again.",
@@ -43,15 +44,15 @@ function SignInContent() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { toast } = useToast();
 
-  const errorType = searchParams.get("error");
+  const errorType = searchParams?.get("error");
   const authError = errorType
     ? ERROR_MESSAGES[errorType] ?? ERROR_MESSAGES.default
     : null;
-  const sessionExpired = searchParams.get("reason") === "session_expired";
+  const sessionExpired = searchParams?.get("reason") === "session_expired";
 
   const demoAvailable = process.env.NEXT_PUBLIC_ENABLE_DEMO_LOGIN === "true";
-  const devBypass = demoAvailable && searchParams.get("dev-bypass") === "true";
-  const callbackUrl = sanitizeCallbackUrl(searchParams.get("callbackUrl"));
+  const devBypass = demoAvailable && searchParams?.get("dev-bypass") === "true";
+  const callbackUrl = sanitizeCallbackUrl(searchParams?.get("callbackUrl") ?? null);
 
   // Dev bypass: auto-trigger demo login (only when demo provider is available)
   useEffect(() => {
@@ -250,8 +251,5 @@ function SignInContent() {
 }
 
 function sanitizeCallbackUrl(input: string | null) {
-  if (!input || !input.startsWith("/")) {
-    return "/dashboard";
-  }
-  return input;
+  return sanitizeInternalRedirect(input, "/repurpose");
 }

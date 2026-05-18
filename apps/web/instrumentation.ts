@@ -17,7 +17,9 @@ export async function register() {
       validateEnv();
     } catch (error) {
       console.error('[Startup] Environment validation failed:', error instanceof Error ? error.message : error);
-      // Don't throw — allow server to start so health endpoint is reachable
+      if (process.env.NODE_ENV === 'production') {
+        throw error;
+      }
     }
 
     // Register graceful shutdown handlers

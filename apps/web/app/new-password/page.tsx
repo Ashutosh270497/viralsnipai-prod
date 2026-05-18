@@ -10,7 +10,7 @@ import { KeyboardSafeFormShell } from "@/components/ui/mobile-safe";
 import { getSupportEmail, getSupportMailto } from "@/lib/support";
 
 function NewPasswordInner() {
-  const token = useSearchParams().get("token") || "";
+  const token = useSearchParams()?.get("token") || "";
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -154,4 +154,3 @@ export default function NewPasswordPage() {
     </Suspense>
   );
 }
-

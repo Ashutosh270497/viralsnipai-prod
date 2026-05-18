@@ -89,7 +89,11 @@ export class TranslateVideoVoiceUseCase {
     }
 
     // Step 4: Process each target language
-    const translations = [];
+    const translations: Array<{
+      language: string;
+      translationId: string;
+      status: "existing" | "created" | "queued";
+    }> = [];
     let createdCount = 0;
     let existingCount = 0;
     let queuedCount = 0;

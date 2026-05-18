@@ -14,6 +14,8 @@ import { ApiResponseBuilder } from '@/lib/api/response';
 import { logger } from '@/lib/logger';
 import { normalizeClipCaptionStyle } from '@/lib/repurpose/caption-style-config';
 import { ASPECT_RATIO_VALUES, LAYOUT_PRESET_VALUES } from '@/lib/repurpose/layout-config';
+import type { TranscriptEditRange } from '@/lib/repurpose/transcript-sync';
+import { assertSameOriginRequest } from '@/lib/security/origin';
 
 const SMART_REFRAME_MODES = [
   "smart_auto",
@@ -104,6 +106,9 @@ const patchSchema = z
 
 export const PATCH = withErrorHandling(
   async (request: Request, { params }: { params: { id: string } }) => {
+    const originError = assertSameOriginRequest(request);
+    if (originError) return originError;
+
     const user = await getCurrentUser();
     if (!user) {
       return ApiResponseBuilder.unauthorized('Authentication required');
@@ -148,7 +153,7 @@ export const PATCH = withErrorHandling(
       ...(result.data.startMs !== undefined ? { startMs: result.data.startMs } : {}),
       ...(result.data.endMs !== undefined ? { endMs: result.data.endMs } : {}),
       ...(result.data.transcriptEditRangesMs !== undefined
-        ? { transcriptEditRangesMs: result.data.transcriptEditRangesMs }
+        ? { transcriptEditRangesMs: result.data.transcriptEditRangesMs as TranscriptEditRange[] }
         : {}),
       ...(result.data.captionStyle !== undefined
         ? {
@@ -180,7 +185,10 @@ export const PATCH = withErrorHandling(
 );
 
 export const DELETE = withErrorHandling(
-  async (_request: Request, { params }: { params: { id: string } }) => {
+  async (request: Request, { params }: { params: { id: string } }) => {
+    const originError = assertSameOriginRequest(request);
+    if (originError) return originError;
+
     const user = await getCurrentUser();
     if (!user) {
       return ApiResponseBuilder.unauthorized('Authentication required');

@@ -17,12 +17,18 @@
  */
 
 import { spawn } from "child_process";
+import { randomUUID } from "crypto";
 import path from "path";
 import { promises as fs } from "fs";
+import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { prisma } from "@/lib/prisma";
 import { logger } from "@/lib/logger";
+import { getEnvValidationReport, getProductionWarnings } from "@/lib/config/env";
 import { getCvWorkerHealth } from "@/lib/media/cv-worker-client";
 import { REMOTION_RENDERER_ENABLED } from "@/lib/media/remotion-renderer";
+import { getV1UploadConfigWarnings } from "@/lib/media/v1-media-policy";
+import { getV1RateLimiterHealth } from "@/lib/security/rate-limit";
+import { getStorageDriver } from "@/lib/storage";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -49,21 +55,15 @@ export interface SystemHealth {
     remotionRenderer: ServiceCheck;
     cvWorker: ServiceCheck;
     exportQueue: ServiceCheck;
+    storage: ServiceCheck;
+    rateLimiter: ServiceCheck;
+    aiProviders: ServiceCheck;
+    billing: ServiceCheck;
+    smtp: ServiceCheck;
+    deployment: ServiceCheck;
   };
+  warnings: string[];
 }
-
-// ── Required env vars ─────────────────────────────────────────────────────────
-
-const REQUIRED_ENV_VARS = [
-  "NEXTAUTH_SECRET",
-  "NEXTAUTH_URL",
-  "DATABASE_URL",
-] as const;
-
-const WARN_ENV_VARS = [
-  "OPENROUTER_API_KEY",
-  "OPENAI_API_KEY",
-] as const;
 
 // ── Individual checks ─────────────────────────────────────────────────────────
 
@@ -82,19 +82,30 @@ async function checkDatabase(): Promise<ServiceCheck> {
 }
 
 function checkEnvironment(): ServiceCheck {
-  const missing = REQUIRED_ENV_VARS.filter((k) => !process.env[k]);
-  const missingOptional = WARN_ENV_VARS.filter((k) => !process.env[k]);
-
-  if (missing.length > 0) {
-    return { status: "error", error: `Missing required env vars: ${missing.join(", ")}` };
-  }
-  if (missingOptional.length > 0) {
+  const report = getEnvValidationReport();
+  if (!report.ok) {
     return {
-      status: "degraded",
-      details: { missingOptional, hint: "Some AI features may be unavailable." },
+      status: process.env.NODE_ENV === "production" ? "error" : "degraded",
+      error: `Missing required env vars: ${report.missingRequired.join(", ")}`,
+      details: {
+        environment: report.environment,
+        groups: report.groups,
+        missingRequired: report.missingRequired,
+        warnings: report.warnings,
+      },
     };
   }
-  return { status: "ok" };
+  if (report.warnings.length > 0) {
+    return {
+      status: "degraded",
+      details: {
+        environment: report.environment,
+        groups: report.groups,
+        warnings: report.warnings,
+      },
+    };
+  }
+  return { status: "ok", details: { environment: report.environment, groups: report.groups } };
 }
 
 async function checkFfmpeg(): Promise<ServiceCheck> {
@@ -189,7 +200,11 @@ async function checkCvWorker(): Promise<ServiceCheck> {
     const latencyMs = result.latencyMs ?? Date.now() - start;
 
     if (result.status === "unreachable") {
-      return { status: "error", latencyMs, error: result.error ?? "CV worker unreachable" };
+      return {
+        status: "degraded",
+        latencyMs,
+        error: result.error ?? "CV worker unreachable; FFmpeg fallback remains available.",
+      };
     }
 
     const details: Record<string, unknown> = {
@@ -233,6 +248,133 @@ function checkExportQueue(): ServiceCheck {
   }
 }
 
+async function checkStorage(): Promise<ServiceCheck> {
+  const config = getV1UploadConfigWarnings();
+  const deepCheck = process.env.HEALTH_DEEP_CHECK === "true";
+  if (config.storageDriver === "s3" && deepCheck) {
+    const deep = await runS3DeepCheck().catch((error): ServiceCheck => ({
+      status: "error",
+      error: error instanceof Error ? error.message : String(error),
+      details: config,
+    }));
+    if (deep.status === "error") return deep;
+  }
+  return {
+    status: config.warnings.length > 0 ? "degraded" : "ok",
+    details: { ...config, deepCheck },
+    error: config.warnings.length > 0 ? config.warnings.join(" ") : null,
+  };
+}
+
+function checkRateLimiter(): ServiceCheck {
+  const health = getV1RateLimiterHealth();
+  return {
+    status: health.warnings.length > 0 ? "degraded" : "ok",
+    details: health,
+    error: health.warnings.length > 0 ? health.warnings.join(" ") : null,
+  };
+}
+
+function checkAiProviders(): ServiceCheck {
+  const openaiConfigured = Boolean(process.env.OPENAI_API_KEY);
+  const openRouterConfigured = Boolean(process.env.OPENROUTER_API_KEY);
+  return {
+    status: openaiConfigured && openRouterConfigured ? "ok" : "degraded",
+    details: {
+      openaiConfigured,
+      openRouterConfigured,
+      providerBoundary: "OpenAI transcription/timing; OpenRouter reasoning/ranking/scoring/metadata",
+    },
+    error: openaiConfigured && openRouterConfigured ? null : "One or more AI provider keys are missing.",
+  };
+}
+
+function checkBilling(): ServiceCheck {
+  const configured = Boolean(
+    process.env.RAZORPAY_KEY_ID &&
+      process.env.RAZORPAY_KEY_SECRET &&
+      process.env.RAZORPAY_WEBHOOK_SECRET &&
+      process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID,
+  );
+  return {
+    status: configured ? "ok" : "degraded",
+    details: {
+      razorpayKeyConfigured: Boolean(process.env.RAZORPAY_KEY_ID),
+      razorpayWebhookSecretConfigured: Boolean(process.env.RAZORPAY_WEBHOOK_SECRET),
+      publicCheckoutKeyConfigured: Boolean(process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID),
+    },
+    error: configured ? null : "Razorpay is not fully configured.",
+  };
+}
+
+function checkSmtp(): ServiceCheck {
+  const configured = Boolean(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASSWORD);
+  return {
+    status: configured ? "ok" : "unconfigured",
+    details: {
+      configured,
+      fromConfigured: Boolean(process.env.EMAIL_FROM),
+      replyToConfigured: Boolean(process.env.EMAIL_REPLY_TO),
+    },
+  };
+}
+
+function checkDeployment(): ServiceCheck {
+  const webConcurrency = Number.parseInt(process.env.WEB_CONCURRENCY ?? "1", 10);
+  const warnings = getProductionWarnings().filter((warning) => warning.includes("WEB_CONCURRENCY"));
+  return {
+    status: warnings.length > 0 ? "degraded" : "ok",
+    details: {
+      nodeEnv: process.env.NODE_ENV ?? "development",
+      vercel: Boolean(process.env.VERCEL),
+      storageDriver: getStorageDriver(),
+      webConcurrency: Number.isFinite(webConcurrency) ? webConcurrency : 1,
+      appVersion: process.env.NEXT_PUBLIC_APP_VERSION ?? "1.0.0",
+      warnings,
+    },
+    error: warnings.length > 0 ? warnings.join(" ") : null,
+  };
+}
+
+async function runS3DeepCheck(): Promise<ServiceCheck> {
+  const bucket = process.env.S3_BUCKET;
+  if (!bucket) {
+    return { status: "error", error: "S3_BUCKET is required for S3 storage deep health check." };
+  }
+
+  const key = `health-checks/${randomUUID()}.txt`;
+  const client = new S3Client({
+    region: process.env.S3_REGION ?? "us-east-1",
+    endpoint: process.env.S3_ENDPOINT,
+    credentials:
+      process.env.S3_ACCESS_KEY_ID && process.env.S3_SECRET_ACCESS_KEY
+        ? {
+            accessKeyId: process.env.S3_ACCESS_KEY_ID,
+            secretAccessKey: process.env.S3_SECRET_ACCESS_KEY,
+          }
+        : undefined,
+    forcePathStyle: Boolean(process.env.S3_ENDPOINT),
+  });
+
+  const startedAt = Date.now();
+  await client.send(
+    new PutObjectCommand({
+      Bucket: bucket,
+      Key: key,
+      Body: "ok",
+      ContentType: "text/plain",
+    }),
+  );
+  await client.send(new GetObjectCommand({ Bucket: bucket, Key: key }));
+  await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: key }));
+
+  return {
+    status: "ok",
+    latencyMs: Date.now() - startedAt,
+    details: { driver: "s3", bucketConfigured: true, deepCheck: true },
+  };
+}
+
 // ── Aggregation ───────────────────────────────────────────────────────────────
 
 function aggregate(checks: Record<string, ServiceCheck>): OverallStatus {
@@ -251,18 +393,45 @@ function aggregate(checks: Record<string, ServiceCheck>): OverallStatus {
 export async function getSystemHealth(): Promise<SystemHealth> {
   const checkStart = Date.now();
 
-  const [database, ffmpeg, remotionRenderer, cvWorker] = await Promise.all([
+  const [database, ffmpeg, remotionRenderer, cvWorker, storage] = await Promise.all([
     checkDatabase().catch((e): ServiceCheck => ({ status: "error", error: String(e) })),
     checkFfmpeg().catch((e): ServiceCheck => ({ status: "error", error: String(e) })),
     checkRemotionRenderer().catch((e): ServiceCheck => ({ status: "error", error: String(e) })),
     checkCvWorker().catch((e): ServiceCheck => ({ status: "error", error: String(e) })),
+    checkStorage().catch((e): ServiceCheck => ({ status: "error", error: String(e) })),
   ]);
 
   const environment = checkEnvironment();
   const exportQueue = checkExportQueue();
+  const rateLimiter = checkRateLimiter();
+  const aiProviders = checkAiProviders();
+  const billing = checkBilling();
+  const smtp = checkSmtp();
+  const deployment = checkDeployment();
 
-  const services = { database, environment, ffmpeg, remotionRenderer, cvWorker, exportQueue };
+  const services = {
+    database,
+    environment,
+    ffmpeg,
+    remotionRenderer,
+    cvWorker,
+    exportQueue,
+    storage,
+    rateLimiter,
+    aiProviders,
+    billing,
+    smtp,
+    deployment,
+  };
   const overall = aggregate(services);
+  const warnings = Object.values(services)
+    .flatMap((service) => {
+      const serviceWarnings = Array.isArray(service.details?.warnings)
+        ? (service.details.warnings as string[])
+        : [];
+      return [...serviceWarnings, ...(service.error && service.status === "degraded" ? [service.error] : [])];
+    })
+    .filter(Boolean);
 
   logger.info("health:system_check", {
     overall,
@@ -278,5 +447,6 @@ export async function getSystemHealth(): Promise<SystemHealth> {
     version: process.env.NEXT_PUBLIC_APP_VERSION ?? "1.0.0",
     uptime: process.uptime(),
     services,
+    warnings,
   };
 }

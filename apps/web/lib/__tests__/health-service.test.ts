@@ -135,7 +135,7 @@ describe("cvWorker check", () => {
     expect(health.services.cvWorker.status).toBe("unconfigured");
   });
 
-  it("returns error status when CV worker is unreachable", async () => {
+  it("returns degraded status when CV worker is unreachable because FFmpeg fallback is available", async () => {
     const { getCvWorkerHealth } = require("@/lib/media/cv-worker-client");
     getCvWorkerHealth.mockResolvedValueOnce({
       configured: true,
@@ -145,7 +145,7 @@ describe("cvWorker check", () => {
     });
 
     const health = await getSystemHealth();
-    expect(health.services.cvWorker.status).toBe("error");
+    expect(health.services.cvWorker.status).toBe("degraded");
   });
 
   it("returns ok status when CV worker is healthy", async () => {

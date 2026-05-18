@@ -7,6 +7,7 @@ import {
   useMemo,
   useRef,
 } from "react";
+import type { ComponentType } from "react";
 import { Player, type PlayerRef } from "@remotion/player";
 import { AbsoluteFill, Video, useCurrentFrame, useVideoConfig } from "remotion";
 import type { ClipCaptionStyleConfig, HookOverlay } from "@/lib/repurpose/caption-style-config";
@@ -346,7 +347,9 @@ export const RemotionClipPreview = forwardRef<RemotionClipPreviewHandle, Remotio
       <div className="relative w-full overflow-hidden rounded-lg bg-black">
         <Player
           ref={playerRef}
-          component={RemotionClipComposition}
+          component={
+            RemotionClipComposition as unknown as ComponentType<Record<string, unknown>>
+          }
           inputProps={inputProps}
           durationInFrames={durationInFrames}
           compositionWidth={COMPOSITION_WIDTH}

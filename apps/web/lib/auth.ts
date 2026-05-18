@@ -6,6 +6,7 @@ import bcrypt from "bcryptjs";
 import { recordActivationCheckpointSafe } from "@/lib/analytics/activation";
 import { ensureSubscriptionBootstrap } from "@/lib/billing/subscriptions";
 import { prisma } from "@/lib/prisma";
+import { sanitizeInternalRedirect } from "@/lib/security/safe-redirect";
 
 export const authOptions: NextAuthOptions = {
   secret: process.env.NEXTAUTH_SECRET,
@@ -192,9 +193,13 @@ export const authOptions: NextAuthOptions = {
     },
 
     async redirect({ url, baseUrl }) {
-      if (url.startsWith("/")) return `${baseUrl}${url}`;
-      if (new URL(url).origin === baseUrl) return url;
-      return baseUrl;
+      if (url.startsWith("/")) return `${baseUrl}${sanitizeInternalRedirect(url, "/repurpose")}`;
+      try {
+        if (new URL(url).origin === baseUrl) return url;
+      } catch {
+        return `${baseUrl}/repurpose`;
+      }
+      return `${baseUrl}/repurpose`;
     },
 
     async jwt({ token, user, trigger }) {

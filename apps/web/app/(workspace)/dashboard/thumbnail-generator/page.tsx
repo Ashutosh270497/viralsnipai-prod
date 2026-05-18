@@ -32,9 +32,9 @@ export default function ThumbnailGeneratorPage() {
 
   // Parse URL parameters for pre-filling
   const defaultValues = useMemo(() => {
-    const ideaId = searchParams.get('ideaId');
-    const title = searchParams.get('title');
-    const niche = searchParams.get('niche');
+    const ideaId = searchParams?.get('ideaId');
+    const title = searchParams?.get('title');
+    const niche = searchParams?.get('niche');
 
     if (!title) return null;
 

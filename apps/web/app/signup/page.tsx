@@ -10,6 +10,7 @@ import { Logo } from "@/components/marketing/logo";
 import { KeyboardSafeFormShell } from "@/components/ui/mobile-safe";
 import { useToast } from "@/components/ui/use-toast";
 import { getSupportEmail, getSupportMailto } from "@/lib/support";
+import { sanitizeInternalRedirect } from "@/lib/security/safe-redirect";
 import { signupSchema } from "@/lib/validations";
 
 export default function SignUpPage() {
@@ -29,7 +30,7 @@ function SignUpPageInner() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const { toast } = useToast();
-  const callbackUrl = sanitizeCallbackUrl(searchParams.get("callbackUrl"));
+  const callbackUrl = sanitizeCallbackUrl(searchParams?.get("callbackUrl") ?? null);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -239,7 +240,7 @@ function SignUpPageInner() {
           <div className="text-sm">
             <span className="text-gray-600 dark:text-neutral-400">Already have an account? </span>
             <Link
-              href={`/signin${callbackUrl !== "/onboarding" ? `?callbackUrl=${encodeURIComponent(callbackUrl)}` : ""}`}
+              href={`/signin${callbackUrl !== "/repurpose" ? `?callbackUrl=${encodeURIComponent(callbackUrl)}` : ""}`}
               className="font-semibold text-blue-600 underline hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
             >
               Sign in
@@ -280,8 +281,5 @@ function SignupFallback() {
 }
 
 function sanitizeCallbackUrl(input: string | null) {
-  if (!input || !input.startsWith("/")) {
-    return "/onboarding";
-  }
-  return input;
+  return sanitizeInternalRedirect(input, "/repurpose");
 }

@@ -5,6 +5,8 @@
  * In production, can be easily extended to send logs to external services.
  */
 
+import { sanitizeForLog } from "@/lib/logger/redact";
+
 type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 
 interface LogContext {
@@ -68,7 +70,7 @@ class Logger {
     const entry: LogEntry = {
       level,
       message,
-      context,
+      context: context ? (sanitizeForLog(context) as LogContext) : undefined,
       timestamp: new Date().toISOString(),
       error: error ? {
         name: error.name,

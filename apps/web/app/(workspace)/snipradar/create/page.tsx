@@ -45,7 +45,7 @@ function formatRelativeTime(isoDate?: string | null): string {
 function useUrlTab(defaultTab: CreateTab, tabOverride?: CreateTab) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const tabParam = searchParams.get("tab");
+  const tabParam = searchParams?.get("tab");
   const tab = tabOverride ?? (isCreateTab(tabParam) ? tabParam : defaultTab);
 
   const setTab = (nextTab: CreateTab) => {

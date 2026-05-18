@@ -33,7 +33,7 @@ export function RepurposeProvider({
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
-  const urlProjectId = searchParams.get("projectId") ?? "";
+  const urlProjectId = searchParams?.get("projectId") ?? "";
   const [projectId, setProjectIdState] = useState(urlProjectId);
   const [selectedClipIds, setSelectedClipIds] = useState<string[]>([]);
 
@@ -53,13 +53,14 @@ export function RepurposeProvider({
 
   const syncProjectIdToUrl = useCallback(
     (id: string) => {
-      const params = new URLSearchParams(searchParams.toString());
+      const currentPath = pathname ?? "/repurpose";
+      const params = new URLSearchParams(searchParams?.toString() ?? "");
       if (id) {
         params.set("projectId", id);
       } else {
         params.delete("projectId");
       }
-      const nextUrl = params.toString() ? `${pathname}?${params.toString()}` : pathname;
+      const nextUrl = params.toString() ? `${currentPath}?${params.toString()}` : currentPath;
       router.replace(nextUrl, { scroll: false });
     },
     [pathname, router, searchParams]

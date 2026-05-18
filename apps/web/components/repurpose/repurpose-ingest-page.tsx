@@ -151,14 +151,14 @@ export function RepurposeIngestPage() {
 
   const appliedSeedRef = useRef<string | null>(null);
   const seededIdea = useMemo(() => {
-    const ideaId = searchParams.get("ideaId");
+    const ideaId = searchParams?.get("ideaId");
     if (!ideaId) return null;
     return {
       ideaId,
-      title: searchParams.get("ideaTitle") ?? "",
-      niche: searchParams.get("ideaNiche") ?? "",
-      description: searchParams.get("ideaDescription") ?? "",
-      keywords: (searchParams.get("ideaKeywords") ?? "")
+      title: searchParams?.get("ideaTitle") ?? "",
+      niche: searchParams?.get("ideaNiche") ?? "",
+      description: searchParams?.get("ideaDescription") ?? "",
+      keywords: (searchParams?.get("ideaKeywords") ?? "")
         .split(",")
         .map((keyword) => keyword.trim())
         .filter(Boolean),

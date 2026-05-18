@@ -5,10 +5,14 @@ import { z } from "zod";
 import { hashPasswordResetToken } from "@/lib/auth/password-reset";
 import { prisma } from "@/lib/prisma";
 import { newPasswordSchema } from "@/lib/validations";
+import { assertSameOriginRequest } from "@/lib/security/origin";
 
 const tokenSchema = z.string().min(20).max(256);
 
 export async function POST(request: NextRequest) {
+  const originError = assertSameOriginRequest(request);
+  if (originError) return originError;
+
   let body: unknown;
   try {
     body = await request.json();
@@ -66,4 +70,3 @@ export async function POST(request: NextRequest) {
     { status: 200, headers: { "Cache-Control": "no-store" } },
   );
 }
-

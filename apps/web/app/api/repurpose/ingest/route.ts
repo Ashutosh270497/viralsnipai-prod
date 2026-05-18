@@ -7,6 +7,8 @@ import { withErrorHandling } from '@/lib/utils/error-handler';
 import { ApiResponseBuilder } from '@/lib/api/response';
 import { logger } from '@/lib/logger';
 import { prisma } from '@/lib/prisma';
+import { assertSameOriginRequest } from '@/lib/security/origin';
+import { consumeV1RateLimit, rateLimitResponse, V1_RATE_LIMITS } from '@/lib/security/rate-limit';
 import { queueYouTubeIngestJob } from '@/lib/youtube-ingest-queue';
 import { youtubeUrlSchema } from '@/lib/validations';
 
@@ -29,10 +31,23 @@ const schema = z.object({
  * - Frontend polls for status updates
  */
 export const POST = withErrorHandling(async (request: Request) => {
+  const originError = assertSameOriginRequest(request);
+  if (originError) return originError;
+
   // Step 1: Validate authentication
   const user = await getCurrentUser();
   if (!user) {
     return ApiResponseBuilder.unauthorized('Authentication required');
+  }
+
+  const rateLimit = await consumeV1RateLimit({
+    request,
+    userId: user.id,
+    routeKey: 'youtube_ingest',
+    rules: V1_RATE_LIMITS.YOUTUBE_INGEST,
+  });
+  if (!rateLimit.allowed) {
+    return rateLimitResponse(rateLimit, 'YouTube imports are being requested too quickly. Please wait and try again.');
   }
 
   // Step 2: Validate request body
@@ -63,7 +78,7 @@ export const POST = withErrorHandling(async (request: Request) => {
 
   logger.info('YouTube ingest API called', {
     projectId,
-    sourceUrl,
+    sourceHost: safeSourceHost(sourceUrl),
     userId: user.id,
   });
 
@@ -82,7 +97,7 @@ export const POST = withErrorHandling(async (request: Request) => {
     logger.info('Returning existing active YouTube ingest job', {
       jobId: activeJob.id,
       projectId,
-      sourceUrl,
+      sourceHost: safeSourceHost(sourceUrl),
       status: activeJob.status,
     });
 
@@ -140,7 +155,7 @@ export const POST = withErrorHandling(async (request: Request) => {
   logger.info('YouTube ingest job created', {
     jobId: ingestJob.id,
     projectId,
-    sourceUrl,
+    sourceHost: safeSourceHost(sourceUrl),
   });
 
   await prisma.project.update({
@@ -165,3 +180,11 @@ export const POST = withErrorHandling(async (request: Request) => {
     'YouTube video ingestion queued'
   );
 });
+
+function safeSourceHost(sourceUrl: string) {
+  try {
+    return new URL(sourceUrl).hostname;
+  } catch {
+    return 'unknown';
+  }
+}

@@ -4,25 +4,21 @@ import { prisma } from "@/lib/prisma";
 import { recordActivationCheckpointSafe } from "@/lib/analytics/activation";
 import { ensureSubscriptionBootstrap } from "@/lib/billing/subscriptions";
 import { signupSchema } from "@/lib/validations";
-import {
-  consumeSnipRadarRateLimit,
-  buildSnipRadarRateLimitHeaders,
-} from "@/lib/snipradar/request-guards";
+import { assertSameOriginRequest } from "@/lib/security/origin";
+import { consumeV1RateLimit, rateLimitResponse, V1_RATE_LIMITS } from "@/lib/security/rate-limit";
+import { sanitizeForLog } from "@/lib/logger/redact";
 
 export async function POST(request: NextRequest) {
-  // Rate limit: 5 signup attempts per 15 minutes per IP
-  const ip =
-    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
-    request.headers.get("x-real-ip") ??
-    "unknown";
-  const rateLimit = consumeSnipRadarRateLimit(`signup:${ip}`, "global", [
-    { name: "15min", windowMs: 15 * 60 * 1000, maxHits: 5 },
-  ]);
+  const originError = assertSameOriginRequest(request);
+  if (originError) return originError;
+
+  const rateLimit = await consumeV1RateLimit({
+    request,
+    routeKey: "signup",
+    rules: V1_RATE_LIMITS.SIGNUP,
+  });
   if (!rateLimit.allowed) {
-    return NextResponse.json(
-      { error: "Too many signup attempts. Please try again later." },
-      { status: 429, headers: { "Cache-Control": "no-store", ...buildSnipRadarRateLimitHeaders(rateLimit) } }
-    );
+    return rateLimitResponse(rateLimit, "Too many signup attempts. Please try again later.");
   }
 
   try {
@@ -86,7 +82,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Handle other errors
-    console.error("Signup error:", error);
+    console.error("Signup error:", sanitizeForLog(error));
     return NextResponse.json(
       { error: "An error occurred during signup" },
       { status: 500 }

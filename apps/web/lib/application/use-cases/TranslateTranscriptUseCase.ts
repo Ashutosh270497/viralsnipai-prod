@@ -79,7 +79,11 @@ export class TranslateTranscriptUseCase {
     const transcriptData = this.parseTranscript(asset.transcript);
 
     // Step 4: Translate to each target language
-    const translations = [];
+    const translations: Array<{
+      language: string;
+      translationId: string;
+      status: "existing" | "created";
+    }> = [];
     const sourceLanguage = asset.sourceLanguage || 'en';
 
     for (const targetLang of targetLanguages) {

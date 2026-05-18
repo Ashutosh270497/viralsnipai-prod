@@ -65,10 +65,10 @@ export default function TitleGeneratorPage() {
 
   // Parse URL parameters for pre-filling from Content Calendar or Script Generator
   const defaultValues = useMemo(() => {
-    const ideaId = searchParams.get("ideaId");
-    const topic = searchParams.get("topic");
-    const description = searchParams.get("description");
-    const keywords = searchParams.get("keywords");
+    const ideaId = searchParams?.get("ideaId");
+    const topic = searchParams?.get("topic");
+    const description = searchParams?.get("description");
+    const keywords = searchParams?.get("keywords");
 
     if (!topic) return null;
 

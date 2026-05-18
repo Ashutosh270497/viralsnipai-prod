@@ -11,7 +11,11 @@ export default function GlobalError({
     <html>
       <body style={{ fontFamily: "system-ui, sans-serif", padding: "2rem", maxWidth: "600px", margin: "0 auto" }}>
         <h2 style={{ color: "#dc2626" }}>Something went wrong</h2>
-        <p style={{ color: "#666" }}>{error.message || "An unexpected error occurred"}</p>
+        <p style={{ color: "#666" }}>
+          {process.env.NODE_ENV === "production"
+            ? "An unexpected error occurred. Please try again."
+            : error.message || "An unexpected error occurred"}
+        </p>
         {error.digest && <p style={{ color: "#999", fontSize: "0.875rem" }}>Error ID: {error.digest}</p>}
         <button
           onClick={() => reset()}
