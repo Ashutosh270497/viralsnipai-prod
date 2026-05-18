@@ -9,7 +9,6 @@ import {
   ChevronLeft,
   ChevronRight,
   Check,
-  CheckSquare,
   Eye,
   FileText,
   Film,
@@ -21,8 +20,6 @@ import {
   Scissors,
   AlertTriangle,
   Crop,
-  Trash2,
-  Type,
   Waves,
   SlidersHorizontal,
   PanelRightOpen,
@@ -41,20 +38,9 @@ import { SafeThumbnailImage } from "@/components/repurpose/safe-thumbnail-image"
 import { SourceQualityNotice } from "@/components/repurpose/source-quality-notice";
 import { useClipUpdateQueue } from "@/components/repurpose/use-clip-update-queue";
 import { useRepurpose } from "@/components/repurpose/repurpose-context";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/components/ui/use-toast";
-import { getCaptionQuality } from "@/lib/caption-quality";
 import { cn, formatDuration } from "@/lib/utils";
 import { srtToWebVTT } from "@/lib/captions/webvtt";
 import { projectKeys } from "@/lib/hooks/queries/useProjects";
@@ -100,7 +86,6 @@ export default function RepurposeEditorPage() {
 
   const [activeClipId, setActiveClipId] = useState<string | null>(null);
   const [captionLoading, setCaptionLoading] = useState<string | undefined>();
-  const [deleteClipId, setDeleteClipId] = useState<string | null>(null);
   const [retranscribing, setRetranscribing] = useState(false);
   const [sortBy, setSortBy] = useState<SortBy>("score");
   const [reviewTab, setReviewTab] = useState<ReviewTab>("all");
@@ -115,7 +100,10 @@ export default function RepurposeEditorPage() {
   const [workspaceTab, setWorkspaceTab] = useState<WorkspaceTab>("preview");
   const [editorDirtyByClip, setEditorDirtyByClip] = useState<Record<string, boolean>>({});
   const captionInFlightRef = useRef<Set<string>>(new Set());
-  const useSimpleEditor = process.env.NEXT_PUBLIC_V1_SIMPLE_EDITOR !== "false";
+  const advancedEditorEnabled =
+    process.env.NEXT_PUBLIC_ENABLE_ADVANCED_EDITOR === "true" ||
+    process.env.NEXT_PUBLIC_V1_SIMPLE_EDITOR === "false";
+  const useSimpleEditor = !advancedEditorEnabled;
 
   const clips = useMemo(() => project?.clips ?? [], [project?.clips]);
   const { updateClip } = useClipUpdateQueue({
@@ -512,25 +500,6 @@ export default function RepurposeEditorPage() {
     }
   }
 
-  async function handleDeleteClip() {
-    if (!deleteClipId) return;
-    try {
-      const res = await fetch(`/api/clips/${deleteClipId}`, {
-        method: "DELETE",
-        cache: "no-store",
-      });
-      if (!res.ok) throw new Error();
-      toast({ title: "Clip deleted" });
-      if (activeClipId === deleteClipId) setActiveClipId(null);
-      setSelectedClipIds(selectedClipIds.filter((id) => id !== deleteClipId));
-      await invalidate();
-    } catch {
-      toast({ variant: "destructive", title: "Failed to delete clip" });
-    } finally {
-      setDeleteClipId(null);
-    }
-  }
-
   /**
    * Re-runs Whisper transcription on the asset backing the active clip,
    * then regenerates captions for the clip from the real transcript.
@@ -802,333 +771,6 @@ export default function RepurposeEditorPage() {
             : "xl:grid-cols-[minmax(0,1fr)_minmax(280px,340px)]",
         )}
       >
-        {/* ── Clip sidebar ─────────────────────────────────────────────────── */}
-        <div className="hidden">
-          <div className="rounded-2xl border border-border/60 bg-card/60 p-3">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <p className="text-sm font-semibold text-foreground">Review queue</p>
-                <p className="text-[11px] text-muted-foreground/55">
-                  Pick a clip to preview or edit.
-                </p>
-              </div>
-              <span className="rounded-full border border-border/50 bg-background px-2 py-1 text-[10px] font-semibold text-muted-foreground/65">
-                {selectedClipIds.length}/{clips.length}
-              </span>
-            </div>
-
-            <div className="mt-3 flex gap-1 overflow-x-auto pb-1">
-              {(["all", ...REVIEW_STATUSES] as ReviewTab[]).map((status) => (
-                <button
-                  key={status}
-                  type="button"
-                  onClick={() => setReviewTab(status)}
-                  className={cn(
-                    "h-8 shrink-0 rounded-full border px-3 text-[11px] font-semibold capitalize transition-colors",
-                    reviewTab === status
-                      ? "border-primary/40 bg-primary/15 text-primary"
-                      : "border-border/60 bg-background text-muted-foreground hover:text-foreground",
-                  )}
-                >
-                  {status === "all" ? "All" : status.replace(/_/g, " ")}
-                  <span className="ml-1.5 opacity-55">{reviewCounts[status]}</span>
-                </button>
-              ))}
-            </div>
-
-            <details className="mt-2 rounded-xl border border-border/45 bg-background/45 p-2">
-              <summary className="flex cursor-pointer list-none items-center gap-1.5 text-[11px] font-semibold uppercase tracking-widest text-muted-foreground/55">
-                <SlidersHorizontal className="h-3.5 w-3.5" />
-                Filters and bulk actions
-              </summary>
-              <div className="mt-3 space-y-2">
-                <select
-                  value={sortBy}
-                  onChange={(event) => setSortBy(event.target.value as typeof sortBy)}
-                  className="h-9 w-full rounded-lg border border-border/60 bg-background px-3 text-xs font-semibold text-foreground"
-                >
-                  <option value="score">Best first</option>
-                  <option value="confidence">Boundary confidence</option>
-                  <option value="duration">Longest first</option>
-                  <option value="candidateType">Clip type</option>
-                  <option value="createdAt">Newest first</option>
-                </select>
-                <div className="grid grid-cols-2 gap-2">
-                  <select
-                    value={platformFilter}
-                    onChange={(event) =>
-                      setPlatformFilter(event.target.value as typeof platformFilter)
-                    }
-                    className="h-9 rounded-lg border border-border/60 bg-background px-2 text-xs font-semibold text-foreground"
-                  >
-                    <option value="all">All platforms</option>
-                    <option value="youtubeShorts">Shorts</option>
-                    <option value="instagramReels">Reels</option>
-                    <option value="tiktok">TikTok</option>
-                    <option value="x">X</option>
-                  </select>
-                  <select
-                    value={precisionFilter}
-                    onChange={(event) =>
-                      setPrecisionFilter(event.target.value as PrecisionFilter)
-                    }
-                    className="h-9 rounded-lg border border-border/60 bg-background px-2 text-xs font-semibold text-foreground"
-                  >
-                    <option value="all">All timing</option>
-                    <option value="word">Word-level</option>
-                    <option value="segment">Segment</option>
-                    <option value="low">Low precision</option>
-                  </select>
-                </div>
-                <select
-                  value={candidateTypeFilter}
-                  onChange={(event) => setCandidateTypeFilter(event.target.value)}
-                  className="h-9 w-full rounded-lg border border-border/60 bg-background px-3 text-xs font-semibold text-foreground"
-                >
-                  <option value="all">All clip types</option>
-                  {candidateTypes.map((type) => (
-                    <option key={type} value={type}>
-                      {type.replace(/_/g, " ")}
-                    </option>
-                  ))}
-                </select>
-                <button
-                  type="button"
-                  onClick={() => setHideLowConfidence((value) => !value)}
-                  className={cn(
-                    "h-8 w-full rounded-lg border px-3 text-xs font-semibold transition-colors",
-                    hideLowConfidence
-                      ? "border-amber-400/30 bg-amber-400/10 text-amber-300"
-                      : "border-border/60 bg-background text-muted-foreground hover:text-foreground",
-                  )}
-                >
-                  {hideLowConfidence ? "Showing stronger clips" : "Hide low confidence clips"}
-                </button>
-                <div className="grid grid-cols-2 gap-2 pt-1">
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setSelectedClipIds(
-                        selectedClipIds.length === visibleClips.length
-                          ? []
-                          : visibleClips.map((c) => c.id),
-                      )
-                    }
-                    className="h-8 rounded-lg border border-border/60 bg-muted/30 px-2 text-[11px] font-semibold text-muted-foreground hover:text-foreground"
-                  >
-                    {selectedClipIds.length === visibleClips.length ? "Deselect" : "Select visible"}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => batchSetReviewStatus("export_ready")}
-                    disabled={selectedClipIds.length === 0}
-                    className="h-8 rounded-lg border border-cyan-500/25 bg-cyan-500/10 px-2 text-[11px] font-semibold text-cyan-300 disabled:opacity-40"
-                  >
-                    Mark ready
-                  </button>
-                </div>
-              </div>
-            </details>
-          </div>
-
-          <div className="flex items-center justify-between px-0.5">
-            <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground/60">
-              Clips
-            </p>
-            <span className="text-xs text-muted-foreground/50">
-              {selectedClipIds.length}/{clips.length} selected
-            </span>
-          </div>
-
-          <div className="max-h-[calc(100vh-260px)] space-y-1.5 overflow-y-auto rounded-2xl border border-border/40 bg-card/30 p-2">
-            {visibleClips.length === 0 ? (
-              <div className="rounded-xl border border-dashed border-border/50 bg-muted/20 p-6 text-center">
-                <Scissors className="mx-auto mb-2 h-6 w-6 text-muted-foreground/25" />
-                <p className="text-sm font-semibold text-foreground">
-                  No clips match these filters
-                </p>
-                <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                  Clear filters, switch review tabs, or return to Ingest to regenerate clips with a
-                  different preset.
-                </p>
-              </div>
-            ) : (
-              visibleClips.map((clip, index) => {
-                const isActive = activeClip?.id === clip.id;
-                const isSelected = selectedClipIds.includes(clip.id);
-                const duration = clip.endMs - clip.startMs;
-                const quality = getCaptionQuality(clip.captionSrt);
-                const reviewStatus = getReviewStatus(clip);
-                const isUpdating = Boolean(statusUpdating[clip.id]);
-
-                return (
-                  <div
-                    key={clip.id}
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => setActiveClipId(clip.id)}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter" || event.key === " ") {
-                        event.preventDefault();
-                        setActiveClipId(clip.id);
-                      }
-                    }}
-                    className={cn(
-                      "group w-full text-left rounded-xl border overflow-hidden transition-all",
-                      isActive
-                        ? "border-primary/40 shadow-sm"
-                        : "border-border/40 hover:border-border",
-                    )}
-                  >
-                    {/* ── Thumbnail ─────────────────────────────────────────── */}
-                    <SafeThumbnailImage
-                      src={clip.thumbnail}
-                      alt={clip.title || `Clip ${index + 1}`}
-                      fallbackIcon={<Film className="h-8 w-8 text-muted-foreground/20" />}
-                    >
-
-                      {/* Active glow overlay */}
-                      {isActive && (
-                        <div className="absolute inset-0 bg-primary/15 pointer-events-none" />
-                      )}
-
-                      {/* Viral score — top right */}
-                      <div className="absolute right-1.5 top-1.5">
-                        <ViralityScoreBadge score={clip.viralityScore} />
-                      </div>
-
-                      {/* Duration — bottom left */}
-                      <div className="absolute bottom-1.5 left-1.5 px-1.5 py-0.5 rounded bg-black/70 text-[9px] font-mono font-semibold text-white/80">
-                        {formatDuration(duration)}
-                      </div>
-
-                      {/* Select checkbox — top left */}
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          toggleClip(clip.id);
-                        }}
-                        className={cn(
-                          "absolute top-1.5 left-1.5 h-5 w-5 rounded flex items-center justify-center transition-all",
-                          isSelected
-                            ? "bg-primary text-primary-foreground"
-                            : "bg-black/50 text-white/0 group-hover:text-white/70 hover:bg-white/20 hover:text-white",
-                        )}
-                        title={isSelected ? "Deselect clip" : "Select for export"}
-                      >
-                        {isSelected ? (
-                          <Check className="h-3 w-3" />
-                        ) : (
-                          <CheckSquare className="h-3 w-3" />
-                        )}
-                      </button>
-                    </SafeThumbnailImage>
-
-                    {/* ── Card body ─────────────────────────────────────────── */}
-                    <div
-                      className={cn(
-                        "px-3 py-2.5 transition-colors",
-                        isActive ? "bg-primary/10" : "bg-transparent group-hover:bg-muted/30",
-                      )}
-                    >
-                      {/* Title + delete */}
-                      <div className="flex items-start justify-between gap-1.5">
-                        <p className="text-[13px] font-medium truncate leading-snug flex-1">
-                          {clip.title || `Clip ${index + 1}`}
-                        </p>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setDeleteClipId(clip.id);
-                          }}
-                          className="h-5 w-5 flex items-center justify-center rounded text-muted-foreground/20 opacity-0 group-hover:opacity-100 hover:text-red-400 hover:bg-red-500/10 transition-all shrink-0 mt-0.5"
-                          title="Delete clip"
-                        >
-                          <Trash2 className="h-3 w-3" />
-                        </button>
-                      </div>
-
-                      {/* Compact review details */}
-                      <div className="mt-1.5">
-                        <div className="mb-1.5 flex flex-wrap gap-1.5">
-                          <ReviewStatusBadge status={reviewStatus} />
-                          {clip.captionSrt ? (
-                            <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 text-[9px] font-semibold text-emerald-300">
-                              <FileText className="h-2.5 w-2.5" />
-                              Captions
-                            </span>
-                          ) : null}
-                        </div>
-                        {clip.summary && (
-                          <p className="mb-2 line-clamp-1 text-[11px] leading-4 text-muted-foreground/65">
-                            {clip.summary}
-                          </p>
-                        )}
-                        {!clip.captionSrt ? (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleGenerateCaptions(clip.id);
-                            }}
-                            disabled={captionLoading === clip.id}
-                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded border border-dashed border-border/50 text-[9px] font-medium text-muted-foreground/50 hover:text-foreground hover:border-border transition-colors"
-                          >
-                            {captionLoading === clip.id ? (
-                              <Loader2 className="h-2.5 w-2.5 animate-spin" />
-                            ) : (
-                              <Type className="h-2.5 w-2.5" />
-                            )}
-                            Generate captions
-                          </button>
-                        ) : quality.tier !== "transcript_ready" ? (
-                          <span className="inline-flex items-center gap-1 text-[9px] font-semibold text-amber-400">
-                            <AlertTriangle className="h-2.5 w-2.5" /> Captions need review
-                          </span>
-                        ) : null}
-                        <div className="mt-2 grid grid-cols-3 gap-1 opacity-80 transition-opacity group-hover:opacity-100">
-                          <button
-                            type="button"
-                            disabled={isUpdating}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setReviewStatus(clip.id, "approved");
-                            }}
-                            className="rounded-md border border-emerald-500/20 bg-emerald-500/10 px-1.5 py-1 text-[9px] font-semibold text-emerald-300 disabled:opacity-50"
-                          >
-                            Approve
-                          </button>
-                          <button
-                            type="button"
-                            disabled={isUpdating}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setReviewStatus(clip.id, "rejected");
-                            }}
-                            className="rounded-md border border-red-500/20 bg-red-500/10 px-1.5 py-1 text-[9px] font-semibold text-red-300 disabled:opacity-50"
-                          >
-                            Reject
-                          </button>
-                          <button
-                            type="button"
-                            disabled={isUpdating}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setReviewStatus(clip.id, "export_ready");
-                            }}
-                            className="rounded-md border border-cyan-500/20 bg-cyan-500/10 px-1.5 py-1 text-[9px] font-semibold text-cyan-300 disabled:opacity-50"
-                          >
-                            Export
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })
-            )}
-          </div>
-        </div>
-
         {/* ── Active clip editor ───────────────────────────────────────────── */}
         <main className="min-w-0">
           {activeClip ? (
@@ -1989,29 +1631,6 @@ export default function RepurposeEditorPage() {
         </aside>
       </div>
 
-      {/* Delete confirmation */}
-      <AlertDialog
-        open={deleteClipId !== null}
-        onOpenChange={(open) => !open && setDeleteClipId(null)}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete this clip?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This action cannot be undone. The clip and its captions will be permanently removed.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleDeleteClip}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
-              Delete clip
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   );
 }

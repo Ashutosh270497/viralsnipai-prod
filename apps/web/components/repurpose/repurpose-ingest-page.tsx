@@ -144,7 +144,10 @@ export function RepurposeIngestPage() {
     process.env.NODE_ENV !== "production" ||
     process.env.NEXT_PUBLIC_ENABLE_MODEL_DEBUG === "true";
   const isEmptySourceState = stage === "source" && !primaryAsset;
-  const useSimpleClipFlow = process.env.NEXT_PUBLIC_V1_SIMPLE_CLIP_FLOW !== "false";
+  const advancedRepurposeEnabled =
+    process.env.NEXT_PUBLIC_ENABLE_ADVANCED_REPURPOSE === "true" ||
+    process.env.NEXT_PUBLIC_V1_SIMPLE_CLIP_FLOW === "false";
+  const useSimpleClipFlow = !advancedRepurposeEnabled;
 
   const appliedSeedRef = useRef<string | null>(null);
   const seededIdea = useMemo(() => {
@@ -229,6 +232,10 @@ export function RepurposeIngestPage() {
       debugModelOverride: "",
     });
     if (ok) {
+      toast({
+        title: "Clips generated",
+        description: "Opening editor…",
+      });
       router.push(`/repurpose/editor?projectId=${projectId}`);
     }
   }
@@ -880,7 +887,7 @@ function ClipSettingsPanel({
   qualityMode: "fast" | "balanced" | "best";
   setQualityMode: (value: "fast" | "balanced" | "best") => void;
 }) {
-  const clipCounts = [3, 5, 8];
+  const clipCounts = [3, 5, 10];
 
   return (
     <div className="grid gap-5 xl:grid-cols-2">

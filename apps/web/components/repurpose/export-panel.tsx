@@ -56,6 +56,8 @@ interface ExportPanelProps {
    * When set to a non-"none" value with includeCaptions on, Remotion renders if enabled.
    */
   captionAnimationType?: string | null;
+  /** Hide the platform select when a page-level format selector owns that choice. */
+  showPlatformSelector?: boolean;
 }
 
 type ExportRuntime = {
@@ -86,6 +88,7 @@ export function ExportPanel({
   captionSrt,
   clipTitle,
   captionAnimationType,
+  showPlatformSelector = true,
 }: ExportPanelProps) {
   const { toast } = useToast();
   const [includeCaptions, setIncludeCaptions] = useState(false);
@@ -407,36 +410,48 @@ export function ExportPanel({
 
   return (
     <div className="space-y-4">
-      <div className="rounded-2xl border border-border bg-muted/25 p-4">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-          <div className="grid gap-1.5">
-            <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground/45">
-              Platform preset
-            </p>
-            <label className="flex items-center gap-3 rounded-xl border border-border bg-background/60 px-4 py-3">
-              <select
-                value={selectedPlatformPreset}
-                onChange={(event) => {
-                  const next = event.target.value as PlatformExportPresetId;
-                  onPlatformPresetChange?.(next);
-                  onPresetChange(PLATFORM_EXPORT_PRESETS[next].legacyPreset);
-                }}
-                className="w-full bg-transparent text-sm font-medium outline-none"
-              >
-                {PLATFORM_EXPORT_PRESET_VALUES.map((presetId) => {
-                  const preset = PLATFORM_EXPORT_PRESETS[presetId];
-                  return (
-                  <option key={preset.id} value={preset.id} className="bg-zinc-950">
-                    {preset.label} · {preset.aspectRatio}
-                  </option>
-                  );
-                })}
-              </select>
-            </label>
-            <p className="text-xs text-muted-foreground/55">{selectedPlatformConfig.description}</p>
-          </div>
+      <section className="space-y-3">
+        <div>
+          <h2 className="text-lg font-semibold">Export settings</h2>
+          <p className="mt-1 text-sm text-muted-foreground/70">
+            Choose caption burn-in and quality, then start rendering.
+          </p>
+        </div>
 
-          <div className="flex min-w-[260px] items-center justify-between gap-4 rounded-xl border border-border bg-background/60 px-4 py-3.5">
+        <div className="rounded-2xl border border-border bg-muted/25 p-4">
+          <div className="grid gap-4 lg:grid-cols-2">
+            {showPlatformSelector ? (
+              <div className="grid gap-1.5">
+                <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground/45">
+                  Platform preset
+                </p>
+                <label className="flex items-center gap-3 rounded-xl border border-border bg-background/60 px-4 py-3">
+                  <select
+                    value={selectedPlatformPreset}
+                    onChange={(event) => {
+                      const next = event.target.value as PlatformExportPresetId;
+                      onPlatformPresetChange?.(next);
+                      onPresetChange(PLATFORM_EXPORT_PRESETS[next].legacyPreset);
+                    }}
+                    className="w-full bg-transparent text-sm font-medium outline-none"
+                  >
+                    {PLATFORM_EXPORT_PRESET_VALUES.map((presetId) => {
+                      const preset = PLATFORM_EXPORT_PRESETS[presetId];
+                      return (
+                        <option key={preset.id} value={preset.id} className="bg-zinc-950">
+                          {preset.label} · {preset.aspectRatio}
+                        </option>
+                      );
+                    })}
+                  </select>
+                </label>
+                <p className="text-xs text-muted-foreground/55">
+                  {selectedPlatformConfig.description}
+                </p>
+              </div>
+            ) : null}
+
+            <div className="flex min-w-0 items-center justify-between gap-4 rounded-xl border border-border bg-background/60 px-4 py-3.5">
             <div className="min-w-0">
               <p className="text-sm font-medium">Burn captions on video</p>
               <p className="text-xs text-muted-foreground/50 mt-0.5">
@@ -448,64 +463,63 @@ export function ExportPanel({
               </p>
             </div>
             <Switch checked={includeCaptions} onCheckedChange={setIncludeCaptions} aria-label="Toggle export captions" />
-          </div>
-        </div>
-
-        {/* ── Animation info ────────────────────────────────────────────── */}
-        {hasAnimatedCaptions && (
-          <div className="flex items-center gap-3 rounded-xl border border-violet-500/25 bg-violet-500/[0.06] px-4 py-3">
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-foreground/80">
-                Animated captions: <span className="capitalize text-violet-400">{captionAnimationType}</span>
-              </p>
-              <p className="text-xs text-muted-foreground/55 mt-0.5">
-                {remotionEnabled
-                  ? "Rendered with Remotion (animated). Slower but richer output."
-                  : "Remotion renderer is disabled — exported as static burn-in. Set REMOTION_RENDERER_ENABLED=true to enable."}
-              </p>
             </div>
-            <span className={cn(
-              "shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold",
-              remotionEnabled
-                ? "bg-violet-500/20 text-violet-300"
-                : "bg-muted/60 text-muted-foreground/50"
-            )}>
-              {remotionEnabled ? "Remotion" : "FFmpeg"}
-            </span>
           </div>
-        )}
 
-        {/* ── Export quality ────────────────────────────────────────────── */}
-        <div className="rounded-xl border border-border/50 bg-muted/20 px-4 py-3 space-y-2.5">
-          <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground/45">
-            Export quality
-          </p>
-          <div className="grid grid-cols-2 gap-2">
-            {(["high", "standard"] as const).map((q) => (
-              <button
-                key={q}
-                type="button"
-                onClick={() => setExportQuality(q)}
-                className={cn(
-                  "flex flex-col items-start rounded-lg border px-3 py-2.5 text-left text-xs transition-colors",
-                  exportQuality === q
-                    ? "border-primary/40 bg-primary/10"
-                    : "border-border/40 bg-muted/10 hover:bg-muted/30"
-                )}
-              >
-                <p className={cn("font-semibold mb-0.5", exportQuality === q ? "text-foreground" : "text-foreground/70")}>
-                  {q === "high" ? "High quality" : "Standard"}
+          {hasAnimatedCaptions && (
+            <div className="mt-4 flex items-center gap-3 rounded-xl border border-violet-500/25 bg-violet-500/[0.06] px-4 py-3">
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-foreground/80">
+                  Animated captions: <span className="capitalize text-violet-400">{captionAnimationType}</span>
                 </p>
-                <p className="text-[10px] text-muted-foreground/55">
-                  {q === "high"
-                    ? "CRF 16 · slow · 256k audio — visually near-lossless"
-                    : "CRF 20 · medium · 192k audio — good for quick exports"}
+                <p className="text-xs text-muted-foreground/55 mt-0.5">
+                  {remotionEnabled
+                    ? "Rendered with Remotion for animated captions."
+                    : "Remotion is disabled, so captions export as static burn-in."}
                 </p>
-              </button>
-            ))}
+              </div>
+              <span className={cn(
+                "shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold",
+                remotionEnabled
+                  ? "bg-violet-500/20 text-violet-300"
+                  : "bg-muted/60 text-muted-foreground/50"
+              )}>
+                {remotionEnabled ? "Remotion" : "FFmpeg"}
+              </span>
+            </div>
+          )}
+
+          <div className="mt-4 rounded-xl border border-border/50 bg-muted/20 px-4 py-3 space-y-2.5">
+            <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground/45">
+              Export quality
+            </p>
+            <div className="grid grid-cols-2 gap-2">
+              {(["high", "standard"] as const).map((q) => (
+                <button
+                  key={q}
+                  type="button"
+                  onClick={() => setExportQuality(q)}
+                  className={cn(
+                    "flex flex-col items-start rounded-lg border px-3 py-2.5 text-left text-xs transition-colors",
+                    exportQuality === q
+                      ? "border-primary/40 bg-primary/10"
+                      : "border-border/40 bg-muted/10 hover:bg-muted/30"
+                  )}
+                >
+                  <p className={cn("font-semibold mb-0.5", exportQuality === q ? "text-foreground" : "text-foreground/70")}>
+                    {q === "high" ? "High quality" : "Standard"}
+                  </p>
+                  <p className="text-[10px] text-muted-foreground/55">
+                    {q === "high"
+                      ? "Best quality for downloads"
+                      : "Smaller file for quick sharing"}
+                  </p>
+                </button>
+              ))}
+            </div>
           </div>
         </div>
-      </div>
+      </section>
 
       <button
         onClick={queueExport}
