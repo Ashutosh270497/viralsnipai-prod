@@ -14,6 +14,20 @@ type UseRepurposeIngestArgs = {
   onProjectRefresh: () => Promise<void>;
 };
 
+type AutoHighlightRequestOverrides = {
+  mode?: "replace" | "merge" | "append";
+  qualityMode?: QualityMode;
+  clipIntent?: ClipIntent;
+  targetPlatform?: string;
+  brief?: string;
+  audience?: string;
+  tone?: string;
+  callToAction?: string;
+  target?: number;
+  clipLengthPreset?: "short" | "balanced" | "detailed";
+  debugModelOverride?: string;
+};
+
 export function useRepurposeIngest({
   projectId,
   primaryAssetId,
@@ -62,7 +76,7 @@ export function useRepurposeIngest({
     return value as { phase?: unknown; progress?: unknown };
   }, []);
 
-  const handleAutoHighlights = useCallback(async () => {
+  const handleAutoHighlights = useCallback(async (overrides: AutoHighlightRequestOverrides = {}) => {
     if (!primaryAssetId) {
       toast({
         variant: "destructive",
@@ -82,19 +96,19 @@ export function useRepurposeIngest({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           assetId: primaryAssetId,
-          mode: "merge",
-          qualityMode,
-          clipIntent,
-          targetPlatform,
-          ...(debugModelOverride.trim()
-            ? { debugModelOverride: debugModelOverride.trim() }
+          mode: overrides.mode ?? "merge",
+          qualityMode: overrides.qualityMode ?? qualityMode,
+          clipIntent: overrides.clipIntent ?? clipIntent,
+          targetPlatform: overrides.targetPlatform ?? targetPlatform,
+          ...((overrides.debugModelOverride ?? debugModelOverride).trim()
+            ? { debugModelOverride: (overrides.debugModelOverride ?? debugModelOverride).trim() }
             : {}),
-          brief: highlightBrief,
-          audience: highlightAudience,
-          tone: highlightTone,
-          callToAction: highlightCallToAction,
-          target: targetClipCount,
-          clipLengthPreset,
+          brief: overrides.brief ?? highlightBrief,
+          audience: overrides.audience ?? highlightAudience,
+          tone: overrides.tone ?? highlightTone,
+          callToAction: overrides.callToAction ?? highlightCallToAction,
+          target: overrides.target ?? targetClipCount,
+          clipLengthPreset: overrides.clipLengthPreset ?? clipLengthPreset,
         }),
         cache: "no-store",
         operation: "generation",

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowRight,
   Check,
@@ -75,6 +75,7 @@ const TARGET_PLATFORM_OPTIONS = [
 
 export function RepurposeIngestPage() {
   const { toast } = useToast();
+  const router = useRouter();
   const searchParams = useSearchParams();
   const {
     projects,
@@ -143,6 +144,7 @@ export function RepurposeIngestPage() {
     process.env.NODE_ENV !== "production" ||
     process.env.NEXT_PUBLIC_ENABLE_MODEL_DEBUG === "true";
   const isEmptySourceState = stage === "source" && !primaryAsset;
+  const useSimpleClipFlow = process.env.NEXT_PUBLIC_V1_SIMPLE_CLIP_FLOW !== "false";
 
   const appliedSeedRef = useRef<string | null>(null);
   const seededIdea = useMemo(() => {
@@ -193,6 +195,42 @@ export function RepurposeIngestPage() {
     setStage("generate");
     const ok = await handleAutoHighlights();
     if (ok) setStage("review");
+  }
+
+  async function generateV1Clips() {
+    if (!primaryAsset) {
+      toast({
+        variant: "destructive",
+        title: "Add your video first",
+        description: "Upload a file or import a YouTube video before generating clips.",
+      });
+      return;
+    }
+
+    const mode = clipCount > 0 ? "replace" : "merge";
+    if (
+      mode === "replace" &&
+      !window.confirm("Generating again will replace existing clips for this source.")
+    ) {
+      return;
+    }
+
+    const ok = await handleAutoHighlights({
+      mode,
+      qualityMode,
+      clipIntent: "auto",
+      targetPlatform: "auto",
+      target: targetClipCount,
+      clipLengthPreset: "balanced",
+      brief: highlightBrief,
+      audience: highlightAudience,
+      tone: highlightTone,
+      callToAction: highlightCallToAction,
+      debugModelOverride: "",
+    });
+    if (ok) {
+      router.push(`/repurpose/editor?projectId=${projectId}`);
+    }
   }
 
   async function uploadSource(file: File) {
@@ -270,14 +308,6 @@ export function RepurposeIngestPage() {
         </p>
       </div>
 
-      <ClipCreationStageNav
-        stage={stage}
-        setStage={setStage}
-        hasSource={Boolean(primaryAsset)}
-        hasClips={clipCount > 0}
-        hasApproved={approvedCount > 0}
-      />
-
       {seededIdea ? (
         <div className="rounded-2xl border border-primary/15 bg-primary/[0.04] p-4">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -287,7 +317,7 @@ export function RepurposeIngestPage() {
               </p>
               <p className="mt-1 text-sm font-semibold">{seededIdea.title || "Repurpose-ready idea"}</p>
               <p className="mt-1 max-w-2xl text-xs leading-5 text-muted-foreground/70">
-                This context has been applied to your clip goals. You can edit it in the Goals stage.
+                This context will guide clip generation behind the scenes.
               </p>
             </div>
             <Link href={`/dashboard/content-calendar?ideaId=${seededIdea.ideaId}`} className="text-sm font-medium text-primary">
@@ -297,181 +327,722 @@ export function RepurposeIngestPage() {
         </div>
       ) : null}
 
-      <div
-        className={cn(
-          "grid gap-5 lg:items-start",
-          isEmptySourceState
-            ? "lg:grid-cols-[minmax(0,1fr)_280px]"
-            : "lg:grid-cols-[minmax(0,1fr)_340px]",
-        )}
-      >
-        <div className="min-w-0">
-          {stage === "source" ? (
-            <SourceStage
+      {useSimpleClipFlow ? (
+        <V1CreateClipScreen
+          sourceUrl={sourceUrl}
+          setSourceUrl={setSourceUrl}
+          handleIngestYouTube={handleIngestYouTube}
+          youtubeProgress={youtubeProgress}
+          projectId={projectId}
+          uploadSource={uploadSource}
+          primaryAsset={primaryAsset}
+          transcriptPrecision={transcriptPrecision}
+          transcriptPreview={transcriptPreview}
+          qualityMode={qualityMode}
+          setQualityMode={setQualityMode}
+          targetClipCount={targetClipCount}
+          setTargetClipCount={setTargetClipCount}
+          clipCount={clipCount}
+          highlightProgress={highlightProgress}
+          generateClips={generateV1Clips}
+        />
+      ) : (
+        <>
+          <ClipCreationStageNav
+            stage={stage}
+            setStage={setStage}
+            hasSource={Boolean(primaryAsset)}
+            hasClips={clipCount > 0}
+            hasApproved={approvedCount > 0}
+          />
+
+          <div
+            className={cn(
+              "grid gap-5 lg:items-start",
+              isEmptySourceState
+                ? "lg:grid-cols-[minmax(0,1fr)_280px]"
+                : "lg:grid-cols-[minmax(0,1fr)_340px]",
+            )}
+          >
+            <div className="min-w-0">
+              {stage === "source" ? (
+                <SourceStage
+                  sourceUrl={sourceUrl}
+                  setSourceUrl={setSourceUrl}
+                  handleIngestYouTube={handleIngestYouTube}
+                  youtubeProgress={youtubeProgress}
+                  projectId={projectId}
+                  uploadSource={uploadSource}
+                  primaryAsset={primaryAsset}
+                  transcriptPreview={transcriptPreview}
+                  transcriptPrecision={transcriptPrecision}
+                  onNext={() => setStage("goals")}
+                />
+              ) : null}
+
+              {stage === "goals" ? (
+                <GoalsStage
+                  qualityMode={qualityMode}
+                  setQualityMode={setQualityMode}
+                  clipIntent={clipIntent}
+                  setClipIntent={setClipIntent}
+                  targetPlatform={targetPlatform}
+                  setTargetPlatform={setTargetPlatform}
+                  targetClipCount={targetClipCount}
+                  setTargetClipCount={setTargetClipCount}
+                  clipLengthPreset={clipLengthPreset}
+                  setClipLengthPreset={setClipLengthPreset}
+                  highlightBrief={highlightBrief}
+                  setHighlightBrief={setHighlightBrief}
+                  highlightAudience={highlightAudience}
+                  setHighlightAudience={setHighlightAudience}
+                  highlightTone={highlightTone}
+                  setHighlightTone={setHighlightTone}
+                  highlightCallToAction={highlightCallToAction}
+                  setHighlightCallToAction={setHighlightCallToAction}
+                  primaryAssetTranscript={primaryAsset?.transcript}
+                  primaryAssetDurationSec={primaryAsset?.durationSec ?? null}
+                  transcriptPrecision={transcriptPrecision}
+                  projectTitle={project?.title}
+                  onPromptsGenerated={(prompts: GeneratedPromptSet) => {
+                    setHighlightBrief(prompts.brief);
+                    setHighlightAudience(prompts.audience);
+                    setHighlightTone(prompts.tone);
+                    setHighlightCallToAction(prompts.callToAction);
+                  }}
+                  onBack={() => setStage("source")}
+                  onNext={() => setStage("generate")}
+                />
+              ) : null}
+
+              {stage === "generate" ? (
+                <GenerateStage
+                  canGenerate={Boolean(primaryAsset)}
+                  isGenerating={highlightProgress.isActive}
+                  progress={highlightProgress.progress}
+                  generateClips={generateClips}
+                  onBack={() => setStage("goals")}
+                  onReview={() => setStage("review")}
+                  clipCount={clipCount}
+                />
+              ) : null}
+
+              {stage === "review" && project ? (
+                <ReviewStage
+                  clips={project.clips}
+                  projectId={projectId}
+                  selectedClipIds={selectedClipIds}
+                  setSelectedClipIds={setSelectedClipIds}
+                  reviewFilter={reviewFilter}
+                  setReviewFilter={setReviewFilter}
+                  reviewSort={reviewSort}
+                  setReviewSort={setReviewSort}
+                  updateReviewStatus={updateReviewStatus}
+                  onBack={() => setStage("generate")}
+                  onExport={() => setStage("export")}
+                />
+              ) : null}
+
+              {stage === "export" && project ? (
+                <ExportStageEntry
+                  clips={project.clips}
+                  projectId={projectId}
+                  selectedClipIds={selectedClipIds}
+                  setSelectedClipIds={setSelectedClipIds}
+                  onBack={() => setStage("review")}
+                />
+              ) : null}
+            </div>
+
+            <div className="space-y-4 lg:sticky lg:top-20">
+              {isEmptySourceState ? (
+                <>
+                  <BestResultsCard />
+                  <AdvancedDetailsPanel
+                    hasSource={false}
+                    assetType={undefined}
+                    durationSec={undefined}
+                    clipCount={clipCount}
+                    approvedCount={approvedCount}
+                    exportCount={project?.exports?.length ?? 0}
+                    selectedCount={selectedClipIds.length}
+                    analytics={lastHighlightAnalytics}
+                    transcriptPreview={transcriptPreview}
+                    transcriptPrecision={transcriptPrecision}
+                    modelDebugEnabled={modelDebugEnabled}
+                    debugModelOverride={debugModelOverride}
+                    setDebugModelOverride={setDebugModelOverride}
+                  />
+                </>
+              ) : stage === "goals" ? (
+                <>
+                  <ProjectSummaryCard
+                    hasSource={Boolean(primaryAsset)}
+                    assetType={primaryAsset?.type}
+                    durationSec={primaryAsset?.durationSec}
+                    clipCount={clipCount}
+                    approvedCount={approvedCount}
+                    exportCount={project?.exports?.length ?? 0}
+                    selectedCount={selectedClipIds.length}
+                    compact
+                  />
+                  <AdvancedDetailsPanel
+                    hasSource={Boolean(primaryAsset)}
+                    assetType={primaryAsset?.type}
+                    durationSec={primaryAsset?.durationSec}
+                    clipCount={clipCount}
+                    approvedCount={approvedCount}
+                    exportCount={project?.exports?.length ?? 0}
+                    selectedCount={selectedClipIds.length}
+                    analytics={lastHighlightAnalytics}
+                    transcriptPreview={transcriptPreview}
+                    transcriptPrecision={transcriptPrecision}
+                    modelDebugEnabled={modelDebugEnabled}
+                    debugModelOverride={debugModelOverride}
+                    setDebugModelOverride={setDebugModelOverride}
+                    showProjectSummary={false}
+                  />
+                </>
+              ) : (
+                <>
+                  <ProjectSummaryCard
+                    hasSource={Boolean(primaryAsset)}
+                    assetType={primaryAsset?.type}
+                    durationSec={primaryAsset?.durationSec}
+                    clipCount={clipCount}
+                    approvedCount={approvedCount}
+                    exportCount={project?.exports?.length ?? 0}
+                    selectedCount={selectedClipIds.length}
+                  />
+                  <TechnicalDetailsDrawer
+                    analytics={lastHighlightAnalytics}
+                    transcriptPreview={transcriptPreview}
+                    transcriptPrecision={transcriptPrecision}
+                    modelDebugEnabled={modelDebugEnabled}
+                    debugModelOverride={debugModelOverride}
+                    setDebugModelOverride={setDebugModelOverride}
+                  />
+                  <details className="rounded-2xl border border-border/50 bg-card/55 p-4">
+                    <summary className="cursor-pointer text-sm font-semibold">Plan usage</summary>
+                    <div className="mt-3">
+                      <V1UsageLimitsCard />
+                    </div>
+                  </details>
+                </>
+              )}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function V1CreateClipScreen({
+  sourceUrl,
+  setSourceUrl,
+  handleIngestYouTube,
+  youtubeProgress,
+  projectId,
+  uploadSource,
+  primaryAsset,
+  transcriptPrecision,
+  transcriptPreview,
+  qualityMode,
+  setQualityMode,
+  targetClipCount,
+  setTargetClipCount,
+  clipCount,
+  highlightProgress,
+  generateClips,
+}: {
+  sourceUrl: string;
+  setSourceUrl: (value: string) => void;
+  handleIngestYouTube: () => Promise<void>;
+  youtubeProgress: { isActive: boolean; phase: string };
+  projectId: string;
+  uploadSource: (file: File) => Promise<void>;
+  primaryAsset: any;
+  transcriptPrecision: string;
+  transcriptPreview: TranscriptPreview;
+  qualityMode: "fast" | "balanced" | "best";
+  setQualityMode: (value: "fast" | "balanced" | "best") => void;
+  targetClipCount: number;
+  setTargetClipCount: (value: number) => void;
+  clipCount: number;
+  highlightProgress: { isActive: boolean; progress: number; phase: string };
+  generateClips: () => Promise<void>;
+}) {
+  const [isReplacingSource, setIsReplacingSource] = useState(false);
+  const hasSource = Boolean(primaryAsset);
+  const showSourceInputs = !hasSource || isReplacingSource;
+
+  return (
+    <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_280px] lg:items-start">
+      <div className="min-w-0 space-y-5">
+        <section className="rounded-3xl border border-border/55 bg-card/70 p-5 shadow-sm md:p-6">
+          <div className="mb-5">
+            <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-primary/70">
+              Create Clips
+            </p>
+            <h2 className="mt-2 text-2xl font-semibold tracking-tight">Add your video</h2>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground/70">
+              Upload a file or import a YouTube video. Once the source is ready, choose how many
+              clips you want and start generation.
+            </p>
+          </div>
+
+          {showSourceInputs ? (
+            <SourceInputPanel
               sourceUrl={sourceUrl}
               setSourceUrl={setSourceUrl}
               handleIngestYouTube={handleIngestYouTube}
               youtubeProgress={youtubeProgress}
               projectId={projectId}
               uploadSource={uploadSource}
-              primaryAsset={primaryAsset}
-              transcriptPreview={transcriptPreview}
-              transcriptPrecision={transcriptPrecision}
-              onNext={() => setStage("goals")}
+              hasSource={hasSource}
+              onCancelReplace={() => setIsReplacingSource(false)}
             />
-          ) : null}
+          ) : (
+            <SourceReadyCard
+              primaryAsset={primaryAsset}
+              transcriptPrecision={transcriptPrecision}
+              transcriptPreview={transcriptPreview}
+              onReplace={() => setIsReplacingSource(true)}
+            />
+          )}
+        </section>
 
-          {stage === "goals" ? (
-            <GoalsStage
-              qualityMode={qualityMode}
-              setQualityMode={setQualityMode}
-              clipIntent={clipIntent}
-              setClipIntent={setClipIntent}
-              targetPlatform={targetPlatform}
-              setTargetPlatform={setTargetPlatform}
+        {hasSource && !isReplacingSource ? (
+          <section className="rounded-3xl border border-border/55 bg-card/70 p-5 shadow-sm md:p-6">
+            <div className="mb-5">
+              <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-primary/70">
+                Clipping Settings
+              </p>
+              <h2 className="mt-2 text-2xl font-semibold tracking-tight">Choose clipping settings</h2>
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground/70">
+                Keep it simple. ViralSnipAI handles clip intent, platform fit, timing, captions,
+                previews, and AI routing internally.
+              </p>
+            </div>
+
+            <ClipSettingsPanel
+              disabled={highlightProgress.isActive}
               targetClipCount={targetClipCount}
               setTargetClipCount={setTargetClipCount}
-              clipLengthPreset={clipLengthPreset}
-              setClipLengthPreset={setClipLengthPreset}
-              highlightBrief={highlightBrief}
-              setHighlightBrief={setHighlightBrief}
-              highlightAudience={highlightAudience}
-              setHighlightAudience={setHighlightAudience}
-              highlightTone={highlightTone}
-              setHighlightTone={setHighlightTone}
-              highlightCallToAction={highlightCallToAction}
-              setHighlightCallToAction={setHighlightCallToAction}
-              primaryAssetTranscript={primaryAsset?.transcript}
-              primaryAssetDurationSec={primaryAsset?.durationSec ?? null}
-              transcriptPrecision={transcriptPrecision}
-              projectTitle={project?.title}
-              onPromptsGenerated={(prompts: GeneratedPromptSet) => {
-                setHighlightBrief(prompts.brief);
-                setHighlightAudience(prompts.audience);
-                setHighlightTone(prompts.tone);
-                setHighlightCallToAction(prompts.callToAction);
-              }}
-              onBack={() => setStage("source")}
-              onNext={() => setStage("generate")}
+              qualityMode={qualityMode}
+              setQualityMode={setQualityMode}
             />
-          ) : null}
 
-          {stage === "generate" ? (
-            <GenerateStage
-              canGenerate={Boolean(primaryAsset)}
-              isGenerating={highlightProgress.isActive}
-              progress={highlightProgress.progress}
-              generateClips={generateClips}
-              onBack={() => setStage("goals")}
-              onReview={() => setStage("review")}
-              clipCount={clipCount}
-            />
-          ) : null}
-
-          {stage === "review" && project ? (
-            <ReviewStage
-              clips={project.clips}
-              projectId={projectId}
-              selectedClipIds={selectedClipIds}
-              setSelectedClipIds={setSelectedClipIds}
-              reviewFilter={reviewFilter}
-              setReviewFilter={setReviewFilter}
-              reviewSort={reviewSort}
-              setReviewSort={setReviewSort}
-              updateReviewStatus={updateReviewStatus}
-              onBack={() => setStage("generate")}
-              onExport={() => setStage("export")}
-            />
-          ) : null}
-
-          {stage === "export" && project ? (
-            <ExportStageEntry
-              clips={project.clips}
-              projectId={projectId}
-              selectedClipIds={selectedClipIds}
-              setSelectedClipIds={setSelectedClipIds}
-              onBack={() => setStage("review")}
-            />
-          ) : null}
-        </div>
-
-        <div className="space-y-4 lg:sticky lg:top-20">
-          {isEmptySourceState ? (
-            <>
-              <BestResultsCard />
-              <AdvancedDetailsPanel
-                hasSource={false}
-                assetType={undefined}
-                durationSec={undefined}
-                clipCount={clipCount}
-                approvedCount={approvedCount}
-                exportCount={project?.exports?.length ?? 0}
-                selectedCount={selectedClipIds.length}
-                analytics={lastHighlightAnalytics}
-                transcriptPreview={transcriptPreview}
-                transcriptPrecision={transcriptPrecision}
-                modelDebugEnabled={modelDebugEnabled}
-                debugModelOverride={debugModelOverride}
-                setDebugModelOverride={setDebugModelOverride}
+            {highlightProgress.isActive ? (
+              <CreateProgressCard
+                progress={highlightProgress.progress}
+                phase={highlightProgress.phase}
               />
-            </>
-          ) : stage === "goals" ? (
-            <>
-              <ProjectSummaryCard
-                hasSource={Boolean(primaryAsset)}
-                assetType={primaryAsset?.type}
-                durationSec={primaryAsset?.durationSec}
-                clipCount={clipCount}
-                approvedCount={approvedCount}
-                exportCount={project?.exports?.length ?? 0}
-                selectedCount={selectedClipIds.length}
-                compact
-              />
-              <AdvancedDetailsPanel
-                hasSource={Boolean(primaryAsset)}
-                assetType={primaryAsset?.type}
-                durationSec={primaryAsset?.durationSec}
-                clipCount={clipCount}
-                approvedCount={approvedCount}
-                exportCount={project?.exports?.length ?? 0}
-                selectedCount={selectedClipIds.length}
-                analytics={lastHighlightAnalytics}
-                transcriptPreview={transcriptPreview}
-                transcriptPrecision={transcriptPrecision}
-                modelDebugEnabled={modelDebugEnabled}
-                debugModelOverride={debugModelOverride}
-                setDebugModelOverride={setDebugModelOverride}
-                showProjectSummary={false}
-              />
-            </>
-          ) : (
-            <>
-              <ProjectSummaryCard
-                hasSource={Boolean(primaryAsset)}
-                assetType={primaryAsset?.type}
-                durationSec={primaryAsset?.durationSec}
-                clipCount={clipCount}
-                approvedCount={approvedCount}
-                exportCount={project?.exports?.length ?? 0}
-                selectedCount={selectedClipIds.length}
-              />
-              <TechnicalDetailsDrawer
-                analytics={lastHighlightAnalytics}
-                transcriptPreview={transcriptPreview}
-                transcriptPrecision={transcriptPrecision}
-                modelDebugEnabled={modelDebugEnabled}
-                debugModelOverride={debugModelOverride}
-                setDebugModelOverride={setDebugModelOverride}
-              />
-              <details className="rounded-2xl border border-border/50 bg-card/55 p-4">
-                <summary className="cursor-pointer text-sm font-semibold">Plan usage</summary>
-                <div className="mt-3">
-                  <V1UsageLimitsCard />
+            ) : clipCount > 0 ? (
+              <div className="mt-5 rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.05] p-4">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="text-sm font-semibold text-emerald-200">Your clips are ready</p>
+                    <p className="mt-1 text-xs leading-5 text-muted-foreground/70">
+                      Review, edit, caption, and mark clips ready for export in the editor.
+                    </p>
+                  </div>
+                  <Button asChild className="shrink-0">
+                    <Link href={`/repurpose/editor?projectId=${projectId}`}>
+                      Review & Edit Clips
+                      <ArrowRight className="ml-1.5 h-4 w-4" />
+                    </Link>
+                  </Button>
                 </div>
-              </details>
-            </>
-          )}
+              </div>
+            ) : null}
+
+            <GenerateClipsPanel
+              isGenerating={highlightProgress.isActive}
+              canGenerate={hasSource}
+              hasExistingClips={clipCount > 0}
+              onGenerate={generateClips}
+            />
+          </section>
+        ) : null}
+      </div>
+
+      <div className="space-y-4 lg:sticky lg:top-20">
+        <BestResultsCard />
+        {hasSource ? (
+          <details className="rounded-2xl border border-border/50 bg-card/55 p-4">
+            <summary className="cursor-pointer text-sm font-semibold">Source details</summary>
+            <div className="mt-3 space-y-2 text-xs text-muted-foreground/70">
+              <SummaryRow label="Source" value="Ready" good />
+              <SummaryRow
+                label="Duration"
+                value={
+                  primaryAsset?.durationSec
+                    ? formatDuration(primaryAsset.durationSec * 1000)
+                    : "Analyzing"
+                }
+              />
+              {primaryAsset?.sourceWidth && primaryAsset?.sourceHeight ? (
+                <SummaryRow
+                  label="Resolution"
+                  value={`${primaryAsset.sourceWidth}x${primaryAsset.sourceHeight}`}
+                />
+              ) : null}
+              <SummaryRow label="Generated clips" value={String(clipCount)} />
+            </div>
+          </details>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function SourceInputPanel({
+  sourceUrl,
+  setSourceUrl,
+  handleIngestYouTube,
+  youtubeProgress,
+  projectId,
+  uploadSource,
+  hasSource,
+  onCancelReplace,
+}: {
+  sourceUrl: string;
+  setSourceUrl: (value: string) => void;
+  handleIngestYouTube: () => Promise<void>;
+  youtubeProgress: { isActive: boolean; phase: string };
+  projectId: string;
+  uploadSource: (file: File) => Promise<void>;
+  hasSource: boolean;
+  onCancelReplace: () => void;
+}) {
+  return (
+    <div className="space-y-5">
+      <div className="grid gap-4 lg:grid-cols-2">
+        <div className="rounded-3xl border border-red-400/20 bg-background/60 p-5 shadow-sm transition hover:border-red-400/35 hover:bg-background/75">
+          <div className="flex items-center gap-3">
+            <span className="rounded-2xl bg-red-500/10 p-3 text-red-400">
+              <Youtube className="h-5 w-5" />
+            </span>
+            <div>
+              <h3 className="text-base font-semibold">Paste YouTube link</h3>
+              <p className="mt-1 text-xs text-muted-foreground/70">Paste a public YouTube URL.</p>
+            </div>
+          </div>
+          <div className="mt-5 flex flex-col gap-2 sm:flex-row">
+            <div className="relative min-w-0 flex-1">
+              <LinkIcon className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/40" />
+              <input
+                value={sourceUrl}
+                onChange={(event) => setSourceUrl(event.target.value)}
+                placeholder="https://youtube.com/watch?v=..."
+                disabled={youtubeProgress.isActive}
+                className="h-12 w-full rounded-2xl border border-border/55 bg-background/80 pl-10 pr-3 text-sm outline-none transition focus:border-primary/55 focus:ring-2 focus:ring-primary/10 disabled:cursor-not-allowed disabled:opacity-60"
+              />
+            </div>
+            <Button
+              onClick={handleIngestYouTube}
+              disabled={youtubeProgress.isActive || !sourceUrl.trim()}
+              className="h-12 rounded-2xl px-5"
+            >
+              {youtubeProgress.isActive ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Search className="h-4 w-4" />
+              )}
+              <span className="ml-1.5">
+                {youtubeProgress.isActive ? youtubeProgress.phase || "Importing" : "Import"}
+              </span>
+            </Button>
+          </div>
         </div>
+
+        <div className="rounded-3xl border border-primary/25 bg-primary/[0.045] p-5 shadow-sm shadow-primary/5 transition hover:border-primary/40 hover:bg-primary/[0.06]">
+          <div className="flex items-center gap-3">
+            <span className="rounded-2xl bg-primary/10 p-3 text-primary">
+              <UploadCloud className="h-5 w-5" />
+            </span>
+            <div>
+              <h3 className="text-base font-semibold">Upload video</h3>
+              <p className="mt-1 text-xs text-muted-foreground/70">Upload MP4, MOV, or WebM.</p>
+            </div>
+          </div>
+          <div className="mt-5">
+            <UploadDropzone
+              projectId={projectId}
+              onUpload={uploadSource}
+              maxSizeMb={500}
+              recommendedDurationMinutes={60}
+              description="Upload videos up to 500 MB"
+              formatHints={["MP4", "MOV", "WebM", "MP3", "WAV", "M4A"]}
+            />
+          </div>
+        </div>
+      </div>
+
+      <div className="sticky bottom-3 z-20 rounded-2xl border border-border/60 bg-background/90 p-3 shadow-2xl shadow-black/10 backdrop-blur md:static md:shadow-none">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm text-muted-foreground">
+            {hasSource
+              ? "Import or upload a replacement, or keep the current source."
+              : "Add a YouTube link or upload a file to continue."}
+          </p>
+          {hasSource ? (
+            <Button variant="outline" onClick={onCancelReplace}>
+              Keep current source
+            </Button>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SourceReadyCard({
+  primaryAsset,
+  transcriptPrecision,
+  transcriptPreview,
+  onReplace,
+}: {
+  primaryAsset: any;
+  transcriptPrecision: string;
+  transcriptPreview: TranscriptPreview;
+  onReplace: () => void;
+}) {
+  const sourceName = getAssetDisplayName(primaryAsset);
+
+  return (
+    <div className="rounded-3xl border border-emerald-500/20 bg-emerald-500/[0.045] p-5">
+      <div className="flex flex-col gap-5 md:flex-row md:items-start md:justify-between">
+        <div className="flex min-w-0 gap-4">
+          <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-2xl border border-emerald-500/20 bg-background/60 text-emerald-400">
+            {primaryAsset?.type === "audio" ? (
+              <FileText className="h-7 w-7" />
+            ) : (
+              <Play className="h-7 w-7" />
+            )}
+          </div>
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/25 bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-500">
+                <CheckCircle2 className="h-3.5 w-3.5" />
+                Source ready
+              </span>
+              <span className="text-xs capitalize text-muted-foreground">{primaryAsset?.type}</span>
+            </div>
+            <h3 className="mt-3 truncate text-lg font-semibold">{sourceName}</h3>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {primaryAsset?.durationSec
+                ? formatDuration(primaryAsset.durationSec * 1000)
+                : "Duration is being analyzed"}
+              {primaryAsset?.sourceWidth && primaryAsset?.sourceHeight
+                ? ` · ${primaryAsset.sourceWidth}x${primaryAsset.sourceHeight}`
+                : ""}
+            </p>
+            {transcriptPrecision !== "word" && transcriptPrecision !== "none" ? <PrecisionNotice /> : null}
+            <SourceQualityNotice
+              sourceWidth={primaryAsset?.sourceWidth}
+              sourceHeight={primaryAsset?.sourceHeight}
+              compact
+              className="mt-3"
+            />
+            {primaryAsset?.transcript ? (
+              <details className="mt-3">
+                <summary className="cursor-pointer text-xs font-semibold text-muted-foreground">
+                  Transcript preview
+                </summary>
+                <p className="mt-2 rounded-xl border border-border/50 bg-background/60 p-3 text-xs leading-5 text-muted-foreground/70">
+                  {transcriptPreview.text}
+                </p>
+              </details>
+            ) : null}
+          </div>
+        </div>
+        <Button variant="outline" onClick={onReplace} className="shrink-0">
+          Replace source
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function ClipSettingsPanel({
+  disabled,
+  targetClipCount,
+  setTargetClipCount,
+  qualityMode,
+  setQualityMode,
+}: {
+  disabled: boolean;
+  targetClipCount: number;
+  setTargetClipCount: (value: number) => void;
+  qualityMode: "fast" | "balanced" | "best";
+  setQualityMode: (value: "fast" | "balanced" | "best") => void;
+}) {
+  const clipCounts = [3, 5, 8];
+
+  return (
+    <div className="grid gap-5 xl:grid-cols-2">
+      <section className="rounded-3xl border border-border/55 bg-background/45 p-4">
+        <h3 className="text-sm font-semibold">Number of clips</h3>
+        <p className="mt-1 text-xs leading-5 text-muted-foreground/65">
+          Pick how many clips ViralSnipAI should prepare for review.
+        </p>
+        <div className="mt-4 grid gap-2 sm:grid-cols-3">
+          {clipCounts.map((count) => (
+            <button
+              key={count}
+              type="button"
+              disabled={disabled}
+              onClick={() => setTargetClipCount(count)}
+              className={cn(
+                "rounded-2xl border px-4 py-3 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-60",
+                targetClipCount === count
+                  ? "border-primary/55 bg-primary text-primary-foreground shadow-sm"
+                  : "border-border/60 bg-background/65 text-muted-foreground hover:border-border/90 hover:text-foreground",
+              )}
+            >
+              {count} clips
+            </button>
+          ))}
+        </div>
+      </section>
+
+      <section className="rounded-3xl border border-border/55 bg-background/45 p-4">
+        <h3 className="text-sm font-semibold">Clip quality</h3>
+        <p className="mt-1 text-xs leading-5 text-muted-foreground/65">
+          Choose speed versus reasoning depth. Model routing stays internal.
+        </p>
+        <div className="mt-4 grid gap-2">
+          {QUALITY_MODE_OPTIONS.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              disabled={disabled}
+              onClick={() => setQualityMode(option.value)}
+              className={cn(
+                "rounded-2xl border px-4 py-3 text-left transition disabled:cursor-not-allowed disabled:opacity-60",
+                qualityMode === option.value
+                  ? "border-primary/55 bg-primary/10 shadow-sm shadow-primary/5"
+                  : "border-border/60 bg-background/65 hover:border-border/90",
+              )}
+            >
+              <span className="flex items-center justify-between gap-2">
+                <span className="text-sm font-semibold">{option.label}</span>
+                {option.value === "balanced" ? (
+                  <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-bold text-emerald-500">
+                    Recommended
+                  </span>
+                ) : null}
+              </span>
+              <span className="mt-1 block text-xs leading-5 text-muted-foreground/65">
+                {option.description}
+              </span>
+            </button>
+          ))}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function CreateProgressCard({ progress, phase }: { progress: number; phase: string }) {
+  const steps = [
+    ["Analyzing your video", 15],
+    ["Finding best moments", 45],
+    ["Preparing previews", 75],
+    ["Almost ready", 94],
+  ] as const;
+  const activeStepIndex = steps.findIndex(([, threshold]) => progress < threshold);
+
+  return (
+    <div className="mt-5 rounded-3xl border border-primary/20 bg-primary/[0.045] p-5">
+      <div className="flex items-start gap-3">
+        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+          <Loader2 className="h-5 w-5 animate-spin" />
+        </span>
+        <div className="min-w-0">
+          <h3 className="text-base font-semibold">Creating your clips</h3>
+          <p className="mt-1 text-sm leading-6 text-muted-foreground/70">
+            {phase || "This may take a few minutes for longer videos."}
+          </p>
+          <p className="mt-1 text-xs leading-5 text-muted-foreground/60">
+            You can keep this tab open while ViralSnipAI prepares clips.
+          </p>
+        </div>
+      </div>
+      <div className="mt-5 h-2 overflow-hidden rounded-full bg-muted">
+        <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${progress}%` }} />
+      </div>
+      <div className="mt-4 grid gap-2 sm:grid-cols-2">
+        {steps.map(([label, threshold], index) => {
+          const done = progress >= threshold;
+          const current = !done && index === activeStepIndex;
+          return (
+            <div key={label} className="flex items-center gap-2 text-sm">
+              <span
+                className={cn(
+                  "flex h-6 w-6 items-center justify-center rounded-full border",
+                  done
+                    ? "border-emerald-500 bg-emerald-500 text-white"
+                    : current
+                      ? "border-primary text-primary"
+                      : "border-border text-muted-foreground",
+                )}
+              >
+                {done ? (
+                  <Check className="h-3.5 w-3.5" />
+                ) : current ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : null}
+              </span>
+              <span className={done ? "text-foreground" : "text-muted-foreground"}>{label}</span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function GenerateClipsPanel({
+  isGenerating,
+  canGenerate,
+  hasExistingClips,
+  onGenerate,
+}: {
+  isGenerating: boolean;
+  canGenerate: boolean;
+  hasExistingClips: boolean;
+  onGenerate: () => Promise<void>;
+}) {
+  return (
+    <div className="sticky bottom-3 z-20 mt-6 rounded-2xl border border-border/60 bg-background/90 p-3 shadow-2xl shadow-black/10 backdrop-blur md:static md:shadow-none">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p className="text-sm font-semibold">
+            {isGenerating ? "ViralSnipAI is preparing your clips" : "Ready to generate"}
+          </p>
+          <p className="mt-1 text-xs leading-5 text-muted-foreground/65">
+            {hasExistingClips
+              ? "Generating again will ask before replacing existing clips."
+              : "Next: ViralSnipAI will analyze the source and prepare clips for review."}
+          </p>
+        </div>
+        <Button
+          onClick={onGenerate}
+          disabled={!canGenerate || isGenerating}
+          size="lg"
+          className="w-full shrink-0 sm:w-auto"
+        >
+          {isGenerating ? (
+            <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+          ) : (
+            <Sparkles className="mr-1.5 h-4 w-4" />
+          )}
+          Generate Clips
+        </Button>
       </div>
     </div>
   );

@@ -32,6 +32,11 @@ import { TranscriptEditor } from "@/components/repurpose/transcript-editor";
 import { FramingPanel } from "@/components/repurpose/framing-panel";
 import { CreativeEnhancementsPanel } from "@/components/repurpose/creative-enhancements-panel";
 import { BrandTemplateApplyPanel } from "@/components/repurpose/brand-template-apply-panel";
+import {
+  TopClipStrip,
+  sortV1ClipsForStrip,
+  type V1ClipSortMode,
+} from "@/components/repurpose/editor/v1/top-clip-strip";
 import { SafeThumbnailImage } from "@/components/repurpose/safe-thumbnail-image";
 import { SourceQualityNotice } from "@/components/repurpose/source-quality-notice";
 import { useClipUpdateQueue } from "@/components/repurpose/use-clip-update-queue";
@@ -46,6 +51,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/components/ui/use-toast";
 import { getCaptionQuality } from "@/lib/caption-quality";
@@ -109,6 +115,7 @@ export default function RepurposeEditorPage() {
   const [workspaceTab, setWorkspaceTab] = useState<WorkspaceTab>("preview");
   const [editorDirtyByClip, setEditorDirtyByClip] = useState<Record<string, boolean>>({});
   const captionInFlightRef = useRef<Set<string>>(new Set());
+  const useSimpleEditor = process.env.NEXT_PUBLIC_V1_SIMPLE_EDITOR !== "false";
 
   const clips = useMemo(() => project?.clips ?? [], [project?.clips]);
   const { updateClip } = useClipUpdateQueue({
@@ -203,9 +210,13 @@ export default function RepurposeEditorPage() {
     reviewTab,
     sortBy,
   ]);
+  const defaultActiveClip = useMemo(
+    () => [...clips].sort((a, b) => (b.viralityScore ?? 0) - (a.viralityScore ?? 0))[0] ?? null,
+    [clips],
+  );
   const activeClip = useMemo(
-    () => clips.find((c) => c.id === activeClipId) ?? clips[0] ?? null,
-    [clips, activeClipId],
+    () => clips.find((c) => c.id === activeClipId) ?? defaultActiveClip,
+    [clips, activeClipId, defaultActiveClip],
   );
   const activeAsset = useMemo(
     () => project?.assets?.find((asset) => asset.id === activeClip?.assetId) ?? project?.assets?.[0] ?? null,
@@ -244,6 +255,10 @@ export default function RepurposeEditorPage() {
     const status = getReviewStatus(clip);
     return status === "approved" || status === "export_ready";
   }).length;
+  const simpleEditorClips = useMemo(
+    () => [...clips].sort((a, b) => (b.viralityScore ?? 0) - (a.viralityScore ?? 0)),
+    [clips],
+  );
   const mergeClipIntoProjectCache = useCallback(
     (clip: unknown) => {
       if (!project?.id || !clip || typeof clip !== "object" || !("id" in clip)) return;
@@ -319,21 +334,21 @@ export default function RepurposeEditorPage() {
     return (
       <div className="space-y-4">
         <div>
-          <h2 className="text-xl font-bold">Edit & Enhance</h2>
+          <h2 className="text-xl font-bold">Edit & Export</h2>
           <p className="text-sm text-muted-foreground mt-0.5">
-            Refine clips via transcript editing — remove segments to auto-trim.
+            Review clips, clean the transcript, and export the best moments.
           </p>
         </div>
         <GlassCard
-          title="No clips detected yet"
-          description="Run auto-detect highlights on the Ingest page to generate clips."
+          title="No clips yet. Generate clips first."
+          description="Create clips from your source video, then come back here to review, edit, and export."
         >
           <Link
             href={`/repurpose?projectId=${project.id}`}
             className="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-border/50 bg-muted/40 hover:bg-muted/60 text-sm font-medium transition-colors text-foreground"
           >
             <ArrowLeft className="h-4 w-4" />
-            Go to Ingest & Detect
+            Create clips
           </Link>
         </GlassCard>
       </div>
@@ -558,6 +573,32 @@ export default function RepurposeEditorPage() {
     } finally {
       setRetranscribing(false);
     }
+  }
+
+  if (useSimpleEditor && activeClip) {
+    return (
+      <V1SimpleEditorPage
+        projectId={project.id}
+        clips={simpleEditorClips}
+        activeClip={activeClip}
+        activeAsset={activeAsset}
+        activeMetadata={activeMetadata}
+        activeReviewStatus={activeReviewStatus}
+        activeCaptionReady={activeCaptionReady}
+        activeEditorDirty={activeEditorDirty}
+        activeSourceLowQuality={activeSourceLowQuality}
+        captionLoading={captionLoading}
+        statusUpdating={statusUpdating}
+        selectedClipIds={selectedClipIds}
+        setActiveClipId={setActiveClipId}
+        getReviewStatus={getReviewStatus}
+        setReviewStatus={setReviewStatus}
+        onUpdateClip={(updates, options) => updateClip(activeClip.id, updates, options)}
+        onSave={invalidate}
+        onGenerateCaptions={() => handleGenerateCaptions(activeClip.id)}
+        onDirtyChange={handleActiveEditorDirtyChange}
+      />
+    );
   }
 
   // ── Render ──────────────────────────────────────────────────────────────────
@@ -1976,6 +2017,488 @@ export default function RepurposeEditorPage() {
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function V1SimpleEditorPage({
+  projectId,
+  clips,
+  activeClip,
+  activeAsset,
+  activeMetadata,
+  activeReviewStatus,
+  activeCaptionReady,
+  activeEditorDirty,
+  activeSourceLowQuality,
+  captionLoading,
+  statusUpdating,
+  selectedClipIds,
+  setActiveClipId,
+  getReviewStatus,
+  setReviewStatus,
+  onUpdateClip,
+  onSave,
+  onGenerateCaptions,
+  onDirtyChange,
+}: {
+  projectId: string;
+  clips: any[];
+  activeClip: any;
+  activeAsset: any;
+  activeMetadata: ReturnType<typeof getClipMetadata>;
+  activeReviewStatus: ClipReviewStatus;
+  activeCaptionReady: boolean;
+  activeEditorDirty: boolean;
+  activeSourceLowQuality: boolean;
+  captionLoading?: string;
+  statusUpdating: Record<string, boolean>;
+  selectedClipIds: string[];
+  setActiveClipId: (id: string) => void;
+  getReviewStatus: (clip: { id: string; reviewStatus?: ClipReviewStatus | null }) => ClipReviewStatus;
+  setReviewStatus: (id: string, status: ClipReviewStatus) => Promise<void>;
+  onUpdateClip: Parameters<typeof TranscriptEditor>[0]["onUpdateClip"];
+  onSave: () => Promise<void>;
+  onGenerateCaptions: () => void;
+  onDirtyChange: (dirty: boolean) => void;
+}) {
+  const [clipSortMode, setClipSortMode] = useState<V1ClipSortMode>("score");
+  const orderedClips = useMemo(() => {
+    return sortV1ClipsForStrip(clips, clipSortMode, getReviewStatus);
+  }, [clipSortMode, clips, getReviewStatus]);
+  const activeIndex = orderedClips.findIndex((clip) => clip.id === activeClip.id);
+  const duration = activeClip.endMs - activeClip.startMs;
+  const isStatusUpdating = Boolean(statusUpdating[activeClip.id]);
+  const exportHref = `/repurpose/export?projectId=${projectId}`;
+  const selectRelativeClip = (direction: -1 | 1) => {
+    const nextClip = orderedClips[activeIndex + direction];
+    if (nextClip) {
+      setActiveClipId(nextClip.id);
+    }
+  };
+
+  return (
+    <div className="min-w-0 space-y-5 overflow-x-hidden">
+      <div className="rounded-2xl border border-border/60 bg-card/55 p-4 shadow-sm shadow-black/10">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="min-w-0">
+            <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-emerald-400/75">
+              Edit & Export
+            </p>
+            <h2 className="mt-1 break-words text-2xl font-bold">Edit your clips</h2>
+            <p className="mt-0.5 max-w-2xl text-sm leading-6 text-muted-foreground">
+              Select a clip, preview it, clean the transcript, then mark it ready for export.
+            </p>
+          </div>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            {activeReviewStatus === "export_ready" ? (
+              <Link
+                href={exportHref}
+                className="inline-flex h-10 items-center justify-center gap-1.5 rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground shadow-sm shadow-primary/20 transition-colors hover:bg-primary/90"
+              >
+                Export clip
+                <ArrowRight className="h-4 w-4" />
+              </Link>
+            ) : (
+              <Button
+                onClick={() => setReviewStatus(activeClip.id, "export_ready")}
+                disabled={isStatusUpdating || activeEditorDirty}
+                title={activeEditorDirty ? "Save transcript changes before marking export ready." : undefined}
+                className="h-10 rounded-xl"
+              >
+                {isStatusUpdating ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : null}
+                Mark export ready
+              </Button>
+            )}
+            <Button variant="outline" asChild className="h-10 rounded-xl">
+              <Link href={exportHref}>Open Export</Link>
+            </Button>
+          </div>
+        </div>
+      </div>
+
+      <TopClipStrip
+        clips={orderedClips}
+        activeClipId={activeClip.id}
+        selectedClipIds={selectedClipIds}
+        sortMode={clipSortMode}
+        onSortModeChange={setClipSortMode}
+        getReviewStatus={getReviewStatus}
+        onSelectClip={setActiveClipId}
+      />
+
+      <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1fr)_320px] xl:items-start">
+        <main className="min-w-0 space-y-5">
+          <ClipPreviewPanel
+            clip={activeClip}
+            index={activeIndex}
+            total={clips.length}
+            duration={duration}
+            metadata={activeMetadata}
+            status={activeReviewStatus}
+            onPrevious={() => selectRelativeClip(-1)}
+            onNext={() => selectRelativeClip(1)}
+          />
+
+          {!activeCaptionReady ? (
+            <div className="rounded-2xl border border-amber-500/20 bg-amber-500/[0.06] p-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex min-w-0 gap-3">
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-400" />
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-amber-200">Captions need setup</p>
+                    <p className="mt-1 text-xs leading-5 text-amber-100/70">
+                      ViralSnipAI can prepare default captions for export. You can still edit the
+                      transcript once captions are ready.
+                    </p>
+                  </div>
+                </div>
+                <Button
+                  variant="outline"
+                  onClick={onGenerateCaptions}
+                  disabled={captionLoading === activeClip.id}
+                  className="shrink-0 border-amber-500/25 bg-amber-500/10 text-amber-100 hover:bg-amber-500/15"
+                >
+                  {captionLoading === activeClip.id ? (
+                    <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+                  ) : (
+                    <RefreshCw className="mr-1.5 h-4 w-4" />
+                  )}
+                  Generate captions
+                </Button>
+              </div>
+            </div>
+          ) : null}
+
+          <section className="rounded-2xl border border-border/60 bg-card/60 p-4">
+            <div className="mb-4">
+              <p className="text-sm font-semibold text-foreground">Transcript editor</p>
+              <p className="mt-1 text-xs leading-5 text-muted-foreground/65">
+                Edit the readable transcript first. Advanced timing stays collapsed unless you need
+                precise control.
+              </p>
+            </div>
+            <TranscriptEditor
+              mode="transcript"
+              clipId={activeClip.id}
+              clipTitle={activeClip.title}
+              captionSrt={activeClip.captionSrt}
+              captionStyle={activeClip.captionStyle}
+              expectedVersion={activeClip.version}
+              startMs={activeClip.startMs}
+              endMs={activeClip.endMs}
+              previewPath={activeClip.previewPath}
+              sourceWidth={activeAsset?.sourceWidth}
+              sourceHeight={activeAsset?.sourceHeight}
+              projectId={projectId}
+              assetId={activeClip.assetId}
+              assetTranscript={activeAsset?.transcript ?? null}
+              selectedClipCount={selectedClipIds.length}
+              onUpdateClip={onUpdateClip}
+              smartReframePlan={
+                (activeClip.viralityFactors?.metadata?.smartReframe as
+                  | import("@/lib/media/smart-reframe").SmartReframePlan
+                  | undefined) ?? null
+              }
+              onSave={onSave}
+              onGenerateCaptions={onGenerateCaptions}
+              isGenerating={captionLoading === activeClip.id}
+              showSourceQualityNotice={false}
+              clipSummary={activeClip.summary}
+              callToAction={activeClip.callToAction}
+              onDirtyChange={onDirtyChange}
+            />
+          </section>
+
+          <ExportReadinessPanel
+            projectId={projectId}
+            clipId={activeClip.id}
+            status={activeReviewStatus}
+            transcriptDirty={activeEditorDirty}
+            captionsReady={activeCaptionReady}
+            isUpdating={isStatusUpdating}
+            onMarkReady={() => setReviewStatus(activeClip.id, "export_ready")}
+          />
+        </main>
+
+        <V1ReadinessSidebar
+          projectId={projectId}
+          clip={activeClip}
+          asset={activeAsset}
+          status={activeReviewStatus}
+          transcriptDirty={activeEditorDirty}
+          captionsReady={activeCaptionReady}
+          sourceLowQuality={activeSourceLowQuality}
+          onGenerateCaptions={onGenerateCaptions}
+          captionLoading={captionLoading === activeClip.id}
+        />
+      </div>
+    </div>
+  );
+}
+
+function ClipPreviewPanel({
+  clip,
+  index,
+  total,
+  duration,
+  metadata,
+  status,
+  onPrevious,
+  onNext,
+}: {
+  clip: any;
+  index: number;
+  total: number;
+  duration: number;
+  metadata: ReturnType<typeof getClipMetadata>;
+  status: ClipReviewStatus;
+  onPrevious: () => void;
+  onNext: () => void;
+}) {
+  return (
+    <section className="overflow-hidden rounded-2xl border border-border/60 bg-card/60">
+      <div className="flex flex-col gap-3 border-b border-border/45 p-4 lg:flex-row lg:items-center lg:justify-between">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="rounded-full border border-border/50 bg-muted/35 px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest text-muted-foreground/65">
+              Clip {Math.max(index + 1, 1)} of {total}
+            </span>
+            <ReviewStatusBadge status={status} />
+          </div>
+          <h3 className="mt-2 break-words text-xl font-semibold">{clip.title || "Untitled clip"}</h3>
+          <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground/65">
+            <span>{formatDuration(duration)}</span>
+            {clip.viralityScore != null ? <span>{clip.viralityScore}/100 score</span> : null}
+            {metadata.candidateType ? <span>{metadata.candidateType.replace(/_/g, " ")}</span> : null}
+          </div>
+        </div>
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={onPrevious} disabled={index <= 0}>
+            <ChevronLeft className="mr-1 h-4 w-4" />
+            Prev
+          </Button>
+          <Button variant="outline" size="sm" onClick={onNext} disabled={index >= total - 1}>
+            Next
+            <ChevronRight className="ml-1 h-4 w-4" />
+          </Button>
+        </div>
+      </div>
+      <div className="grid min-w-0 gap-4 p-4 lg:grid-cols-[minmax(0,1fr)_240px]">
+        <div className="flex min-h-[280px] max-h-[calc(100vh-320px)] min-w-0 items-center justify-center overflow-hidden rounded-2xl border border-border/50 bg-black">
+          {clip.previewPath ? (
+            <video
+              src={clip.previewPath}
+              className="h-auto max-h-[calc(100vh-340px)] w-full bg-black object-contain"
+              controls
+              playsInline
+              preload="metadata"
+            />
+          ) : (
+            <SafeThumbnailImage
+              src={clip.thumbnail}
+              alt={clip.title || "Clip preview"}
+              className="aspect-video w-full"
+              imageClassName="object-cover"
+              fallbackIcon={<Film className="h-10 w-10 text-muted-foreground/25" />}
+            />
+          )}
+        </div>
+        <div className="space-y-3">
+          <InsightCard
+            title="Clip quality"
+            value={clip.viralityScore != null ? `${clip.viralityScore}/100` : "Pending"}
+            description={
+              metadata.viralReason ||
+              clip.viralityFactors?.reasoning ||
+              "Chosen for hook strength, pacing, and complete idea flow."
+            }
+            icon={<Flame className="h-4 w-4 text-amber-300" />}
+          />
+          {clip.summary ? (
+            <div className="rounded-xl border border-border/50 bg-muted/25 p-3">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/45">
+                Summary
+              </p>
+              <p className="mt-2 line-clamp-5 text-xs leading-5 text-muted-foreground/75">
+                {clip.summary}
+              </p>
+            </div>
+          ) : null}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function ExportReadinessPanel({
+  projectId,
+  clipId,
+  status,
+  transcriptDirty,
+  captionsReady,
+  isUpdating,
+  onMarkReady,
+}: {
+  projectId: string;
+  clipId: string;
+  status: ClipReviewStatus;
+  transcriptDirty: boolean;
+  captionsReady: boolean;
+  isUpdating: boolean;
+  onMarkReady: () => Promise<void>;
+}) {
+  const ready = status === "export_ready";
+  return (
+    <section className="rounded-2xl border border-border/60 bg-card/60 p-4">
+      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-foreground">Export readiness</p>
+          <p className="mt-1 text-xs leading-5 text-muted-foreground/65">
+            {transcriptDirty
+              ? "Save transcript changes before marking this clip ready."
+              : ready
+                ? "This clip is ready for the Export Center."
+                : captionsReady
+                  ? "Captions are ready. Mark the clip export ready when the transcript looks good."
+                  : "Generate captions if needed, then mark the clip ready."}
+          </p>
+        </div>
+        <div className="flex flex-col gap-2 sm:flex-row">
+          {ready ? (
+            <Button asChild>
+              <Link href={`/repurpose/export?projectId=${projectId}`}>
+                Export clip
+                <ArrowRight className="ml-1.5 h-4 w-4" />
+              </Link>
+            </Button>
+          ) : (
+            <Button onClick={onMarkReady} disabled={transcriptDirty || isUpdating}>
+              {isUpdating ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : null}
+              Mark export ready
+            </Button>
+          )}
+          <Button variant="outline" asChild>
+            <Link href={`/repurpose/export?projectId=${projectId}&clipId=${clipId}`}>
+              Open Export
+            </Link>
+          </Button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function V1ReadinessSidebar({
+  projectId,
+  clip,
+  asset,
+  status,
+  transcriptDirty,
+  captionsReady,
+  sourceLowQuality,
+  onGenerateCaptions,
+  captionLoading,
+}: {
+  projectId: string;
+  clip: any;
+  asset: any;
+  status: ClipReviewStatus;
+  transcriptDirty: boolean;
+  captionsReady: boolean;
+  sourceLowQuality: boolean;
+  onGenerateCaptions: () => void;
+  captionLoading: boolean;
+}) {
+  return (
+    <aside className="min-w-0 space-y-4 xl:sticky xl:top-20">
+      <div className="rounded-2xl border border-border/60 bg-card/60 p-4">
+        <p className="text-sm font-semibold text-foreground">Clip readiness</p>
+        <p className="mt-1 text-xs leading-5 text-muted-foreground/65">
+          Keep this checklist clean, then export from the Export Center.
+        </p>
+        <div className="mt-4 space-y-2">
+          <ReadinessItem
+            label="Transcript saved"
+            status={transcriptDirty ? "warning" : "done"}
+            helper={transcriptDirty ? "Save changes before exporting." : undefined}
+          />
+          <ReadinessItem
+            label="Captions auto-ready"
+            status={captionsReady ? "done" : "pending"}
+            helper={captionsReady ? undefined : "Use the default caption generator."}
+          />
+          <ReadinessItem
+            label="Source quality"
+            status={sourceLowQuality ? "warning" : "done"}
+            helper={sourceLowQuality ? "Low-resolution source may export softer." : undefined}
+          />
+          <ReadinessItem
+            label="Export status"
+            status={status === "export_ready" ? "done" : "pending"}
+            helper={status === "export_ready" ? undefined : "Mark ready after review."}
+          />
+        </div>
+        {!captionsReady ? (
+          <Button
+            variant="outline"
+            onClick={onGenerateCaptions}
+            disabled={captionLoading}
+            className="mt-4 w-full"
+          >
+            {captionLoading ? (
+              <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+            ) : (
+              <RefreshCw className="mr-1.5 h-4 w-4" />
+            )}
+            Generate captions
+          </Button>
+        ) : null}
+      </div>
+
+      {sourceLowQuality ? <SourceQualityMiniNotice asset={asset} projectId={projectId} /> : null}
+
+      <details className="rounded-2xl border border-border/60 bg-card/55 p-4">
+        <summary className="cursor-pointer text-sm font-semibold">Clip details</summary>
+        <div className="mt-3 space-y-2">
+          <InspectorRow label="Duration" value={formatDuration(clip.endMs - clip.startMs)} />
+          <InspectorRow label="Score" value={clip.viralityScore != null ? `${clip.viralityScore}/100` : "Pending"} />
+          <InspectorRow label="Status" value={<ReviewStatusBadge status={status} />} />
+        </div>
+      </details>
+    </aside>
+  );
+}
+
+function SourceQualityMiniNotice({ asset, projectId }: { asset: any; projectId?: string }) {
+  return (
+    <div className="rounded-2xl border border-amber-500/25 bg-amber-500/[0.06] p-4">
+      <div className="flex items-start gap-3">
+        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-400" />
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-amber-200">Source quality is low</p>
+          <p className="mt-1 text-xs leading-5 text-amber-100/75">
+            {asset?.sourceWidth && asset?.sourceHeight
+              ? `${asset.sourceWidth}x${asset.sourceHeight} source may look soft in Shorts/Reels. Blur background mode is applied.`
+              : "Low-resolution source may look soft in Shorts/Reels. Blur background mode is applied."}
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Link
+              href={projectId ? `/repurpose?projectId=${projectId}` : "/repurpose"}
+              className="rounded-lg border border-amber-500/25 bg-amber-500/10 px-3 py-1.5 text-xs font-semibold text-amber-100 hover:bg-amber-500/15"
+            >
+              Replace source
+            </Link>
+            <details className="rounded-lg border border-border/50 bg-background/55 px-3 py-1.5 text-xs">
+              <summary className="cursor-pointer text-muted-foreground">View details</summary>
+              <div className="mt-2 space-y-1 text-muted-foreground/75">
+                <p>Source quality: Low</p>
+                <p>Render mode: Blur background</p>
+              </div>
+            </details>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 /** True when captionSrt contains the synthetic mock pattern from generateMockResult(). */
 function isSyntheticSrt(srt: string | null | undefined): boolean {
